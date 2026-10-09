@@ -1,0 +1,13 @@
+#!/bin/sh
+# dx's command line, d8's dexer: AOSP's old dx fails on today's class files
+# ("trouble writing output: excess write of 8"). R8_JAR names the d8 jar.
+out=; api=27; jar=
+for a in "$@"; do
+  case "$a" in
+    --output=*) out="${a#--output=}";;
+    --min-sdk-version=*) api="${a#--min-sdk-version=}";;
+    -J*|--dex|--multi-dex|--core-library|--no-optimize|--no-locals|--debug|--verbose|--dump-*) ;;
+    *.jar) jar="$a";;
+  esac
+done
+exec java -Xmx3g -cp "${R8_JAR:?set R8_JAR}" com.android.tools.r8.D8 --min-api "$api" --no-desugaring --output "$out" "$jar"

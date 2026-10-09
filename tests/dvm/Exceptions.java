@@ -35,6 +35,7 @@ public class Exceptions {
     }
     static Object nothing() { return null; }
     static int[] arr;
+    static Object[] sink;
 
     public static void main(String[] args) throws Exception {
         try { thrower(10); } catch (MyException e) { System.out.println("caught " + e.getMessage() + " code " + e.code); }
@@ -46,7 +47,8 @@ public class Exceptions {
         System.out.println(kind(new Runnable() { public void run() { int[] a = new int[3]; a[3] = 1; } }));
         System.out.println(kind(new Runnable() { public void run() { int[] a = new int[-1]; } }));
         System.out.println(kind(new Runnable() { public void run() { Object o = "s"; Integer i = (Integer) o; } }));
-        System.out.println(kind(new Runnable() { public void run() { Object[] o = new String[1]; o[0] = 1; } }));
+        /* the array escapes: ART 10's optimizing compiler drops a store (and its check) into an array that does not */
+        System.out.println(kind(new Runnable() { public void run() { Object[] o = new String[1]; sink = o; o[0] = 1; } }));
         System.out.println(kind(new Runnable() { public void run() { System.out.println(arr.length); } }));
         System.out.println(kind(new Runnable() { public void run() { throw new UnsupportedOperationException("u"); } }));
         try { recurse(0); } catch (StackOverflowError e) { System.out.println("caught StackOverflowError"); }

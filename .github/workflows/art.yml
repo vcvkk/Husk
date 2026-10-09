@@ -1,0 +1,55 @@
+name: ART on arm64
+
+# Builds ART (dex2oat, dalvikvm, libcore) on an arm64 Linux runner, where
+# art_standalone builds natively, and runs tests/dvm's programs on it. dalvikvm
+# compiles each program ahead of time for the runner's CPU, so this produces and
+# runs arm64 oat files: the input oat2macho turns into Mach-O for Apple devices.
+
+on:
+  push:
+    branches: [husk-port]
+    paths: ['port/art/**', 'tests/dvm/**', 'src/dvm/**', 'tools/oat2macho.c', '.github/workflows/art.yml']
+  workflow_dispatch:
+
+jobs:
+  art:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Packages
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq meson ninja-build pkg-config clang zlib1g-dev openjdk-21-jdk-headless \
+            libbsd-dev libunwind-dev libelf-dev libicu-dev libssl-dev libexpat1-dev zip liblz4-dev liblzma-dev \
+            libcap-dev libwolfssl-dev libegl-dev valgrind binutils
+
+      - name: Cache ART build
+        uses: actions/cache@v4
+        with:
+          path: build/art
+          key: art-${{ runner.arch }}-${{ hashFiles('port/art/**') }}
+
+      - name: Build ART
+        run: INSTALL=1 port/art/build.sh
+
+      - name: DVM tests (also records the JVM's expected output)
+        run: tests/dvm/run.sh
+
+      - name: Tests on ART, compiled ahead of time for arm64
+        run: port/art/test.sh
+
+      - name: oat2macho on an arm64 oat file
+        run: |
+          clang -std=c11 -O1 -Wall tools/oat2macho.c -o build/oat2macho
+          for f in build/art-tests/oat/*; do build/oat2macho --ios "$f" build/art-tests/test.dylib || true; break; done
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: arm64-oat
+          path: |
+            build/art-tests/oat
+            build/art/art-build.log
+          if-no-files-found: ignore

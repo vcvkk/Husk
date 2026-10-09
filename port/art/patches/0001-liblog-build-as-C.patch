@@ -1,0 +1,22 @@
+diff --git a/system/core/liblog/fake_log_device.c b/system/core/liblog/fake_log_device.c
+index f1b531b1..168f091a 100644
+--- a/system/core/liblog/fake_log_device.c
++++ b/system/core/liblog/fake_log_device.c
+@@ -21,6 +21,7 @@
+  */
+ #include <log/logd.h>
+ 
++#include <stdbool.h>
+ #include <stdlib.h>
+ #include <string.h>
+ #include <ctype.h>
+@@ -355,7 +356,8 @@ static bool should_colorize() {
+     if (cached)
+         return should_colorize;
+ 
+-    if (char *liblog_color = getenv("LIBLOG_COLOR")) {
++    char *liblog_color = getenv("LIBLOG_COLOR");
++    if (liblog_color) {
+         if (!strcmp(liblog_color, "always")) {
+             should_colorize = true;
+         } else if (!strcmp(liblog_color, "never")) {
