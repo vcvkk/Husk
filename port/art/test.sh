@@ -28,7 +28,8 @@ for d in "$T"/*/; do
     fi
 done
 cache="${XDG_CACHE_HOME:-$HOME/.cache}/art"
-find "$cache" -name '*@classes.dex' -exec cp {} "$OUT/oat/" \; 2>/dev/null
+# the apps' oat files, and the boot class path's (boot*.oat)
+find "$cache" \( -name '*@classes.dex' -o -name '*boot*.oat' \) -exec cp {} "$OUT/oat/" \; 2>/dev/null
 for f in "$OUT"/oat/*; do [ -f "$f" ] && { echo "==> $(basename "$f")"; readelf -h "$f" | grep -e Machine -e Type; readelf --dyn-syms -W "$f" | grep -o 'oat[a-z]*' | sort -u | tr '\n' ' '; echo; break; }; done
 echo "==> $pass passed, $fail failed"
 [ $fail -eq 0 ]

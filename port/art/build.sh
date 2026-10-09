@@ -48,7 +48,7 @@ cd art_standalone
 make -j"$(nproc)" DX="$HERE/dx-via-d8" > "$WORK/art-build.log" 2>&1 || { grep -m20 -e 'error:' -e 'Error [0-9]' "$WORK/art-build.log"; tail -40 "$WORK/art-build.log"; exit 1; }
 ls -la out/host/linux-x86/bin out/host/linux-x86/framework
 
-if [ "${INSTALL:-0}" = 1 ]; then
+if [ "${ART_INSTALL:-0}" = 1 ]; then
     echo "==> installing into $PREFIX"
     # make install also copies dx, which d8 replaces
     cp "$HERE/dx-via-d8" out/host/linux-x86/bin/dx

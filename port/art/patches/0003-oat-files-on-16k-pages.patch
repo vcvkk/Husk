@@ -1,0 +1,155 @@
+diff --git a/art/dex2oat/linker/oat_writer.cc b/art/dex2oat/linker/oat_writer.cc
+index 6b238833..678aee9e 100644
+--- a/art/dex2oat/linker/oat_writer.cc
++++ b/art/dex2oat/linker/oat_writer.cc
+@@ -773,7 +773,7 @@ void OatWriter::PrepareLayout(MultiOatRelativePatcher* relative_patcher) {
+     offset = InitDataBimgRelRoLayout(offset);
+   }
+   oat_size_ = offset;  // .bss does not count towards oat_size_.
+-  bss_start_ = (bss_size_ != 0u) ? RoundUp(oat_size_, kPageSize) : 0u;
++  bss_start_ = (bss_size_ != 0u) ? RoundUp(oat_size_, kElfSegmentAlignment) : 0u;
+ 
+   CHECK_EQ(dex_files_->size(), oat_dex_files_.size());
+ 
+@@ -2185,7 +2185,7 @@ size_t OatWriter::InitOatCode(size_t offset) {
+   // calculate the offsets within OatHeader to executable code
+   size_t old_offset = offset;
+   // required to be on a new page boundary
+-  offset = RoundUp(offset, kPageSize);
++  offset = RoundUp(offset, kElfSegmentAlignment);
+   oat_header_->SetExecutableOffset(offset);
+   size_executable_offset_alignment_ = offset - old_offset;
+   if (GetCompilerOptions().IsBootImage() && primary_oat_file_) {
+@@ -2293,7 +2293,7 @@ size_t OatWriter::InitDataBimgRelRoLayout(size_t offset) {
+     return offset;
+   }
+ 
+-  data_bimg_rel_ro_start_ = RoundUp(offset, kPageSize);
++  data_bimg_rel_ro_start_ = RoundUp(offset, kElfSegmentAlignment);
+ 
+   for (auto& entry : data_bimg_rel_ro_entries_) {
+     size_t& entry_offset = entry.second;
+@@ -2712,7 +2712,7 @@ bool OatWriter::WriteDataBimgRelRo(OutputStream* out) {
+   // Record the padding before the .data.bimg.rel.ro section.
+   // Do not write anything, this zero-filled part was skipped (Seek()) when starting the section.
+   size_t code_end = GetOatHeader().GetExecutableOffset() + code_size_;
+-  DCHECK_EQ(RoundUp(code_end, kPageSize), relative_offset);
++  DCHECK_EQ(RoundUp(code_end, kElfSegmentAlignment), relative_offset);
+   size_t padding_size = relative_offset - code_end;
+   DCHECK_EQ(size_data_bimg_rel_ro_alignment_, 0u);
+   size_data_bimg_rel_ro_alignment_ = padding_size;
+diff --git a/art/libartbase/base/globals.h b/art/libartbase/base/globals.h
+index 97eae635..7fd415fc 100644
+--- a/art/libartbase/base/globals.h
++++ b/art/libartbase/base/globals.h
+@@ -38,6 +38,13 @@ static constexpr size_t kStackAlignment = 16;
+ // compile-time constant so the compiler can generate better code.
+ static constexpr int kPageSize = 4096;
+ 
++// Alignment of the segments of ELF files the compiler writes (oat files). Apple's
++// arm64 hardware protects memory in 16 KiB pages, so an oat file whose code and
++// writable data are to be mapped there -- as a Mach-O dylib, by husk-port -- must
++// not share a 16 KiB page between them. A multiple of kPageSize, so these files
++// still load where pages are 4 KiB. (Later ART versions have the same constant.)
++static constexpr size_t kElfSegmentAlignment = 16384;
++
+ // Clion, clang analyzer, etc can falsely believe that "if (kIsDebugBuild)" always
+ // returns the same value. By wrapping into a call to another constexpr function, we force it
+ // to realize that is not actually always evaluating to the same value.
+diff --git a/art/libelffile/elf/elf_builder.h b/art/libelffile/elf/elf_builder.h
+index b4e9c66b..389abb96 100644
+--- a/art/libelffile/elf/elf_builder.h
++++ b/art/libelffile/elf/elf_builder.h
+@@ -203,7 +203,7 @@ class ElfBuilder final {
+         std::vector<Section*>& sections = owner_->sections_;
+         Elf_Word last = sections.empty() ? PF_R : sections.back()->phdr_flags_;
+         if (phdr_flags_ != last) {
+-          header_.sh_addralign = kPageSize;  // Page-align if R/W/X flags changed.
++          header_.sh_addralign = kElfSegmentAlignment;  // Page-align if R/W/X flags changed.
+         }
+         sections.push_back(this);
+         section_index_ = sections.size();  // First ELF section has index 1.
+@@ -451,16 +451,16 @@ class ElfBuilder final {
+   ElfBuilder(InstructionSet isa, OutputStream* output)
+       : isa_(isa),
+         stream_(output),
+-        rodata_(this, ".rodata", SHT_PROGBITS, SHF_ALLOC, nullptr, 0, kPageSize, 0),
+-        text_(this, ".text", SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, nullptr, 0, kPageSize, 0),
++        rodata_(this, ".rodata", SHT_PROGBITS, SHF_ALLOC, nullptr, 0, kElfSegmentAlignment, 0),
++        text_(this, ".text", SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, nullptr, 0, kElfSegmentAlignment, 0),
+         data_bimg_rel_ro_(
+-            this, ".data.bimg.rel.ro", SHT_PROGBITS, SHF_ALLOC, nullptr, 0, kPageSize, 0),
+-        bss_(this, ".bss", SHT_NOBITS, SHF_ALLOC, nullptr, 0, kPageSize, 0),
+-        dex_(this, ".dex", SHT_NOBITS, SHF_ALLOC, nullptr, 0, kPageSize, 0),
+-        dynstr_(this, ".dynstr", SHF_ALLOC, kPageSize),
++            this, ".data.bimg.rel.ro", SHT_PROGBITS, SHF_ALLOC, nullptr, 0, kElfSegmentAlignment, 0),
++        bss_(this, ".bss", SHT_NOBITS, SHF_ALLOC, nullptr, 0, kElfSegmentAlignment, 0),
++        dex_(this, ".dex", SHT_NOBITS, SHF_ALLOC, nullptr, 0, kElfSegmentAlignment, 0),
++        dynstr_(this, ".dynstr", SHF_ALLOC, kElfSegmentAlignment),
+         dynsym_(this, ".dynsym", SHT_DYNSYM, SHF_ALLOC, &dynstr_),
+         hash_(this, ".hash", SHT_HASH, SHF_ALLOC, &dynsym_, 0, sizeof(Elf_Word), sizeof(Elf_Word)),
+-        dynamic_(this, ".dynamic", SHT_DYNAMIC, SHF_ALLOC, &dynstr_, 0, kPageSize, sizeof(Elf_Dyn)),
++        dynamic_(this, ".dynamic", SHT_DYNAMIC, SHF_ALLOC, &dynstr_, 0, kElfSegmentAlignment, sizeof(Elf_Dyn)),
+         strtab_(this, ".strtab", 0, 1),
+         symtab_(this, ".symtab", SHT_SYMTAB, 0, &strtab_),
+         debug_frame_(this, ".debug_frame", SHT_PROGBITS, 0, nullptr, 0, sizeof(Elf_Addr), 0),
+@@ -531,7 +531,7 @@ class ElfBuilder final {
+ 
+     // Note: loaded_size_ == 0 for tests that don't write .rodata, .text, .bss,
+     // .dynstr, dynsym, .hash and .dynamic. These tests should not read loaded_size_.
+-    CHECK(loaded_size_ == 0 || loaded_size_ == RoundUp(virtual_address_, kPageSize))
++    CHECK(loaded_size_ == 0 || loaded_size_ == RoundUp(virtual_address_, kElfSegmentAlignment))
+         << loaded_size_ << " " << virtual_address_;
+ 
+     // Write section names and finish the section headers.
+@@ -606,7 +606,7 @@ class ElfBuilder final {
+         section->section_index_ = 0;
+       } else {
+         if (section->header_.sh_type != SHT_NOBITS) {
+-          DCHECK_LE(section->header_.sh_offset, end + kPageSize) << "Large gap between sections";
++          DCHECK_LE(section->header_.sh_offset, end + kElfSegmentAlignment) << "Large gap between sections";
+           end = std::max<off_t>(end, section->header_.sh_offset + section->header_.sh_size);
+         }
+         non_debug_sections.push_back(section);
+@@ -758,7 +758,7 @@ class ElfBuilder final {
+     dynamic_.Add(&dyns, sizeof(dyns));
+     dynamic_.AllocateVirtualMemory(dynamic_.GetCacheSize());
+ 
+-    loaded_size_ = RoundUp(virtual_address_, kPageSize);
++    loaded_size_ = RoundUp(virtual_address_, kElfSegmentAlignment);
+   }
+ 
+   void WriteDynamicSection() {
+@@ -873,7 +873,7 @@ class ElfBuilder final {
+       load.p_flags   = PF_R;
+       load.p_offset  = load.p_vaddr = load.p_paddr = 0;
+       load.p_filesz  = load.p_memsz = sizeof(Elf_Ehdr) + sizeof(Elf_Phdr) * kMaxProgramHeaders;
+-      load.p_align   = kPageSize;
++      load.p_align   = kElfSegmentAlignment;
+       phdrs.push_back(load);
+     }
+     // Create program headers for sections.
+@@ -903,7 +903,7 @@ class ElfBuilder final {
+           prev.p_memsz  = size;
+         } else {
+           // If we are adding new load, it must be aligned.
+-          CHECK_EQ(shdr.sh_addralign, (Elf_Word)kPageSize);
++          CHECK_EQ(shdr.sh_addralign, (Elf_Word)kElfSegmentAlignment);
+           phdrs.push_back(load);
+         }
+       }
+diff --git a/art/runtime/elf_file.cc b/art/runtime/elf_file.cc
+index 12c33dea..f6f5f3ca 100644
+--- a/art/runtime/elf_file.cc
++++ b/art/runtime/elf_file.cc
+@@ -1057,8 +1057,8 @@ bool ElfFileImpl<ElfTypes>::GetLoadedAddressRange(/*out*/uint8_t** vaddr_begin,
+       max_vaddr = end_vaddr;
+     }
+   }
+-  min_vaddr = RoundDown(min_vaddr, kPageSize);
+-  max_vaddr = RoundUp(max_vaddr, kPageSize);
++  min_vaddr = RoundDown(min_vaddr, kElfSegmentAlignment);
++  max_vaddr = RoundUp(max_vaddr, kElfSegmentAlignment);
+   CHECK_LT(min_vaddr, max_vaddr) << file_path_;
+   // Check that the range fits into the runtime address space.
+   if (UNLIKELY(max_vaddr - 1u > std::numeric_limits<size_t>::max())) {

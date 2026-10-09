@@ -8,7 +8,7 @@ name: ART on arm64
 on:
   push:
     branches: [husk-port]
-    paths: ['port/art/**', 'tests/dvm/**', 'src/dvm/**', 'tools/oat2macho.c', '.github/workflows/art.yml']
+    paths: ['port/art/**', 'tests/dvm/**', 'src/dvm/**', 'tools/oat2macho.c', 'tools/oat-dlopen-test.c', '.github/workflows/art.yml']
   workflow_dispatch:
 
 jobs:
@@ -32,7 +32,7 @@ jobs:
           key: art-${{ runner.arch }}-${{ hashFiles('port/art/**') }}
 
       - name: Build ART
-        run: INSTALL=1 port/art/build.sh
+        run: ART_INSTALL=1 port/art/build.sh
 
       - name: DVM tests (also records the JVM's expected output)
         run: tests/dvm/run.sh
@@ -40,10 +40,11 @@ jobs:
       - name: Tests on ART, compiled ahead of time for arm64
         run: port/art/test.sh
 
-      - name: oat2macho on an arm64 oat file
+      - name: Every oat file converts for iOS
         run: |
-          clang -std=c11 -O1 -Wall tools/oat2macho.c -o build/oat2macho
-          for f in build/art-tests/oat/*; do build/oat2macho --ios "$f" build/art-tests/test.dylib || true; break; done
+          clang -std=c11 -O1 -Wall -Wextra tools/oat2macho.c -o build/oat2macho
+          mkdir -p build/ios-dylibs
+          for f in build/art-tests/oat/*; do build/oat2macho --ios "$f" "build/ios-dylibs/$(basename "$f" | tr '@' '_').dylib"; done
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -51,5 +52,31 @@ jobs:
           name: arm64-oat
           path: |
             build/art-tests/oat
+            build/ios-dylibs
             build/art/art-build.log
           if-no-files-found: ignore
+
+  # dyld is the judge of a Mach-O file: load the converted oat files on Apple
+  # Silicon, signed as an app would sign them, and check what ART relies on.
+  darwin:
+    needs: art
+    runs-on: macos-14
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: arm64-oat
+          path: build
+      - name: Convert, sign and dlopen on macOS arm64
+        run: |
+          clang -std=c11 -O1 -Wall -Wextra tools/oat2macho.c -o build/oat2macho
+          clang -O1 -Wall tools/oat-dlopen-test.c -o build/oat-dlopen-test
+          mkdir -p build/macos-dylibs
+          for f in build/art-tests/oat/*; do
+            out="build/macos-dylibs/$(basename "$f" | tr '@' '_').dylib"
+            build/oat2macho --macos "$f" "$out"
+            codesign -s - -f "$out"
+          done
+          codesign -v build/macos-dylibs/*.dylib
+          build/oat-dlopen-test build/macos-dylibs/*.dylib
