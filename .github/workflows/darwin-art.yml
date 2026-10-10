@@ -172,64 +172,48 @@ jobs:
     timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
+      # what this job makes depends on these alone: with them unchanged, it is taken whole
+      - uses: actions/cache/restore@v4
+        id: out
+        with:
+          path: |
+            build/boot.tgz
+            build/boot-ios.tgz
+          key: boot-out-${{ hashFiles('port/art/patches/**', 'port/art/build.sh', 'port/art/dx-via-d8', 'port/art/boot-image.sh', 'port/art/ci-boot.sh', 'tools/oat2macho.c', 'tests/dvm/Hello.java') }}
       - name: Packages
+        if: steps.out.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq meson ninja-build autoconf automake libtool pkg-config clang zlib1g-dev openjdk-21-jdk-headless \
             libbsd-dev libelf-dev libicu-dev libssl-dev libexpat1-dev zip liblz4-dev liblzma-dev \
             libcap-dev libegl-dev libpng-dev valgrind binutils ccache
       - uses: actions/cache@v4
+        if: steps.out.outputs.cache-hit != 'true'
         with:
           path: build/art
-          key: art-${{ runner.arch }}-${{ hashFiles('port/art/**') }}
+          key: art-${{ runner.arch }}-${{ hashFiles('port/art/patches/**', 'port/art/build.sh', 'port/art/dx-via-d8') }}
       - uses: actions/cache/restore@v4
+        if: steps.out.outputs.cache-hit != 'true'
         with:
           path: ~/.cache/ccache
           key: ccache-${{ runner.arch }}-${{ github.sha }}
           restore-keys: ccache-${{ runner.arch }}-
       - name: Build ART
+        if: steps.out.outputs.cache-hit != 'true'
         run: |
           export PATH=/usr/lib/ccache:$PATH CCACHE_DIR=~/.cache/ccache
           export CCACHE_SLOPPINESS=include_file_mtime,include_file_ctime,time_macros
           ART_INSTALL=1 port/art/build.sh
-      - name: Boot image
-        run: port/art/boot-image.sh build/boot --macos
-      # Hello's own code, compiled against the image for where the macOS job runs it: an
-      # odex beside classes.dex is found by the dex file's location
-      - name: Hello, compiled ahead of time
-        run: |
-          v=$(sed -n 's/^R8_VERSION=//p' port/art/build.sh)
-          curl -fsSL -o build/r8.jar "https://dl.google.com/android/maven2/com/android/tools/r8/$v/r8-$v.jar"
-          H=build/boot/hello; mkdir -p $H/cls $H/oat/arm64
-          javac --release 8 -d $H/cls tests/dvm/Hello.java
-          java -cp build/r8.jar com.android.tools.r8.D8 --min-api 26 --output $H $H/cls/*.class
-          B="$PWD/build/boot"
-          bcp=$(tr ':' '\n' < "$B/boot.classpath" | sed "s|^/boot/|$B/jars/|" | paste -sd: -)
-          ANDROID_DATA="$B/android-data" dex2oat --runtime-arg -Xbootclasspath:"$bcp" \
-            --runtime-arg -Xbootclasspath-locations:"$(cat "$B/boot.classpath")" \
-            --boot-image="$B/boot.art" --instruction-set=arm64 --class-loader-context='PCL[]' \
-            --dex-file=$H/classes.dex --dex-location=/Users/runner/work/Husk/Husk/build/boot/hello/classes.dex \
-            --oat-file=$H/oat/arm64/classes.odex
-          build/boot/oat2macho --macos $H/oat/arm64/classes.odex $H/oat/arm64/classes.odex.dylib
-          ls -la $H/oat/arm64
-      - name: Pack the boot image
-        run: tar -czf build/boot.tgz -C build boot/jars boot/arm64 boot/boot.classpath boot/hello
-      # the same for iOS: the code as iOS dylibs, Hello compiled with a relative dex location
-      # (ART resolves it against where the app is installed)
-      - name: Boot image and Hello for iOS
-        run: |
-          rm -rf build/boot-ios; mkdir -p build/boot-ios/hello/oat/arm64
-          cp -R build/boot/jars build/boot/arm64 build/boot/boot.classpath build/boot-ios/
-          for f in build/boot-ios/arm64/*.oat; do build/boot/oat2macho --ios "$f" "$f.dylib"; done
-          B="$PWD/build/boot"; H=build/boot-ios/hello
-          cp build/boot/hello/classes.dex $H/
-          bcp=$(tr ':' '\n' < "$B/boot.classpath" | sed "s|^/boot/|$B/jars/|" | paste -sd: -)
-          ANDROID_DATA="$B/android-data" dex2oat --runtime-arg -Xbootclasspath:"$bcp" \
-            --runtime-arg -Xbootclasspath-locations:"$(cat "$B/boot.classpath")" \
-            --boot-image="$B/boot.art" --instruction-set=arm64 --class-loader-context='PCL[]' \
-            --dex-file=$H/classes.dex --dex-location=classes.dex --oat-file=$H/oat/arm64/classes.odex
-          build/boot/oat2macho --ios $H/oat/arm64/classes.odex $H/oat/arm64/classes.odex.dylib
-          tar -czf build/boot-ios.tgz -C build boot-ios
+      - name: Boot image and Hello, for macOS and iOS
+        if: steps.out.outputs.cache-hit != 'true'
+        run: port/art/ci-boot.sh
+      - uses: actions/cache/save@v4
+        if: steps.out.outputs.cache-hit != 'true'
+        with:
+          path: |
+            build/boot.tgz
+            build/boot-ios.tgz
+          key: ${{ steps.out.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v4
         with:
           name: boot-image-ios
