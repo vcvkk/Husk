@@ -7,7 +7,7 @@ name: oat2macho on Darwin
 on:
   push:
     branches: [husk-port]
-    paths: ['tools/oat2macho.c', 'tools/oat-dlopen-test.c', 'tests/oat2macho/**', '.github/workflows/darwin.yml']
+    paths: ['tools/oat2macho.c', 'tools/oat-dlopen-test.c', 'tools/low4g-probe.c', 'tests/oat2macho/**', '.github/workflows/darwin.yml']
   workflow_dispatch:
 
 jobs:
@@ -32,3 +32,21 @@ jobs:
           otool -l build/dylibs/Hello.arm64.dylib | head -60
       - name: dlopen
         run: build/oat-dlopen-test build/dylibs/*.dylib
+
+  # ART's heap must be below 4 GiB (32-bit references); a Mach-O program's
+  # __PAGEZERO covers that range unless it is linked smaller
+  low4g:
+    runs-on: macos-14
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Default __PAGEZERO
+        run: |
+          clang -O1 tools/low4g-probe.c -o probe-default
+          ./probe-default
+      - name: Small __PAGEZERO
+        run: |
+          clang -O1 tools/low4g-probe.c -Wl,-pagezero_size,0x4000 -o probe-small || exit 0
+          otool -l probe-small | grep -A5 __PAGEZERO | head -6
+          codesign -s - -f probe-small
+          ./probe-small; echo "exit $?"
