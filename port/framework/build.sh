@@ -25,6 +25,8 @@ if ! "$JAVAC" -nowarn --release 8 -encoding UTF-8 -Xmaxerrs 100000 -cp "$TMP/stu
     grep -v "^Note:" "$TMP/javac.log" | head -60 >&2; echo "javac failed" >&2; exit 1
 fi
 (cd "$TMP/classes" && jar cf "$TMP/classes.jar" .)
+# the class files too, for checking an app's references against the framework (check-app.sh)
+[ -n "${CLASSES_JAR:-}" ] && cp "$TMP/classes.jar" "$CLASSES_JAR"
 mkdir -p "$TMP/dex"
 "$JAVA" -cp "$R8" com.android.tools.r8.D8 --min-api 26 --output "$TMP/dex" "$TMP/classes.jar"
 mkdir -p "$(dirname "$OUT")"

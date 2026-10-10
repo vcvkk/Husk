@@ -73,6 +73,7 @@ public class KeyEvent extends InputEvent {
     public final long getDownTime() { return downTime; }
     public final long getEventTime() { return eventTime; }
     public final int getSource() { return source; }
+    public final boolean isFromSource(int s) { return (source & s) == s; }
     public final int getDeviceId() { return mDeviceId; }
     public final int getFlags() { return mFlags; }
     public final int getScanCode() { return mScanCode; }
