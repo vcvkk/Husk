@@ -27,6 +27,12 @@ SYSTEM = {"c": None, "gcc": None, "pthread": None, "rt": None, "dl": None, "atom
           "z": "z", "lz4": "lz4", "lzma": "lzma", "expat": "expat", "crypto": "crypto",
           "icuuc": "icuuc", "icui18n": "icui18n", "dl_bio": "dl_bio", "vixl": None}
 
+# Linux lets a shared library leave symbols for whatever loads it; Darwin's linker wants each
+# one found. Libraries the build does not name, and symbols of a cycle (libcutils links
+# libutils, whose NativeHandle calls libcutils), resolved at load time.
+EXTRA_LIBS = {"libutils": ["liblog"]}
+LOOKUP = {"libutils": ["_native_handle_close", "_native_handle_delete"]}
+
 DROP = {"-Wa,--noexecstack", "-fpermissive", "-ffloat-store", "-Werror", "-no-canonical-prefixes",
         "-DLINUX", "-D__GLIBC__", "-m64", "-fstack-protector", "-g", "-ggdb3"}
 
@@ -203,7 +209,7 @@ rule gen
             if s in want and s not in link["whole_static"]:
                 ld.append(products[s])
                 deps.append(products[s])
-        for l in link["libs"]:
+        for l in link["libs"] + EXTRA_LIBS.get(name, []):
             if l in want:
                 p = os.path.join(out, "lib", l + ".so")
                 ld.append(p)
@@ -212,6 +218,7 @@ rule gen
             d = SYSTEM.get(l, l)
             if d:
                 ld.append("-l" + d)
+        ld += [f"-Wl,-U,{s}" for s in LOOKUP.get(name, [])]
         if m["kind"] == "shared":
             p = os.path.join(out, "lib", name + ".so")
             w.write(f"build {p}: so {' '.join(objs)} | {' '.join(deps)}\n  soname = {name}.so\n  ldflags = {q(ld)}\n")

@@ -2,7 +2,8 @@ name: ART runtime on Darwin
 
 # Builds ART's runtime (dalvikvm, libart, the class library's native code) for
 # macOS arm64 from port/art/darwin/modules.json, keeping going past errors, and
-# reports them grouped by file: the work list for the Darwin port.
+# reports them grouped by file: the work list for the Darwin port. Once it all
+# links, builds the class library and runs tests/dvm's Hello on it.
 
 on:
   push:
@@ -50,6 +51,39 @@ jobs:
           python3 port/art/darwin/errors.py build/darwin/ninja.log | tee build/darwin/errors.txt
           exit $status
 
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Class library (Java)
+        run: |
+          v=$(sed -n 's/^R8_VERSION=//p' port/art/build.sh)
+          export R8_JAR="$PWD/build/r8.jar" DX="$PWD/port/art/dx-via-d8"
+          curl -fsSL -o "$R8_JAR" "https://dl.google.com/android/maven2/com/android/tools/r8/$v/r8-$v.jar"
+          (cd build/art_standalone && bash "$GITHUB_WORKSPACE/port/art/darwin/javalibs.sh") > build/darwin/javalibs.log 2>&1 \
+            || { tail -40 build/darwin/javalibs.log; exit 1; }
+          # the layout libart looks for its class library in: lib/../java/dex/art
+          mkdir -p build/darwin/java/dex/art
+          cp build/art_standalone/out/host/linux-x86/framework/*-hostdex.jar build/darwin/java/dex/art/
+          ln -sfn ../../../lib build/darwin/java/dex/art/natives
+          ls -la build/darwin/java/dex/art
+
+      - name: Hello on dalvikvm (interpreter, no boot image)
+        run: |
+          mkdir -p build/hello/cls build/android-data/dalvik-cache
+          javac --release 8 -d build/hello/cls tests/dvm/Hello.java
+          java -cp build/r8.jar com.android.tools.r8.D8 --min-api 26 --output build/hello build/hello/cls/*.class
+          export ANDROID_DATA="$PWD/build/android-data"
+          set +e
+          (cd build/hello && ../darwin/bin/dalvikvm -Xusejit:false -Xnoimage-dex2oat -Xss8m -cp classes.dex Hello) \
+            > build/darwin/hello.out 2> build/darwin/hello.err
+          status=$?
+          echo "dalvikvm exit $status"
+          cat build/darwin/hello.out
+          tail -60 build/darwin/hello.err
+          exit $status
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -58,4 +92,7 @@ jobs:
             build/darwin/ninja.log
             build/darwin/errors.txt
             build/darwin/build.ninja
+            build/darwin/javalibs.log
+            build/darwin/hello.out
+            build/darwin/hello.err
           if-no-files-found: ignore
