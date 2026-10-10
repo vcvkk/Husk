@@ -1,0 +1,410 @@
+diff --git a/art/libartbase/base/globals.h b/art/libartbase/base/globals.h
+index 618a7069..837c2d0b 100644
+--- a/art/libartbase/base/globals.h
++++ b/art/libartbase/base/globals.h
+@@ -48,6 +48,17 @@ static constexpr int kPageSize = 16384;
+ // still load where pages are 4 KiB. (Later ART versions have the same constant.)
+ static constexpr size_t kElfSegmentAlignment = 16384;
+ 
++// Where the managed heap lives. References between objects are 32 bits; ART 10 had them be the
++// objects' addresses, which put the heap and boot image below 4 GiB. Apple's arm64 systems give a
++// process no memory there (a 4 GiB __PAGEZERO, which the kernel insists on), so the heap lives in
++// the 4 GiB window from kHeapBase, on every system alike. A reference is an address's low 32 bits;
++// the address is kHeapBase | reference, one instruction (orr with an immediate) in compiled code.
++// 32 GiB: clear of what Darwin maps low (executables, dyld's shared cache) and within the 63 GiB
++// an iOS app has. The page at kHeapBase is kept inaccessible (MemMap::Init), so that a null
++// reference made an address faults like a null pointer.
++static constexpr uintptr_t kHeapBase = UINT64_C(0x800000000);
++static constexpr uintptr_t kHeapWindowSize = UINT64_C(4) * 1024 * 1024 * 1024;
++
+ // Clion, clang analyzer, etc can falsely believe that "if (kIsDebugBuild)" always
+ // returns the same value. By wrapping into a call to another constexpr function, we force it
+ // to realize that is not actually always evaluating to the same value.
+diff --git a/art/libartbase/base/mem_map.cc b/art/libartbase/base/mem_map.cc
+index 9e44444d..78ed2551 100644
+--- a/art/libartbase/base/mem_map.cc
++++ b/art/libartbase/base/mem_map.cc
+@@ -90,6 +90,17 @@ std::ostream& operator<<(std::ostream& os, const Maps& mem_maps) {
+ 
+ std::mutex* MemMap::mem_maps_lock_ = nullptr;
+ 
++// Keeps the page at kHeapBase (globals.h) inaccessible: a null reference made an address points
++// there.
++static void ReserveHeapBase() {
++  void* page = mmap(reinterpret_cast<void*>(kHeapBase), kPageSize, PROT_NONE,
++                    MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
++  if (page != reinterpret_cast<void*>(kHeapBase)) {
++    LOG(FATAL) << "The managed heap's window at " << reinterpret_cast<void*>(kHeapBase)
++               << " is not free: got " << page;
++  }
++}
++
+ #if USE_ART_LOW_4G_ALLOCATOR
+ // Handling mem_map in 32b address range for 64b architectures that do not support MAP_32BIT.
+ 
+@@ -145,7 +156,7 @@ static uintptr_t GenerateNextMemPos() {
+ }
+ 
+ // Initialize linear scan to random position.
+-uintptr_t MemMap::next_mem_pos_ = GenerateNextMemPos();
++uintptr_t MemMap::next_mem_pos_ = kHeapBase + GenerateNextMemPos();  // in the heap window
+ #endif
+ 
+ // Return true if the address range is contained in a single memory map by either reading
+@@ -265,7 +276,8 @@ void* MemMap::TryMemMapLow4GB(void* ptr,
+   if (actual != MAP_FAILED) {
+     // Since we didn't use MAP_FIXED the kernel may have mapped it somewhere not in the low
+     // 4GB. If this is the case, unmap and retry.
+-    if (reinterpret_cast<uintptr_t>(actual) + page_aligned_byte_count >= 4 * GB) {
++    if (reinterpret_cast<uintptr_t>(actual) < kHeapBase ||
++        reinterpret_cast<uintptr_t>(actual) + page_aligned_byte_count >= kHeapBase + 4 * GB) {
+       TargetMUnmap(actual, page_aligned_byte_count);
+       actual = MAP_FAILED;
+     }
+@@ -977,6 +989,7 @@ void MemMap::Init() {
+   DCHECK(gMaps == nullptr);
+   gMaps = new Maps;
+ 
++  ReserveHeapBase();
+   TargetMMapInit();
+ }
+ 
+@@ -1028,7 +1041,8 @@ void* MemMap::MapInternalArtLow4GBAllocator(size_t length,
+   bool first_run = true;
+ 
+   std::lock_guard<std::mutex> mu(*mem_maps_lock_);
+-  for (uintptr_t ptr = next_mem_pos_; ptr < 4 * GB; ptr += kPageSize) {
++  const uintptr_t window_end = kHeapBase + 4 * GB;
++  for (uintptr_t ptr = next_mem_pos_; ptr < window_end; ptr += kPageSize) {
+     // Use gMaps as an optimization to skip over large maps.
+     // Find the first map which is address > ptr.
+     auto it = gMaps->upper_bound(reinterpret_cast<void*>(ptr));
+@@ -1059,11 +1073,11 @@ void* MemMap::MapInternalArtLow4GBAllocator(size_t length,
+       return actual;
+     }
+ 
+-    if (4U * GB - ptr < length) {
+-      // Not enough memory until 4GB.
++    if (window_end - ptr < length) {
++      // Not enough memory until the window's end.
+       if (first_run) {
+         // Try another time from the bottom;
+-        ptr = LOW_MEM_START - kPageSize;
++        ptr = kHeapBase + LOW_MEM_START - kPageSize;
+         first_run = false;
+         continue;
+       } else {
+@@ -1120,14 +1134,15 @@ void* MemMap::MapInternal(void* addr,
+ #ifdef __LP64__
+   // When requesting low_4g memory and having an expectation, the requested range should fit into
+   // 4GB.
+-  if (low_4gb && (
++  // "low 4 GiB" memory is the heap window (globals.h).
++  if (low_4gb && addr != nullptr && (
+       // Start out of bounds.
+-      (reinterpret_cast<uintptr_t>(addr) >> 32) != 0 ||
+-      // End out of bounds. For simplicity, this will fail for the last page of memory.
+-      ((reinterpret_cast<uintptr_t>(addr) + length) >> 32) != 0)) {
++      reinterpret_cast<uintptr_t>(addr) < kHeapBase ||
++      // End out of bounds.
++      reinterpret_cast<uintptr_t>(addr) + length > kHeapBase + kHeapWindowSize)) {
+     LOG(ERROR) << "The requested address space (" << addr << ", "
+                << reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(addr) + length)
+-               << ") cannot fit in low_4gb";
++               << ") is not in the heap window at " << reinterpret_cast<void*>(kHeapBase);
+     return MAP_FAILED;
+   }
+ #else
+diff --git a/art/libartbase/base/mem_map.h b/art/libartbase/base/mem_map.h
+index afafd163..4b4384aa 100644
+--- a/art/libartbase/base/mem_map.h
++++ b/art/libartbase/base/mem_map.h
+@@ -29,13 +29,11 @@
+ 
+ namespace art {
+ 
+-#if defined(__LP64__) && !defined(__Fuchsia__) && \
+-    (defined(__aarch64__) || defined(__mips__) || defined(__APPLE__))
++// "low 4 GiB" memory is the heap window from kHeapBase (globals.h), which ART finds room in
++// itself on every 64-bit system: MAP_32BIT would put it below 4 GiB.
++#if defined(__LP64__) && !defined(__Fuchsia__)
+ #define USE_ART_LOW_4G_ALLOCATOR 1
+ #else
+-#if defined(__LP64__) && !defined(__Fuchsia__) && !defined(__x86_64__)
+-#error "Unrecognized 64-bit architecture."
+-#endif
+ #define USE_ART_LOW_4G_ALLOCATOR 0
+ #endif
+ 
+diff --git a/art/libartbase/base/utils.h b/art/libartbase/base/utils.h
+index f434cb40..a4ed7fb3 100644
+--- a/art/libartbase/base/utils.h
++++ b/art/libartbase/base/utils.h
+@@ -33,9 +33,10 @@
+ 
+ namespace art {
+ 
++// The 32 bits that stand for a pointer into the heap window (globals.h): its low 32 bits.
+ static inline uint32_t PointerToLowMemUInt32(const void* p) {
+   uintptr_t intp = reinterpret_cast<uintptr_t>(p);
+-  DCHECK_LE(intp, 0xFFFFFFFFU);
++  DCHECK(intp <= 0xFFFFFFFFU || (intp & ~UINT64_C(0xFFFFFFFF)) == kHeapBase) << p;
+   return intp & 0xFFFFFFFFU;
+ }
+ 
+diff --git a/art/runtime/debugger.cc b/art/runtime/debugger.cc
+index c5b111f8..78c3fbe1 100644
+--- a/art/runtime/debugger.cc
++++ b/art/runtime/debugger.cc
+@@ -2702,7 +2702,7 @@ JDWP::JdwpError Dbg::GetLocalValue(const StackVisitor& visitor, ScopedObjectAcce
+       if (!visitor.GetVReg(m, vreg, kReferenceVReg, &intVal)) {
+         return FailGetLocalValue(visitor, vreg, tag);
+       }
+-      mirror::Object* o = reinterpret_cast<mirror::Object*>(intVal);
++      mirror::Object* o = mirror::ReferenceAsPointer(intVal);
+       VLOG(jdwp) << "get " << tag << " object local " << vreg << " = " << o;
+       if (!Runtime::Current()->GetHeap()->IsValidObjectAddress(o)) {
+         LOG(FATAL) << StringPrintf("Found invalid object %#" PRIxPTR " in register v%u",
+diff --git a/art/runtime/gc/heap.cc b/art/runtime/gc/heap.cc
+index ff53f789..60edd620 100644
+--- a/art/runtime/gc/heap.cc
++++ b/art/runtime/gc/heap.cc
+@@ -394,13 +394,13 @@ Heap::Heap(size_t initial_size,
+     if (foreground_collector_type_ == kCollectorTypeCC) {
+       // Need to use a low address so that we can allocate a contiguous 2 * Xmx space
+       // when there's no image (dex2oat for target).
+-      request_begin = kPreferredAllocSpaceBegin;
++      request_begin = reinterpret_cast<uint8_t*>(kHeapBase) + reinterpret_cast<uintptr_t>(kPreferredAllocSpaceBegin);
+     }
+     // Gross hack to make dex2oat deterministic.
+     if (foreground_collector_type_ == kCollectorTypeMS && Runtime::Current()->IsAotCompiler()) {
+       // Currently only enabled for MS collector since that is what the deterministic dex2oat uses.
+       // b/26849108
+-      request_begin = reinterpret_cast<uint8_t*>(kAllocSpaceBeginForDeterministicAoT);
++      request_begin = reinterpret_cast<uint8_t*>(kHeapBase + kAllocSpaceBeginForDeterministicAoT);
+     }
+   }
+ 
+@@ -442,7 +442,7 @@ Heap::Heap(size_t initial_size,
+     CHECK(non_moving_space_mem_map.IsValid()) << error_str;
+     DCHECK(!heap_reservation.IsValid());
+     // Try to reserve virtual memory at a lower address if we have a separate non moving space.
+-    request_begin = kPreferredAllocSpaceBegin + non_moving_space_capacity;
++    request_begin = reinterpret_cast<uint8_t*>(kHeapBase) + reinterpret_cast<uintptr_t>(kPreferredAllocSpaceBegin) + non_moving_space_capacity;
+   }
+   // Attempt to create 2 mem maps at or after the requested begin.
+   if (foreground_collector_type_ != kCollectorTypeCC) {
+@@ -589,9 +589,10 @@ Heap::Heap(size_t initial_size,
+   UNUSED(heap_capacity);
+   // Start at 4 KB, we can be sure there are no spaces mapped this low since the address range is
+   // reserved by the kernel.
+-  static constexpr size_t kMinHeapAddress = 4 * KB;
++  // The heap window (globals.h, kHeapBase).
++  static constexpr size_t kMinHeapAddress = kHeapBase + 4 * KB;
+   card_table_.reset(accounting::CardTable::Create(reinterpret_cast<uint8_t*>(kMinHeapAddress),
+-                                                  4 * GB - kMinHeapAddress));
++                                                  kHeapBase + 4 * GB - kMinHeapAddress));
+   CHECK(card_table_.get() != nullptr) << "Failed to create card table";
+   if (foreground_collector_type_ == kCollectorTypeCC && kUseTableLookupReadBarrier) {
+     rb_table_.reset(new accounting::ReadBarrierTable());
+diff --git a/art/runtime/gc/space/space.cc b/art/runtime/gc/space/space.cc
+index e7961eb2..3a4cf28c 100644
+--- a/art/runtime/gc/space/space.cc
++++ b/art/runtime/gc/space/space.cc
+@@ -79,12 +79,13 @@ ContinuousMemMapAllocSpace* Space::AsContinuousMemMapAllocSpace() {
+ DiscontinuousSpace::DiscontinuousSpace(const std::string& name,
+                                        GcRetentionPolicy gc_retention_policy) :
+     Space(name, gc_retention_policy) {
+-  // TODO: Fix this if we ever support objects not in the low 32 bit.
++  // Objects are in the heap window (globals.h, kHeapBase).
+   const size_t capacity = static_cast<size_t>(std::numeric_limits<uint32_t>::max());
+-  live_bitmap_.reset(accounting::LargeObjectBitmap::Create("large live objects", nullptr,
++  uint8_t* const window = reinterpret_cast<uint8_t*>(kHeapBase);
++  live_bitmap_.reset(accounting::LargeObjectBitmap::Create("large live objects", window,
+                                                            capacity));
+   CHECK(live_bitmap_.get() != nullptr);
+-  mark_bitmap_.reset(accounting::LargeObjectBitmap::Create("large marked objects", nullptr,
++  mark_bitmap_.reset(accounting::LargeObjectBitmap::Create("large marked objects", window,
+                                                            capacity));
+   CHECK(mark_bitmap_.get() != nullptr);
+ }
+diff --git a/art/runtime/interpreter/interpreter.cc b/art/runtime/interpreter/interpreter.cc
+index db116f5a..c7509b9b 100644
+--- a/art/runtime/interpreter/interpreter.cc
++++ b/art/runtime/interpreter/interpreter.cc
+@@ -42,7 +42,7 @@ namespace interpreter {
+ 
+ ALWAYS_INLINE static ObjPtr<mirror::Object> ObjArg(uint32_t arg)
+     REQUIRES_SHARED(Locks::mutator_lock_) {
+-  return reinterpret_cast<mirror::Object*>(arg);
++  return mirror::ReferenceAsPointer(arg);
+ }
+ 
+ static void InterpreterJni(Thread* self,
+@@ -238,6 +238,12 @@ enum InterpreterImplKind {
+   kMterpImplKind          // Assembly interpreter
+ };
+ 
++// mterp's assembly takes a reference for the object's address, which it is not with the heap
++// above 4 GiB (globals.h, kHeapBase): the C++ interpreter, which goes through mirror::
++// ObjectReference, until mterp adds the heap base.
++#ifndef ART_USE_CXX_INTERPRETER
++#define ART_USE_CXX_INTERPRETER 1
++#endif
+ #if ART_USE_CXX_INTERPRETER
+ static constexpr InterpreterImplKind kInterpreterImplKind = kSwitchImplKind;
+ #else
+diff --git a/art/runtime/interpreter/mterp/mterp.cc b/art/runtime/interpreter/mterp/mterp.cc
+index 6a8f8649..fb0249ed 100644
+--- a/art/runtime/interpreter/mterp/mterp.cc
++++ b/art/runtime/interpreter/mterp/mterp.cc
+@@ -146,7 +146,9 @@ extern "C" ssize_t MterpDoPackedSwitch(const uint16_t* switchData, int32_t testV
+ bool CanUseMterp()
+     REQUIRES_SHARED(Locks::mutator_lock_) {
+   const Runtime* const runtime = Runtime::Current();
++  // Not with the heap above 4 GiB (globals.h): see kInterpreterImplKind in interpreter.cc.
+   return
++      false &&
+       runtime->IsStarted() &&
+       !runtime->IsAotCompiler() &&
+       !Dbg::IsDebuggerActive() &&
+diff --git a/art/runtime/interpreter/unstarted_runtime.cc b/art/runtime/interpreter/unstarted_runtime.cc
+index 9b905eea..5c329ec9 100644
+--- a/art/runtime/interpreter/unstarted_runtime.cc
++++ b/art/runtime/interpreter/unstarted_runtime.cc
+@@ -1831,8 +1831,8 @@ void UnstartedRuntime::UnstartedJNIArrayCreateMultiArray(
+     Thread* self, ArtMethod* method ATTRIBUTE_UNUSED, mirror::Object* receiver ATTRIBUTE_UNUSED,
+     uint32_t* args, JValue* result) {
+   StackHandleScope<2> hs(self);
+-  auto h_class(hs.NewHandle(reinterpret_cast<mirror::Class*>(args[0])->AsClass()));
+-  auto h_dimensions(hs.NewHandle(reinterpret_cast<mirror::IntArray*>(args[1])->AsIntArray()));
++  auto h_class(hs.NewHandle(mirror::ReferenceAsPointer<mirror::Class>(args[0])->AsClass()));
++  auto h_dimensions(hs.NewHandle(mirror::ReferenceAsPointer<mirror::IntArray>(args[1])->AsIntArray()));
+   result->SetL(mirror::Array::CreateMultiArray(self, h_class, h_dimensions));
+ }
+ 
+@@ -1844,7 +1844,7 @@ void UnstartedRuntime::UnstartedJNIArrayCreateObjectArray(
+     ThrowNegativeArraySizeException(length);
+     return;
+   }
+-  ObjPtr<mirror::Class> element_class = reinterpret_cast<mirror::Class*>(args[0])->AsClass();
++  ObjPtr<mirror::Class> element_class = mirror::ReferenceAsPointer<mirror::Class>(args[0])->AsClass();
+   Runtime* runtime = Runtime::Current();
+   ClassLinker* class_linker = runtime->GetClassLinker();
+   ObjPtr<mirror::Class> array_class = class_linker->FindArrayClass(self, element_class);
+diff --git a/art/runtime/lock_word-inl.h b/art/runtime/lock_word-inl.h
+index 4a2a2934..1d5a261f 100644
+--- a/art/runtime/lock_word-inl.h
++++ b/art/runtime/lock_word-inl.h
+@@ -43,7 +43,7 @@ inline Monitor* LockWord::FatLockMonitor() const {
+ 
+ inline size_t LockWord::ForwardingAddress() const {
+   DCHECK_EQ(GetState(), kForwardingAddress);
+-  return value_ << kForwardingAddressShift;
++  return kHeapBase | static_cast<uint32_t>(value_ << kForwardingAddressShift);
+ }
+ 
+ inline LockWord::LockWord() : value_(0) {
+diff --git a/art/runtime/lock_word.h b/art/runtime/lock_word.h
+index ac7890c1..debfeee4 100644
+--- a/art/runtime/lock_word.h
++++ b/art/runtime/lock_word.h
+@@ -148,7 +148,9 @@ class LockWord {
+ 
+   static LockWord FromForwardingAddress(size_t target) {
+     DCHECK_ALIGNED(target, (1 << kStateSize));
+-    return LockWord((target >> kForwardingAddressShift) | kStateForwardingAddressShifted);
++    // An address in the heap window (globals.h): its low 32 bits.
++    return LockWord((static_cast<uint32_t>(target) >> kForwardingAddressShift) |
++                    kStateForwardingAddressShifted);
+   }
+ 
+   static LockWord FromHashCode(uint32_t hash_code, uint32_t gc_state) {
+diff --git a/art/runtime/mirror/object_reference.h b/art/runtime/mirror/object_reference.h
+index f01bcbd8..3026951a 100644
+--- a/art/runtime/mirror/object_reference.h
++++ b/art/runtime/mirror/object_reference.h
+@@ -35,22 +35,30 @@ class Object;
+ template<bool kPoisonReferences, class MirrorType>
+ class PtrCompression {
+  public:
+-  // Compress reference to its bit representation.
++  // Compress reference to its bit representation: the low 32 bits of an address in the heap
++  // window (globals.h).
+   static uint32_t Compress(MirrorType* mirror_ptr) {
+-    uintptr_t as_bits = reinterpret_cast<uintptr_t>(mirror_ptr);
+-    return static_cast<uint32_t>(kPoisonReferences ? -as_bits : as_bits);
++    uint32_t as_bits = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(mirror_ptr));
++    return kPoisonReferences ? -as_bits : as_bits;
+   }
+ 
+   // Uncompress an encoded reference from its bit representation.
+   static MirrorType* Decompress(uint32_t ref) {
+-    uintptr_t as_bits = kPoisonReferences ? -ref : ref;
+-    return reinterpret_cast<MirrorType*>(as_bits);
++    uint32_t as_bits = kPoisonReferences ? -ref : ref;
++    return as_bits == 0u ? nullptr : reinterpret_cast<MirrorType*>(kHeapBase | as_bits);
+   }
+ 
+   // Convert an ObjPtr to a compressed reference.
+   static uint32_t Compress(ObjPtr<MirrorType> ptr) REQUIRES_SHARED(Locks::mutator_lock_);
+ };
+ 
++// A 32-bit reference value, as dex registers and argument arrays hold them, as the object's
++// address (globals.h, kHeapBase).
++template <typename MirrorType = Object>
++ALWAYS_INLINE inline MirrorType* ReferenceAsPointer(uint32_t ref) {
++  return PtrCompression</*kPoisonReferences=*/ false, MirrorType>::Decompress(ref);
++}
++
+ // Value type representing a reference to a mirror::Object of type MirrorType.
+ template<bool kPoisonReferences, class MirrorType>
+ class MANAGED ObjectReference {
+diff --git a/art/runtime/monitor.cc b/art/runtime/monitor.cc
+index 676bceb7..934571a2 100644
+--- a/art/runtime/monitor.cc
++++ b/art/runtime/monitor.cc
+@@ -1483,7 +1483,7 @@ void Monitor::VisitLocks(StackVisitor* stack_visitor,
+       uint32_t value;
+       success = stack_visitor->GetVReg(m, dex_reg, kReferenceVReg, &value);
+       if (success) {
+-        ObjPtr<mirror::Object> o = reinterpret_cast<mirror::Object*>(value);
++        ObjPtr<mirror::Object> o = mirror::ReferenceAsPointer(value);
+         callback(o, callback_context);
+         break;
+       }
+diff --git a/art/runtime/quick_exception_handler.cc b/art/runtime/quick_exception_handler.cc
+index 3bc718b0..30747cf9 100644
+--- a/art/runtime/quick_exception_handler.cc
++++ b/art/runtime/quick_exception_handler.cc
+@@ -536,7 +536,7 @@ class DeoptimizeStackVisitor final : public StackVisitor {
+         }
+       }
+       if (is_reference) {
+-        new_frame->SetVRegReference(vreg, reinterpret_cast<mirror::Object*>(value));
++        new_frame->SetVRegReference(vreg, mirror::ReferenceAsPointer(value));
+       } else {
+         new_frame->SetVReg(vreg, value);
+       }
+diff --git a/art/runtime/stack.cc b/art/runtime/stack.cc
+index 80a563b5..df5a2284 100644
+--- a/art/runtime/stack.cc
++++ b/art/runtime/stack.cc
+@@ -142,7 +142,7 @@ mirror::Object* StackVisitor::GetThisObject() const {
+       if (!GetVReg(m, reg, kReferenceVReg, &value)) {
+         return nullptr;
+       }
+-      return reinterpret_cast<mirror::Object*>(value);
++      return mirror::ReferenceAsPointer(value);
+     }
+   }
+ }
+@@ -393,7 +393,7 @@ bool StackVisitor::SetVReg(ArtMethod* m,
+     thread_->GetUpdatedVRegFlags(frame_id)[vreg] = true;
+   }
+   if (kind == kReferenceVReg) {
+-    shadow_frame->SetVRegReference(vreg, reinterpret_cast<mirror::Object*>(new_value));
++    shadow_frame->SetVRegReference(vreg, mirror::ReferenceAsPointer(new_value));
+   } else {
+     shadow_frame->SetVReg(vreg, new_value);
+   }

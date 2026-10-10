@@ -114,7 +114,7 @@ jobs:
           # a runtime that aborts can loop in its abort: stop it after a while (macOS has no timeout(1))
           limit() { perl -e 'alarm shift; exec @ARGV' "$@"; }
           set +e
-          (cd build/hello && limit 300 ../darwin/bin/dalvikvm -Xusejit:false -Xnoimage-dex2oat -Xss8m -cp classes.dex Hello) \
+          (cd build/hello && limit 300 ../darwin/bin/dalvikvm -Xint -Xnoimage-dex2oat -Xss8m -cp classes.dex Hello) \
             > build/darwin/hello.out 2> build/darwin/hello.err
           status=$?
           echo "dalvikvm exit $status"
@@ -123,7 +123,7 @@ jobs:
           if [ $status -gt 128 ]; then
             # killed by a signal: where, from lldb
             (cd build/hello && limit 300 lldb --batch -o run -k 'thread backtrace all' -k 'register read' -k quit -- \
-              ../darwin/bin/dalvikvm -Xusejit:false -Xnoimage-dex2oat -Xss8m -cp classes.dex Hello) \
+              ../darwin/bin/dalvikvm -Xint -Xnoimage-dex2oat -Xss8m -cp classes.dex Hello) \
               > build/darwin/hello.lldb 2>&1
             tail -150 build/darwin/hello.lldb
           fi

@@ -6,6 +6,7 @@
 # $OUT/oat for inspection.
 #
 #   tests/dvm/run.sh && port/art/test.sh
+#   DALVIKVM_FLAGS="-Xint -Xnoimage-dex2oat" port/art/test.sh    (interpreter, no boot image)
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 T="$ROOT/build/dvm-tests/t"
@@ -15,7 +16,7 @@ mkdir -p "$ANDROID_DATA" "$OUT/oat"
 pass=0; fail=0
 for d in "$T"/*/; do
     t="$(basename "$d")"
-    (cd "$d" && timeout 600 dalvikvm -Xss8m -cp classes.dex "$t" > art.out 2> art.err)
+    (cd "$d" && timeout 600 dalvikvm ${DALVIKVM_FLAGS:-} -Xss8m -cp classes.dex "$t" > art.out 2> art.err)
     code=$?
     # ATL's runtime prints this line for an uncaught exception
     grep -v '^hacky_uncaught_exception_handler' "$d/art.out" > "$d/art.cmp"
