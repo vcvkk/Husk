@@ -18,6 +18,10 @@ PREFIX="${PREFIX:-/usr/local}"
 mkdir -p "$WORK" && cd "$WORK"
 export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:-}"
 export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig:$PREFIX/lib/$(gcc -dumpmachine)/pkgconfig:${PKG_CONFIG_PATH:-}"
+# what is built here (libunwind 1.8, which bionic_translation needs) before the system's: the
+# linker resolves libdl_bio's libunwind.so.8 through these too
+export LIBRARY_PATH="$PREFIX/lib:$PREFIX/lib/$(gcc -dumpmachine)${LIBRARY_PATH:+:$LIBRARY_PATH}"
+export LD_LIBRARY_PATH="$PREFIX/lib:$PREFIX/lib/$(gcc -dumpmachine)${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 fetch_rev() {  # url dir rev
     [ -d "$2/.git" ] || { git init -q "$2"; git -C "$2" remote add origin "$1"; }
