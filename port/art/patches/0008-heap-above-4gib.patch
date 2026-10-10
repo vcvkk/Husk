@@ -1696,3 +1696,19 @@ index ff090dd4..517f5665 100644
            }
          }
        }
+diff --git a/libnativehelper/JniInvocation.cpp b/libnativehelper/JniInvocation.cpp
+index b8699141..f4146fc4 100644
+--- a/libnativehelper/JniInvocation.cpp
++++ b/libnativehelper/JniInvocation.cpp
+@@ -52,7 +52,11 @@ JniInvocation::~JniInvocation() {
+ static const char* kLibrarySystemProperty = "persist.sys.dalvik.vm.lib.2";
+ static const char* kDebuggableSystemProperty = "ro.debuggable";
+ #endif
++#ifdef __APPLE__
++static const char* kLibraryFallback = "libart.dylib";
++#else
+ static const char* kLibraryFallback = "libart.so";
++#endif
+ 
+ template<typename T> void UNUSED(const T&) {}
+ 
