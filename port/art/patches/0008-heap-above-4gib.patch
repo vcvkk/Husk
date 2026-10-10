@@ -1,5 +1,5 @@
 diff --git a/art/compiler/optimizing/code_generator_arm64.cc b/art/compiler/optimizing/code_generator_arm64.cc
-index 43acce56..e6a0bdc7 100644
+index 43acce56..b4978311 100644
 --- a/art/compiler/optimizing/code_generator_arm64.cc
 +++ b/art/compiler/optimizing/code_generator_arm64.cc
 @@ -1056,7 +1056,11 @@ void ParallelMoveResolverARM64::FreeScratchLocation(Location loc) {
@@ -225,7 +225,26 @@ index 43acce56..e6a0bdc7 100644
        break;
      }
      case HLoadClass::LoadKind::kBssEntry: {
-@@ -4836,6 +4918,8 @@ void InstructionCodeGeneratorARM64::VisitLoadString(HLoadString* load) NO_THREAD
+@@ -4758,7 +4840,8 @@ void LocationsBuilderARM64::VisitLoadException(HLoadException* load) {
+ }
+ 
+ void InstructionCodeGeneratorARM64::VisitLoadException(HLoadException* instruction) {
+-  __ Ldr(OutputRegister(instruction), GetExceptionTlsAddress());
++  // a 64-bit pointer: all of it, the address
++  __ Ldr(OutputRegister(instruction).X(), GetExceptionTlsAddress());
+ }
+ 
+ void LocationsBuilderARM64::VisitClearException(HClearException* clear) {
+@@ -4766,7 +4849,7 @@ void LocationsBuilderARM64::VisitClearException(HClearException* clear) {
+ }
+ 
+ void InstructionCodeGeneratorARM64::VisitClearException(HClearException* clear ATTRIBUTE_UNUSED) {
+-  __ Str(wzr, GetExceptionTlsAddress());
++  __ Str(xzr, GetExceptionTlsAddress());
+ }
+ 
+ HLoadString::LoadKind CodeGeneratorARM64::GetSupportedLoadStringKind(
+@@ -4836,6 +4919,8 @@ void InstructionCodeGeneratorARM64::VisitLoadString(HLoadString* load) NO_THREAD
        vixl::aarch64::Label* ldr_label =
            codegen_->NewBootImageRelRoPatch(boot_image_offset, adrp_label);
        codegen_->EmitLdrOffsetPlaceholder(ldr_label, out.W(), out.X());
@@ -234,7 +253,7 @@ index 43acce56..e6a0bdc7 100644
        return;
      }
      case HLoadString::LoadKind::kBssEntry: {
-@@ -5841,7 +5925,8 @@ void CodeGeneratorARM64::GenerateGcRootFieldLoad(
+@@ -5841,7 +5926,8 @@ void CodeGeneratorARM64::GenerateGcRootFieldLoad(
        EmitLdrOffsetPlaceholder(fixup_label, root_reg, obj.X());
      }
      // Note that GC roots are not affected by heap poisoning, thus we
@@ -244,7 +263,7 @@ index 43acce56..e6a0bdc7 100644
    }
    MaybeGenerateMarkingRegisterCheck(/* code= */ __LINE__);
  }
-@@ -6096,8 +6181,9 @@ void CodeGeneratorARM64::MaybeGenerateReadBarrierSlow(HInstruction* instruction,
+@@ -6096,8 +6182,9 @@ void CodeGeneratorARM64::MaybeGenerateReadBarrierSlow(HInstruction* instruction,
      // If heap poisoning is enabled, unpoisoning will be taken care of
      // by the runtime within the slow path.
      GenerateReadBarrierSlow(instruction, out, ref, obj, offset, index);
@@ -302,7 +321,7 @@ index e23decbd..826ada48 100644
                                     instruction->GetIndex(),
                                     data_offset)) {
 diff --git a/art/compiler/optimizing/intrinsics_arm64.cc b/art/compiler/optimizing/intrinsics_arm64.cc
-index 33d7709e..ea268091 100644
+index 33d7709e..d3571d0c 100644
 --- a/art/compiler/optimizing/intrinsics_arm64.cc
 +++ b/art/compiler/optimizing/intrinsics_arm64.cc
 @@ -88,6 +88,11 @@ static void MoveFromReturnRegister(Location trg,
@@ -317,7 +336,17 @@ index 33d7709e..ea268091 100644
      __ Mov(trg_reg, res_reg, kDiscardForSameWReg);
    } else {
      vixl::aarch64::VRegister trg_reg = FPRegisterFrom(trg, type);
-@@ -1338,8 +1343,9 @@ void IntrinsicCodeGeneratorARM64::VisitStringCompareTo(HInvoke* invoke) {
+@@ -723,7 +728,8 @@ void IntrinsicLocationsBuilderARM64::VisitThreadCurrentThread(HInvoke* invoke) {
+ }
+ 
+ void IntrinsicCodeGeneratorARM64::VisitThreadCurrentThread(HInvoke* invoke) {
+-  codegen_->Load(DataType::Type::kReference, WRegisterFrom(invoke->GetLocations()->Out()),
++  // the peer is a 64-bit pointer: all of it, the address (its W view is the reference)
++  codegen_->Load(DataType::Type::kInt64, XRegisterFrom(invoke->GetLocations()->Out()),
+                  MemOperand(tr, Thread::PeerOffset<kArm64PointerSize>().Int32Value()));
+ }
+ 
+@@ -1338,8 +1344,9 @@ void IntrinsicCodeGeneratorARM64::VisitStringCompareTo(HInvoke* invoke) {
      // `temp1` will hold the compressed data pointer, `temp2` the uncompressed data pointer.
      // Note that flags have been set by the `str` compression flag extraction to `temp3`
      // before branching to the `different_compression` label.
@@ -329,7 +358,7 @@ index 33d7709e..ea268091 100644
  
      // We want to free up the temp3, currently holding `str` compression flag, for comparison.
      // So, we move it to the bottom bit of the iteration count `temp0` which we then need to treat
-@@ -1348,8 +1354,8 @@ void IntrinsicCodeGeneratorARM64::VisitStringCompareTo(HInvoke* invoke) {
+@@ -1348,8 +1355,8 @@ void IntrinsicCodeGeneratorARM64::VisitStringCompareTo(HInvoke* invoke) {
      __ Lsl(temp0, temp0, 1u);
  
      // Adjust temp1 and temp2 from string pointers to data pointers.
