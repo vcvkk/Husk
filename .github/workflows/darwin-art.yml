@@ -53,7 +53,7 @@ jobs:
             port/art/darwin/dl_bio.c -o build/darwin/lib/libdl_bio.dylib
           python3 port/art/darwin/gen-ninja.py --launcher ccache --src build/art_standalone --out build/darwin \
             "${inc[@]}" "${lib[@]}" --lib "$PWD/build/darwin/lib" \
-            --extra-src libart:port/art/darwin/libart_darwin.cc port/art/darwin/modules.json
+            --extra-src libart:port/art/darwin/libart_darwin.cc --extra-src libartbase:port/art/darwin/libartbase_darwin.cc port/art/darwin/modules.json
 
       - name: Build (keep going)
         env:
@@ -347,7 +347,7 @@ jobs:
           python3 port/art/darwin/gen-ninja.py --target ios --sysroot "$sdk" --launcher ccache \
             --src build/art_standalone --out build/ios \
             --include "$D/include" --include "$D/include/libepoll-shim" --lib "$D/lib" --ldflag=-lepoll-shim \
-            --lib "$PWD/build/ios/lib" --extra-src libart:port/art/darwin/libart_darwin.cc port/art/darwin/modules.json
+            --lib "$PWD/build/ios/lib" --extra-src libart:port/art/darwin/libart_darwin.cc --extra-src libartbase:port/art/darwin/libartbase_darwin.cc port/art/darwin/modules.json
       - name: Build (keep going)
         env:
           CCACHE_SLOPPINESS: include_file_mtime,include_file_ctime,time_macros
