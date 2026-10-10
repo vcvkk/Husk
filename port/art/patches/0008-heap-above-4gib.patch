@@ -256,6 +256,22 @@ index 43acce56..e6a0bdc7 100644
    }
  }
  
+diff --git a/art/compiler/optimizing/code_generator_vector_arm64.cc b/art/compiler/optimizing/code_generator_vector_arm64.cc
+index df95c88c..f1e202c6 100644
+--- a/art/compiler/optimizing/code_generator_vector_arm64.cc
++++ b/art/compiler/optimizing/code_generator_vector_arm64.cc
+@@ -1422,8 +1422,9 @@ MemOperand InstructionCodeGeneratorARM64::VecAddress(
+     offset += Int64FromLocation(index) << shift;
+     return HeapOperand(base, offset);
+   } else {
+-    *scratch = temps_scope->AcquireSameSizeAs(base);
+-    __ Add(*scratch, base, Operand(WRegisterFrom(index), LSL, shift));
++    // a 64-bit address: the array is above 4 GiB, the index a non-negative int
++    *scratch = temps_scope->AcquireX();
++    __ Add(*scratch, base.X(), Operand(WRegisterFrom(index), UXTW, shift));
+     return HeapOperand(*scratch, offset);
+   }
+ }
 diff --git a/art/compiler/optimizing/instruction_simplifier_arm64.cc b/art/compiler/optimizing/instruction_simplifier_arm64.cc
 index e23decbd..826ada48 100644
 --- a/art/compiler/optimizing/instruction_simplifier_arm64.cc
