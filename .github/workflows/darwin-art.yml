@@ -278,3 +278,71 @@ jobs:
           fi
           [ -f $D/hello.lldb ] && tail -200 $D/hello.lldb
           printf 'Hello from husk-port%ss DVM\nsum 1..100 = 5050, args=0\n' "'" | diff - $D/hello.out && [ $status -eq 0 ]
+
+  # the runtime for iOS: the same build against the iPhone SDK and libraries built for it
+  # (port/art/darwin/ios-deps.sh), keeping going past errors to list them
+  ios:
+    runs-on: macos-14
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Packages
+        run: brew install ninja ccache || true
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+      - uses: actions/cache@v4
+        id: deps
+        with:
+          path: build/ios-deps
+          key: ios-deps-${{ hashFiles('port/art/darwin/ios-deps.sh') }}
+      - name: Libraries for iOS
+        if: steps.deps.outputs.cache-hit != 'true'
+        run: port/art/darwin/ios-deps.sh build/ios-deps
+      - uses: actions/cache/restore@v4
+        with:
+          path: ~/Library/Caches/ccache
+          key: ccache-ios-${{ github.sha }}
+          restore-keys: ccache-ios-
+      - name: ART sources with husk-port's patches
+        run: |
+          rev=$(sed -n 's/^ART_REV=//p' port/art/build.sh)
+          git init -q build/art_standalone
+          git -C build/art_standalone remote add origin https://gitlab.com/android_translation_layer/art_standalone.git
+          git -C build/art_standalone fetch -q --depth 1 origin "$rev"
+          git -C build/art_standalone checkout -q FETCH_HEAD
+          for p in "$PWD"/port/art/patches/*.patch; do git -C build/art_standalone apply "$p"; done
+      - name: Generate build.ninja
+        run: |
+          sdk=$(xcrun --sdk iphoneos --show-sdk-path)
+          D="$PWD/build/ios-deps"
+          mkdir -p build/ios/lib
+          xcrun --sdk iphoneos clang -target arm64-apple-ios14.0 -isysroot "$sdk" -dynamiclib \
+            -install_name @rpath/libdl_bio.dylib port/art/darwin/dl_bio.c -o build/ios/lib/libdl_bio.dylib
+          python3 port/art/darwin/gen-ninja.py --target ios --sysroot "$sdk" --launcher ccache \
+            --src build/art_standalone --out build/ios \
+            --include "$D/include" --include "$D/include/libepoll-shim" --lib "$D/lib" --ldflag=-lepoll-shim \
+            --lib "$PWD/build/ios/lib" --extra-src libart:port/art/darwin/libart_darwin.cc port/art/darwin/modules.json
+      - name: Build (keep going)
+        env:
+          CCACHE_SLOPPINESS: include_file_mtime,include_file_ctime,time_macros
+        run: |
+          set +e
+          export CCACHE_DIR=~/Library/Caches/ccache
+          ninja -C build/ios -k 0 > build/ios/ninja.log 2>&1
+          status=$?
+          echo "ninja exit $status"
+          python3 port/art/darwin/errors.py build/ios/ninja.log | tee build/ios/errors.txt
+          exit $status
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: ~/Library/Caches/ccache
+          key: ccache-ios-${{ github.sha }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-art
+          path: |
+            build/ios/ninja.log
+            build/ios/errors.txt
+          if-no-files-found: ignore

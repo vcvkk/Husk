@@ -26,6 +26,8 @@ SKIP = {"libunwind", "libbacktrace", "libwolfssljni", "libart-compiler", "libart
 SYSTEM = {"c": None, "gcc": None, "pthread": None, "rt": None, "dl": None, "atomic": None, "bsd": None,
           "z": "z", "lz4": "lz4", "lzma": "lzma", "expat": "expat", "crypto": "crypto",
           "icuuc": "icuuc", "icui18n": "icui18n", "dl_bio": "dl_bio", "vixl": None}
+# on iOS (port/art/darwin/ios-deps.sh): ICU static with its data; OpenSSL only for a header
+SYSTEM_IOS = dict(SYSTEM, crypto=None, icuuc=["icuuc", "icudata"])
 
 # Linux lets a shared library leave symbols for whatever loads it; Darwin's linker wants each
 # one found, and dyld binds them all at load. libutils' NativeHandle calls libcutils, which
@@ -105,7 +107,7 @@ def main():
     triple = "arm64-apple-ios" + (o.min_os or "14.0") if o.target == "ios" else "arm64-apple-macos" + (o.min_os or "11.0")
     base = ["-target", triple, "-w", "-g"] + (["-isysroot", o.sysroot] if o.sysroot else [])
     # the Linux headers and spellings Darwin lacks come first (compat/)
-    base += [f"-I{compat}"] + [f"-I{d}" for d in o.include]
+    base += [f"-I{compat}"] + ([f"-I{compat}-ios"] if o.target == "ios" else []) + [f"-I{d}" for d in o.include]
     # gcc lets these through as warnings; clang 15 made them errors
     cflags_c = ["-Wno-error=implicit-function-declaration", "-Wno-error=incompatible-function-pointer-types",
                 "-Wno-error=int-conversion", "-Wno-error=incompatible-pointer-types"]
@@ -220,10 +222,11 @@ rule gen
                 p = os.path.join(out, "lib", l + ".so")
                 ld.append(p)
                 deps.append(p)
+        system = SYSTEM_IOS if o.target == "ios" else SYSTEM
         for l in link["system"]:
-            d = SYSTEM.get(l, l)
-            if d:
-                ld.append("-l" + d)
+            d = system.get(l, l)
+            for x in ([d] if isinstance(d, str) else d or []):
+                ld.append("-l" + x)
         ld += [f"-Wl,-U,{s}" for s in LOOKUP.get(name, [])]
         for f in FRAMEWORKS.get(name, []):
             ld += ["-framework", f]
