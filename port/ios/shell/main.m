@@ -99,6 +99,13 @@ static void SignedCodeCheck(NSString *dylib) {
   close(fd);
 }
 
+static NSString *Joined(NSString *art, NSString *list, BOOL paths) {
+  NSMutableArray *out = [NSMutableArray array];
+  for (NSString *loc in [list componentsSeparatedByString:@":"])
+    [out addObject:paths ? [art stringByAppendingPathComponent:[@"jars" stringByAppendingPathComponent:loc.lastPathComponent]] : loc];
+  return [out componentsJoinedByString:@":"];
+}
+
 // The address space as this device gives it to the app: its bounds, its big regions, and
 // which of the bases the heap window could have are free. Returns whether ART's is.
 static BOOL AddressSpace(void) {
