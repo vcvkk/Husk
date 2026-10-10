@@ -32,7 +32,10 @@ fetch_rev() {  # url dir rev
 if ! pkg-config --atleast-version=1.8.0 libunwind 2>/dev/null; then
     echo "==> libunwind $LIBUNWIND"
     curl -fsSL "https://github.com/libunwind/libunwind/releases/download/v$LIBUNWIND/libunwind-$LIBUNWIND.tar.gz" | tar xz
-    (cd "libunwind-$LIBUNWIND" && ./configure -q --prefix="$PREFIX" --disable-tests --disable-documentation \
+    # in the multiarch directory, which ld.so searches before the system's (where Ubuntu's 1.6
+    # can be, as a dependency of other packages)
+    (cd "libunwind-$LIBUNWIND" && ./configure -q --prefix="$PREFIX" --libdir="$PREFIX/lib/$(gcc -dumpmachine)" \
+        --disable-tests --disable-documentation \
         && make -s -j"$(nproc)" && sudo make -s install) >/dev/null
     sudo ldconfig
 fi

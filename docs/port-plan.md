@@ -57,7 +57,24 @@ building `dex2oat`, compiling APKs, converting oat files.
   through its onboarding on clicks. Found on the way: libcore must be desugared
   (d8 without `--no-desugaring`; ART 10 cannot link lambda call sites), and
   wolfSSL must be built with JNI.
-- **Not started: ART on Darwin, the framework's native half on UIKit/Metal.**
+- **ART on Darwin: Java runs on macOS arm64.** The runtime (dalvikvm, libart,
+  the class library's native code) builds for macOS from make's dry run
+  (`port/art/darwin`: a generated build.ninja, a compat layer for the Linux
+  headers Darwin lacks, ELF-to-Mach-O assembly). On the macOS runner it runs
+  tests/dvm's Hello in the interpreter, without a boot image.
+- **The heap above 4 GiB.** ART 10 makes a reference between objects the
+  object's 32-bit address, so its heap must be below 4 GiB, and on Apple's
+  arm64 systems no process gets memory there (a 4 GiB `__PAGEZERO` the
+  kernel insists on; `tools/low4g-probe.c`). Patch 0008 moves the heap to the
+  4 GiB window from 32 GiB, on every system: a reference stays 32 bits, the
+  address is `0x800000000 | reference`, one `orr` in compiled code. Done: the
+  runtime, the interpreter, the arm64 compiler and entrypoints (tested on
+  Linux x86_64 with the interpreter; the compiled path awaits the arm64
+  Linux runner). Next: boot images in the window, with the boot oat files'
+  code mapped beside them (their code reaches image objects PC-relatively).
+- **16 KiB pages everywhere** (patch 0003): what Linux's dex2oat lays out is
+  what Darwin maps; the tests pass on Linux with it.
+- **Not started: the framework's native half on UIKit/Metal.**
 
 ## Stages
 
