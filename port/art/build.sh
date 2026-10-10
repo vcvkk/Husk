@@ -22,6 +22,10 @@ export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig:$PREFIX/lib/$(gcc -dumpmachine)/pk
 # linker resolves libdl_bio's libunwind.so.8 through these too
 export LIBRARY_PATH="$PREFIX/lib:$PREFIX/lib/$(gcc -dumpmachine)${LIBRARY_PATH:+:$LIBRARY_PATH}"
 export LD_LIBRARY_PATH="$PREFIX/lib:$PREFIX/lib/$(gcc -dumpmachine)${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+# headers installed there too (VIXL's: ART's build looks in $C_INCLUDE_PATH/vixl), when it is not /usr/local
+if [ "$PREFIX" != /usr/local ]; then
+    export C_INCLUDE_PATH="$PREFIX/include" CPLUS_INCLUDE_PATH="$PREFIX/include"
+fi
 
 fetch_rev() {  # url dir rev
     [ -d "$2/.git" ] || { git init -q "$2"; git -C "$2" remote add origin "$1"; }

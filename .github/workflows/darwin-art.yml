@@ -28,13 +28,30 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: 1
 
       # compiled objects from earlier runs: a round changes a few files, not 540
+      # the runtime built (bin, lib, include), by what goes into it: with that unchanged, not rebuilt
       - uses: actions/cache/restore@v4
+        id: dout
+        with:
+          path: |
+            build/darwin/bin
+            build/darwin/lib
+            build/darwin/include
+          key: darwin-out-${{ hashFiles('port/art/patches/**', 'port/art/darwin/**', 'port/art/build.sh') }}
+      - uses: actions/cache/restore@v4
+        id: jars
+        with:
+          path: build/darwin/java
+          key: jars-${{ hashFiles('port/art/build.sh', 'port/art/darwin/javalibs.sh', 'port/art/dx-via-d8', 'port/art/patches/*') }}
+
+      - uses: actions/cache/restore@v4
+        if: steps.dout.outputs.cache-hit != 'true'
         with:
           path: ~/Library/Caches/ccache
           key: ccache-${{ github.sha }}
           restore-keys: ccache-
 
       - name: ART sources with husk-port's patches
+        if: steps.dout.outputs.cache-hit != 'true' || steps.jars.outputs.cache-hit != 'true'
         run: |
           rev=$(sed -n 's/^ART_REV=//p' port/art/build.sh)
           git init -q build/art_standalone
@@ -44,6 +61,7 @@ jobs:
           for p in "$PWD"/port/art/patches/*.patch; do git -C build/art_standalone apply "$p"; done
 
       - name: Generate build.ninja
+        if: steps.dout.outputs.cache-hit != 'true'
         run: |
           mkdir -p build/darwin/lib
           inc=(); lib=()
@@ -57,6 +75,7 @@ jobs:
             --extra-src libart:port/art/darwin/libart_darwin.cc --extra-src libartbase:port/art/darwin/libartbase_darwin.cc port/art/darwin/modules.json
 
       - name: Build (keep going)
+        if: steps.dout.outputs.cache-hit != 'true'
         env:
           CCACHE_SLOPPINESS: include_file_mtime,include_file_ctime,time_macros
         run: |
@@ -69,8 +88,21 @@ jobs:
           python3 port/art/darwin/errors.py build/darwin/ninja.log | tee build/darwin/errors.txt
           exit $status
 
+      - name: Headers, with the runtime
+        if: steps.dout.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p build/darwin/include
+          cp -R build/art_standalone/libnativehelper/include/nativehelper build/darwin/include/
       - uses: actions/cache/save@v4
-        if: always()
+        if: steps.dout.outputs.cache-hit != 'true'
+        with:
+          path: |
+            build/darwin/bin
+            build/darwin/lib
+            build/darwin/include
+          key: ${{ steps.dout.outputs.cache-primary-key }}
+      - uses: actions/cache/save@v4
+        if: always() && steps.dout.outputs.cache-hit != 'true'
         with:
           path: ~/Library/Caches/ccache
           key: ccache-${{ github.sha }}
@@ -81,12 +113,6 @@ jobs:
           java-version: '21'
 
       # the jars depend only on ART's sources and these scripts
-      - uses: actions/cache/restore@v4
-        id: jars
-        with:
-          path: build/darwin/java
-          key: jars-${{ hashFiles('port/art/build.sh', 'port/art/darwin/javalibs.sh', 'port/art/dx-via-d8', 'port/art/patches/*') }}
-
       - name: Class library (Java)
         if: steps.jars.outputs.cache-hit != 'true'
         run: |
@@ -147,8 +173,6 @@ jobs:
       # the runtime for the boot image job; a tarball keeps the executable bits
       - name: Pack the runtime
         run: |
-          mkdir -p build/darwin/include
-          cp -R build/art_standalone/libnativehelper/include/nativehelper build/darwin/include/
           tar -czf build/darwin-runtime.tgz -C build darwin/bin darwin/lib darwin/include
       - uses: actions/upload-artifact@v4
         with:
@@ -191,23 +215,27 @@ jobs:
           sudo apt-get install -y -qq meson ninja-build autoconf automake libtool pkg-config clang zlib1g-dev openjdk-21-jdk-headless \
             libbsd-dev libelf-dev libicu-dev libssl-dev libexpat1-dev zip liblz4-dev liblzma-dev \
             libcap-dev libegl-dev libpng-dev valgrind binutils ccache
+      # ART installed (build/prefix), by what goes into it; built only when that changed
       - uses: actions/cache@v4
+        id: prefix
         if: steps.out.outputs.cache-hit != 'true'
         with:
+          path: build/prefix
+          key: art-prefix-${{ runner.arch }}-${{ hashFiles('port/art/patches/**', 'port/art/build.sh', 'port/art/dx-via-d8', 'port/art/vixl-meson.patch') }}
+      - uses: actions/cache@v4
+        if: (steps.out.outputs.cache-hit != 'true') && steps.prefix.outputs.cache-hit != 'true'
+        with:
           path: build/art
-          key: art-${{ runner.arch }}-${{ hashFiles('port/art/patches/**', 'port/art/build.sh', 'port/art/dx-via-d8') }}
+          key: art-${{ runner.arch }}-${{ hashFiles('port/art/patches/**', 'port/art/build.sh', 'port/art/dx-via-d8', 'port/art/vixl-meson.patch') }}
       - uses: actions/cache/restore@v4
-        if: steps.out.outputs.cache-hit != 'true'
+        if: (steps.out.outputs.cache-hit != 'true') && steps.prefix.outputs.cache-hit != 'true'
         with:
           path: ~/.cache/ccache
           key: ccache-${{ runner.arch }}-${{ github.sha }}
           restore-keys: ccache-${{ runner.arch }}-
-      - name: Build ART
+      - name: ART
         if: steps.out.outputs.cache-hit != 'true'
-        run: |
-          export PATH=/usr/lib/ccache:$PATH CCACHE_DIR=~/.cache/ccache
-          export CCACHE_SLOPPINESS=include_file_mtime,include_file_ctime,time_macros
-          ART_INSTALL=1 port/art/build.sh
+        run: port/art/ci-install.sh
       - name: Boot image and Hello, for macOS and iOS
         if: steps.out.outputs.cache-hit != 'true'
         run: port/art/ci-boot.sh
@@ -294,30 +322,40 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+      # the runtime built for iOS, by what goes into it: with that unchanged, not rebuilt
+      - uses: actions/cache/restore@v4
+        id: iout
+        with:
+          path: build/ios-runtime.tgz
+          key: ios-out-${{ hashFiles('port/art/patches/**', 'port/art/darwin/**', 'port/art/build.sh') }}
       - name: Packages
+        if: steps.iout.outputs.cache-hit != 'true'
         run: brew install ninja ccache || true
         env:
           HOMEBREW_NO_AUTO_UPDATE: 1
       # saved as soon as built: the build after it fails while the port is under way
       - uses: actions/cache/restore@v4
+        if: steps.iout.outputs.cache-hit != 'true'
         id: deps
         with:
           path: build/ios-deps
           key: ios-deps-${{ hashFiles('port/art/darwin/ios-deps.sh') }}
       - name: Libraries for iOS
-        if: steps.deps.outputs.cache-hit != 'true'
+        if: steps.iout.outputs.cache-hit != 'true' && (steps.deps.outputs.cache-hit != 'true')
         run: port/art/darwin/ios-deps.sh build/ios-deps
       - uses: actions/cache/save@v4
-        if: steps.deps.outputs.cache-hit != 'true'
+        if: steps.iout.outputs.cache-hit != 'true' && (steps.deps.outputs.cache-hit != 'true')
         with:
           path: build/ios-deps
           key: ${{ steps.deps.outputs.cache-primary-key }}
       - uses: actions/cache/restore@v4
+        if: steps.iout.outputs.cache-hit != 'true'
         with:
           path: ~/Library/Caches/ccache
           key: ccache-ios-${{ github.sha }}
           restore-keys: ccache-ios-
       - name: ART sources with husk-port's patches
+        if: steps.iout.outputs.cache-hit != 'true'
         run: |
           rev=$(sed -n 's/^ART_REV=//p' port/art/build.sh)
           git init -q build/art_standalone
@@ -326,6 +364,7 @@ jobs:
           git -C build/art_standalone checkout -q FETCH_HEAD
           for p in "$PWD"/port/art/patches/*.patch; do git -C build/art_standalone apply "$p"; done
       - name: Generate build.ninja
+        if: steps.iout.outputs.cache-hit != 'true'
         run: |
           sdk=$(xcrun --sdk iphoneos --show-sdk-path)
           D="$PWD/build/ios-deps"
@@ -337,6 +376,7 @@ jobs:
             --include "$D/include" --include "$D/include/libepoll-shim" --lib "$D/lib" --ldflag=-lepoll-shim \
             --lib "$PWD/build/ios/lib" --extra-src libart:port/art/darwin/libart_darwin.cc --extra-src libartbase:port/art/darwin/libartbase_darwin.cc port/art/darwin/modules.json
       - name: Build (keep going)
+        if: steps.iout.outputs.cache-hit != 'true'
         env:
           CCACHE_SLOPPINESS: include_file_mtime,include_file_ctime,time_macros
         run: |
@@ -348,16 +388,22 @@ jobs:
           python3 port/art/darwin/errors.py build/ios/ninja.log | tee build/ios/errors.txt
           exit $status
       - uses: actions/cache/save@v4
-        if: always()
+        if: steps.iout.outputs.cache-hit != 'true' && (always())
         with:
           path: ~/Library/Caches/ccache
           key: ccache-ios-${{ github.sha }}
       - name: Pack the iOS runtime
+        if: steps.iout.outputs.cache-hit != 'true'
         run: |
           mkdir -p build/ios-runtime/include
           cp -R build/ios/lib build/ios-runtime/
           cp -R build/art_standalone/libnativehelper/include/nativehelper build/ios-runtime/include/
           tar -czf build/ios-runtime.tgz -C build ios-runtime
+      - uses: actions/cache/save@v4
+        if: steps.iout.outputs.cache-hit != 'true'
+        with:
+          path: build/ios-runtime.tgz
+          key: ${{ steps.iout.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v4
         with:
           name: ios-runtime
@@ -407,14 +453,22 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        id: apk
+        with:
+          path: tests/compose-hello/app/build/outputs/apk/release/app-release.apk
+          key: compose-hello-${{ hashFiles('tests/compose-hello/**') }}
       - uses: actions/setup-java@v4
+        if: steps.apk.outputs.cache-hit != 'true'
         with:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
+        if: steps.apk.outputs.cache-hit != 'true'
         with:
           gradle-version: '8.9'
       - name: Build
+        if: steps.apk.outputs.cache-hit != 'true'
         run: gradle -p tests/compose-hello --no-daemon assembleRelease
       - uses: actions/upload-artifact@v4
         with:
@@ -428,32 +482,57 @@ jobs:
     timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
+      # what this job makes depends on these alone: with them unchanged, it is taken whole
+      - uses: actions/cache/restore@v4
+        id: out
+        with:
+          path: |
+            build/app/macos.tgz
+            build/app/ios.tgz
+          key: app-out-${{ hashFiles('port/art/patches/**', 'port/art/build.sh', 'port/art/dx-via-d8', 'port/art/vixl-meson.patch', 'port/art/boot-image.sh', 'port/framework/ci-app.sh', 'port/framework/build.sh', 'port/framework/src/**', 'port/framework/gen-src/**', 'port/framework/stubs/**', 'port/framework/gen/**', 'tools/oat2macho.c', 'tests/compose-hello/**') }}
       - uses: actions/download-artifact@v4
+        if: steps.out.outputs.cache-hit != 'true'
         with:
           name: compose-hello-apk
           path: build/apk
       - name: Packages
+        if: steps.out.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq meson ninja-build autoconf automake libtool pkg-config clang zlib1g-dev openjdk-21-jdk-headless \
             libbsd-dev libelf-dev libicu-dev libssl-dev libexpat1-dev zip liblz4-dev liblzma-dev \
             libcap-dev libegl-dev libpng-dev valgrind binutils ccache
+      # ART installed (build/prefix), by what goes into it; built only when that changed
       - uses: actions/cache@v4
+        id: prefix
+        if: steps.out.outputs.cache-hit != 'true'
+        with:
+          path: build/prefix
+          key: art-prefix-${{ runner.arch }}-${{ hashFiles('port/art/patches/**', 'port/art/build.sh', 'port/art/dx-via-d8', 'port/art/vixl-meson.patch') }}
+      - uses: actions/cache@v4
+        if: steps.out.outputs.cache-hit != 'true' && steps.prefix.outputs.cache-hit != 'true'
         with:
           path: build/art
-          key: art-${{ runner.arch }}-${{ hashFiles('port/art/patches/**', 'port/art/build.sh', 'port/art/dx-via-d8') }}
+          key: art-${{ runner.arch }}-${{ hashFiles('port/art/patches/**', 'port/art/build.sh', 'port/art/dx-via-d8', 'port/art/vixl-meson.patch') }}
       - uses: actions/cache/restore@v4
+        if: steps.out.outputs.cache-hit != 'true' && steps.prefix.outputs.cache-hit != 'true'
         with:
           path: ~/.cache/ccache
           key: ccache-${{ runner.arch }}-${{ github.sha }}
           restore-keys: ccache-${{ runner.arch }}-
-      - name: Build ART
-        run: |
-          export PATH=/usr/lib/ccache:$PATH CCACHE_DIR=~/.cache/ccache
-          export CCACHE_SLOPPINESS=include_file_mtime,include_file_ctime,time_macros
-          ART_INSTALL=1 port/art/build.sh
+      - name: ART
+        if: steps.out.outputs.cache-hit != 'true'
+        run: port/art/ci-install.sh
       - name: Framework, boot image, the app
+        if: steps.out.outputs.cache-hit != 'true'
         run: port/framework/ci-app.sh build/apk/app-release.apk build/app
+      - uses: actions/cache/save@v4
+        if: steps.out.outputs.cache-hit != 'true'
+        with:
+          path: |
+            build/app/macos.tgz
+            build/app/ios.tgz
+          key: ${{ steps.out.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v4
         with:
           name: app-macos

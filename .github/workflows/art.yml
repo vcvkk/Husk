@@ -8,7 +8,8 @@ name: ART on arm64
 on:
   push:
     branches: [husk-port]
-    paths: ['port/art/**', 'tests/dvm/**', 'src/dvm/**', 'tools/oat2macho.c', 'tools/oat-dlopen-test.c', '.github/workflows/art.yml']
+    paths: ['port/art/patches/**', 'port/art/build.sh', 'port/art/dx-via-d8', 'port/art/vixl-meson.patch', 'port/art/test.sh',
+            'port/art/ci-install.sh', 'tests/dvm/**', 'src/dvm/**', 'tools/oat2macho.c', 'tools/oat-dlopen-test.c', '.github/workflows/art.yml']
   workflow_dispatch:
 
 jobs:
@@ -25,28 +26,27 @@ jobs:
             libbsd-dev libelf-dev libicu-dev libssl-dev libexpat1-dev zip liblz4-dev liblzma-dev \
             libcap-dev libegl-dev libpng-dev valgrind binutils ccache gdb
 
-      - name: Cache ART build
-        uses: actions/cache@v4
+      # ART installed (build/prefix), by what goes into it; built only when that changed
+      - uses: actions/cache@v4
+        id: prefix
+        with:
+          path: build/prefix
+          key: art-prefix-${{ runner.arch }}-${{ hashFiles('port/art/patches/**', 'port/art/build.sh', 'port/art/dx-via-d8', 'port/art/vixl-meson.patch') }}
+      - uses: actions/cache@v4
+        if: steps.prefix.outputs.cache-hit != 'true'
         with:
           path: build/art
-          key: art-${{ runner.arch }}-${{ hashFiles('port/art/patches/**', 'port/art/build.sh', 'port/art/dx-via-d8') }}
-
-      # compiled objects from earlier runs: a change to ART's patches rebuilds a few files
+          key: art-${{ runner.arch }}-${{ hashFiles('port/art/patches/**', 'port/art/build.sh', 'port/art/dx-via-d8', 'port/art/vixl-meson.patch') }}
       - uses: actions/cache/restore@v4
+        if: steps.prefix.outputs.cache-hit != 'true'
         with:
           path: ~/.cache/ccache
           key: ccache-${{ runner.arch }}-${{ github.sha }}
           restore-keys: ccache-${{ runner.arch }}-
-
-      - name: Build ART
-        run: |
-          export PATH=/usr/lib/ccache:$PATH CCACHE_DIR=~/.cache/ccache
-          export CCACHE_SLOPPINESS=include_file_mtime,include_file_ctime,time_macros
-          ART_INSTALL=1 port/art/build.sh
-          ccache -s | head -8
-
+      - name: ART
+        run: port/art/ci-install.sh
       - uses: actions/cache/save@v4
-        if: always()
+        if: always() && steps.prefix.outputs.cache-hit != 'true'
         with:
           path: ~/.cache/ccache
           key: ccache-${{ runner.arch }}-${{ github.sha }}
