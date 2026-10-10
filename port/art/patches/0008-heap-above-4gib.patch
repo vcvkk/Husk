@@ -1,5 +1,5 @@
 diff --git a/art/compiler/optimizing/code_generator_arm64.cc b/art/compiler/optimizing/code_generator_arm64.cc
-index 43acce56..b4978311 100644
+index 43acce56..ce1071ce 100644
 --- a/art/compiler/optimizing/code_generator_arm64.cc
 +++ b/art/compiler/optimizing/code_generator_arm64.cc
 @@ -1056,7 +1056,11 @@ void ParallelMoveResolverARM64::FreeScratchLocation(Location loc) {
@@ -253,6 +253,15 @@ index 43acce56..b4978311 100644
        return;
      }
      case HLoadString::LoadKind::kBssEntry: {
+@@ -4858,7 +4943,7 @@ void InstructionCodeGeneratorARM64::VisitLoadString(HLoadString* load) NO_THREAD
+       SlowPathCodeARM64* slow_path =
+           new (codegen_->GetScopedAllocator()) LoadStringSlowPathARM64(load);
+       codegen_->AddSlowPath(slow_path);
+-      __ Cbz(out.X(), slow_path->GetEntryLabel());
++      __ Cbz(out.W(), slow_path->GetEntryLabel());  // the reference: the decoded address is never 0
+       __ Bind(slow_path->GetExitLabel());
+       codegen_->MaybeGenerateMarkingRegisterCheck(/* code= */ __LINE__);
+       return;
 @@ -5841,7 +5926,8 @@ void CodeGeneratorARM64::GenerateGcRootFieldLoad(
        EmitLdrOffsetPlaceholder(fixup_label, root_reg, obj.X());
      }
@@ -321,7 +330,7 @@ index e23decbd..826ada48 100644
                                     instruction->GetIndex(),
                                     data_offset)) {
 diff --git a/art/compiler/optimizing/intrinsics_arm64.cc b/art/compiler/optimizing/intrinsics_arm64.cc
-index 33d7709e..d3571d0c 100644
+index 33d7709e..0689a5bd 100644
 --- a/art/compiler/optimizing/intrinsics_arm64.cc
 +++ b/art/compiler/optimizing/intrinsics_arm64.cc
 @@ -88,6 +88,11 @@ static void MoveFromReturnRegister(Location trg,
@@ -369,6 +378,66 @@ index 33d7709e..d3571d0c 100644
  
      // Complete the move of the compression flag.
      __ Sub(temp0, temp0, Operand(temp3));
+@@ -2185,14 +2192,14 @@ void IntrinsicCodeGeneratorARM64::VisitSystemArrayCopyChar(HInvoke* invoke) {
+ 
+   // If source and destination are the same, take the slow path. Overlapping copy regions must be
+   // copied in reverse and we can't know in all cases if it's needed.
+-  __ Cmp(src, dst);
++  __ Cmp(src.W(), dst.W());
+   __ B(slow_path->GetEntryLabel(), eq);
+ 
+   // Bail out if the source is null.
+-  __ Cbz(src, slow_path->GetEntryLabel());
++  __ Cbz(src.W(), slow_path->GetEntryLabel());
+ 
+   // Bail out if the destination is null.
+-  __ Cbz(dst, slow_path->GetEntryLabel());
++  __ Cbz(dst.W(), slow_path->GetEntryLabel());
+ 
+   if (!length.IsConstant()) {
+     // Merge the following two comparisons into one:
+@@ -2374,7 +2381,7 @@ void IntrinsicCodeGeneratorARM64::VisitSystemArrayCopy(HInvoke* invoke) {
+         // Checked when building locations.
+         DCHECK_GE(src_pos_constant, dest_pos_constant);
+       } else if (src_pos_constant < dest_pos_constant) {
+-        __ Cmp(src, dest);
++        __ Cmp(src.W(), dest.W());
+         __ B(intrinsic_slow_path->GetEntryLabel(), eq);
+       }
+       // Checked when building locations.
+@@ -2382,7 +2389,7 @@ void IntrinsicCodeGeneratorARM64::VisitSystemArrayCopy(HInvoke* invoke) {
+              || (src_pos_constant >= dest_pos.GetConstant()->AsIntConstant()->GetValue()));
+     } else {
+       if (!optimizations.GetDestinationIsSource()) {
+-        __ Cmp(src, dest);
++        __ Cmp(src.W(), dest.W());
+         __ B(&conditions_on_positions_validated, ne);
+       }
+       __ Cmp(WRegisterFrom(dest_pos), src_pos_constant);
+@@ -2390,7 +2397,7 @@ void IntrinsicCodeGeneratorARM64::VisitSystemArrayCopy(HInvoke* invoke) {
+     }
+   } else {
+     if (!optimizations.GetDestinationIsSource()) {
+-      __ Cmp(src, dest);
++      __ Cmp(src.W(), dest.W());
+       __ B(&conditions_on_positions_validated, ne);
+     }
+     __ Cmp(RegisterFrom(src_pos, invoke->InputAt(1)->GetType()),
+@@ -2402,12 +2409,12 @@ void IntrinsicCodeGeneratorARM64::VisitSystemArrayCopy(HInvoke* invoke) {
+ 
+   if (!optimizations.GetSourceIsNotNull()) {
+     // Bail out if the source is null.
+-    __ Cbz(src, intrinsic_slow_path->GetEntryLabel());
++    __ Cbz(src.W(), intrinsic_slow_path->GetEntryLabel());
+   }
+ 
+   if (!optimizations.GetDestinationIsNotNull() && !optimizations.GetDestinationIsSource()) {
+     // Bail out if the destination is null.
+-    __ Cbz(dest, intrinsic_slow_path->GetEntryLabel());
++    __ Cbz(dest.W(), intrinsic_slow_path->GetEntryLabel());
+   }
+ 
+   // We have already checked in the LocationsBuilder for the constant case.
 diff --git a/art/compiler/utils/arm64/assembler_arm64.cc b/art/compiler/utils/arm64/assembler_arm64.cc
 index d7ade058..0b7d2d82 100644
 --- a/art/compiler/utils/arm64/assembler_arm64.cc
