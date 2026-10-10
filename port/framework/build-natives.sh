@@ -20,7 +20,7 @@ CC=(xcrun --sdk $SDK clang -target $TRIPLE -isysroot "$(xcrun --sdk $SDK --show-
 python3 "$HERE/jni/gen-jni.py" "$HERE/jni/gfx.c" k_gfx husk/Gfx husk_register_gfx "$OUT/gfx_jni.c"
 cp "$HERE/jni/gfx.c" "$OUT/gfx.c"
 objs=()
-for f in "$OUT/gfx_jni.c" "$HERE/jni/shim.c" "$HERE/jni/native.c" "$HERE/jni/launch.c"; do
+for f in "$OUT/gfx_jni.c" "$HERE/jni/shim.c" "$HERE/jni/native.c" "$HERE/jni/sqlite.c" "$HERE/jni/launch.c"; do
     o="$OUT/$(basename "$f" .c).o"
     "${CC[@]}" -I"$HERE/jni" -c "$f" -o "$o"
     objs+=("$o")
@@ -30,7 +30,7 @@ ar rcs "$OUT/libhuskframework.a" "${objs[@]}"
 echo "$OUT/libhuskframework.a"
 if [ "$TARGET" = macos ] && [ -n "$ARTLIB" ]; then
     "${CC[@]}" "$HERE/host/mac-host.c" "$OUT/libhuskframework.a" -o "$OUT/mac-host" \
-        -L"$ARTLIB" -lart -Wl,-force_load,"$ARTLIB/libsigchain.a" -lc++ -lz \
+        -L"$ARTLIB" -lart -Wl,-force_load,"$ARTLIB/libsigchain.a" -lc++ -lz -lsqlite3 \
         -framework CoreFoundation -framework CoreGraphics -framework CoreText -framework ImageIO \
         -Wl,-rpath,"$ARTLIB"
     echo "$OUT/mac-host"
