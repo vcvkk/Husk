@@ -157,7 +157,7 @@ static void *RunVM(void *unused) {
                                              encoding:NSUTF8StringEncoding error:nil]
                       stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
   NSString *data = [NSTemporaryDirectory() stringByAppendingPathComponent:@"android-data"];
-  [NSFileManager.defaultManager createDirectoryAtPath:[data stringByAppendingPathComponent:@"dalvik-cache"]
+  [NSFileManager.defaultManager createDirectoryAtPath:[data stringByAppendingPathComponent:@"dalvik-cache/arm64"]
                           withIntermediateDirectories:YES attributes:nil error:nil];
   setenv("ANDROID_DATA", data.UTF8String, 1);
   setenv("ANDROID_ROOT", bundle.UTF8String, 1);
@@ -194,6 +194,8 @@ static void *RunVM(void *unused) {
   if ((*env)->ExceptionCheck(env)) (*env)->ExceptionDescribe(env);
   printf("husk-port: %s.main returned\n", main.UTF8String);
   fflush(stdout);
+  // a thread attached to the VM must detach before it ends; the app stays, showing the output
+  (*vm)->DetachCurrentThread(vm);
   return NULL;
 }
 

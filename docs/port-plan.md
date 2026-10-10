@@ -57,6 +57,13 @@ building `dex2oat`, compiling APKs, converting oat files.
   through its onboarding on clicks. Found on the way: libcore must be desugared
   (d8 without `--no-desugaring`; ART 10 cannot link lambda call sites), and
   wolfSSL must be built with JNI.
+- **ART on iOS: compiled Java runs on an iPhone.** HuskHello.ipa
+  (darwin-art.yml: `port/art/darwin/ios-deps.sh`, `gen-ninja.py --target ios`,
+  `port/ios/pack-ipa.sh`), signed by Feather with a paid developer certificate,
+  runs tests/dvm's Hello on an iPhone 17 Pro (iOS 27): ART with a boot image, the
+  class library's and the program's code compiled ahead of time and mapped from
+  the app's signed dylibs, no JIT, no debugger. The heap sits at 496 GiB, where
+  the device leaves room (extended-virtual-addressing). Next: the app's own UI.
 - **ART on Darwin: compiled Java runs on macOS arm64, without JIT.** The
   runtime (dalvikvm, libart, the class library's native code) builds for macOS
   from make's dry run (`port/art/darwin`: a generated build.ninja, a compat layer
