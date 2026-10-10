@@ -11,7 +11,8 @@ name: ART runtime on Darwin
 on:
   push:
     branches: [husk-port]
-    paths: ['port/art/**', 'port/ios/**', 'tools/oat2macho.c', '.github/workflows/darwin-art.yml']
+    paths: ['port/art/**', 'port/ios/**', 'port/framework/**', 'tests/compose-hello/**', 'tools/oat2macho.c',
+            '.github/workflows/darwin-art.yml']
   workflow_dispatch:
 
 jobs:
@@ -145,7 +146,10 @@ jobs:
 
       # the runtime for the boot image job; a tarball keeps the executable bits
       - name: Pack the runtime
-        run: tar -czf build/darwin-runtime.tgz -C build darwin/bin darwin/lib
+        run: |
+          mkdir -p build/darwin/include
+          cp -R build/art_standalone/libnativehelper/include/nativehelper build/darwin/include/
+          tar -czf build/darwin-runtime.tgz -C build darwin/bin darwin/lib darwin/include
       - uses: actions/upload-artifact@v4
         with:
           name: darwin-runtime
@@ -395,3 +399,108 @@ jobs:
         with:
           name: HuskHello-ipa
           path: build/HuskHello.ipa
+
+  # an Android app for the framework jobs: a small Jetpack Compose one (tests/compose-hello),
+  # built as a release app is, minified with R8
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build
+        run: gradle -p tests/compose-hello --no-daemon assembleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: compose-hello-apk
+          path: tests/compose-hello/app/build/outputs/apk/release/app-release.apk
+
+  # the framework in a boot image, and the app compiled against it (port/framework/ci-app.sh)
+  app-boot:
+    needs: apk
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: compose-hello-apk
+          path: build/apk
+      - name: Packages
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq meson ninja-build autoconf automake libtool pkg-config clang zlib1g-dev openjdk-21-jdk-headless \
+            libbsd-dev libelf-dev libicu-dev libssl-dev libexpat1-dev zip liblz4-dev liblzma-dev \
+            libcap-dev libegl-dev libpng-dev valgrind binutils ccache
+      - uses: actions/cache@v4
+        with:
+          path: build/art
+          key: art-${{ runner.arch }}-${{ hashFiles('port/art/patches/**', 'port/art/build.sh', 'port/art/dx-via-d8') }}
+      - uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-${{ runner.arch }}-${{ github.sha }}
+          restore-keys: ccache-${{ runner.arch }}-
+      - name: Build ART
+        run: |
+          export PATH=/usr/lib/ccache:$PATH CCACHE_DIR=~/.cache/ccache
+          export CCACHE_SLOPPINESS=include_file_mtime,include_file_ctime,time_macros
+          ART_INSTALL=1 port/art/build.sh
+      - name: Framework, boot image, the app
+        run: port/framework/ci-app.sh build/apk/app-release.apk build/app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-macos
+          path: build/app/macos.tgz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-ios
+          path: build/app/ios.tgz
+
+  # the app on macOS, no window: its frames as PNG files
+  app-mac:
+    needs: [build, app-boot]
+    runs-on: macos-14
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: darwin-runtime
+          path: build
+      - uses: actions/download-artifact@v4
+        with:
+          name: app-macos
+          path: build
+      - name: Unpack, sign the compiled code
+        run: |
+          brew install lz4 xz icu4c openssl@3 epoll-shim > /dev/null 2>&1 || true
+          tar -xzf build/darwin-runtime.tgz -C build
+          mkdir -p build/app && tar -xzf build/macos.tgz -C build/app
+          for f in build/app/boot/arm64/*.dylib build/app/app/oat/arm64/*.dylib; do codesign -s - -f "$f"; done
+      - name: Natives and the test host
+        run: port/framework/build-natives.sh macos build/fw build/darwin/include/nativehelper "$PWD/build/darwin/lib"
+      - name: Run the app
+        run: |
+          set +e
+          perl -e 'alarm shift; exec @ARGV' 120 build/fw/mac-host --art "$PWD/build/app/boot" --apk "$PWD/build/app/app/base.apk" \
+            --seconds 15 --frames build/frames --tap 540,1300@8 > build/app-run.log 2>&1
+          status=$?
+          echo "mac-host exit $status"
+          tr -d '\000' < build/app-run.log | grep -av 'not in a known location\|Overlapping/invalid range' | tail -150
+          ls -la build/frames
+          exit $status
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: app-frames
+          path: |
+            build/frames
+            build/app-run.log
+          if-no-files-found: ignore
