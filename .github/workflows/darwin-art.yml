@@ -583,3 +583,30 @@ jobs:
             build/frames
             build/app-run.log
           if-no-files-found: ignore
+
+  # the Compose app as an iOS app: unsigned for a sideloading tool to sign
+  app-ipa:
+    needs: [ios, app-boot]
+    runs-on: macos-14
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ios-runtime
+          path: build
+      - uses: actions/download-artifact@v4
+        with:
+          name: app-ios
+          path: build
+      - name: Natives and the app
+        run: |
+          tar -xzf build/ios-runtime.tgz -C build
+          mkdir -p build/app && tar -xzf build/ios.tgz -C build/app
+          port/framework/build-natives.sh ios build/fw-ios build/ios-runtime/include/nativehelper
+          port/ios/pack-app.sh --runtime build/ios-runtime --files build/app --natives build/fw-ios/libhuskframework.a \
+            --name ComposeHello --id dev.huskport.composehello --out build/ComposeHello.ipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ComposeHello-ipa
+          path: build/ComposeHello.ipa
