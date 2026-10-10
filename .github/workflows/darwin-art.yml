@@ -235,7 +235,8 @@ jobs:
           B="$PWD/build/boot"
           bcp=$(tr ':' '\n' < "$B/boot.classpath" | sed "s|^/boot/|$B/jars/|" | paste -sd: -)
           limit() { perl -e 'alarm shift; exec @ARGV' "$@"; }
-          args=(-Ximage:"$B/boot.art" -Xbootclasspath:"$bcp" -Xbootclasspath-locations:"$(cat "$B/boot.classpath")"
+          # no JIT: on Apple systems only signed code runs; everything is compiled ahead of time or interpreted
+          args=(-Xusejit:false -Ximage:"$B/boot.art" -Xbootclasspath:"$bcp" -Xbootclasspath-locations:"$(cat "$B/boot.classpath")"
                 -Xss8m -cp classes.dex Hello)
           cd build/hello
           set +e
