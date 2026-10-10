@@ -1527,6 +1527,29 @@ index 676bceb7..39216254 100644
          callback(o, callback_context);
          break;
        }
+diff --git a/art/runtime/oat_file.cc b/art/runtime/oat_file.cc
+index 05015e37..183ddf81 100644
+--- a/art/runtime/oat_file.cc
++++ b/art/runtime/oat_file.cc
+@@ -1603,7 +1603,9 @@ OatFile* OatFile::Open(int zip_fd,
+   }
+ 
+   // Try dlopen first, as it is required for native debuggability. This will fail fast if dlopen is
+-  // disabled.
++  // disabled. Not on Apple's systems: dlopen takes Mach-O, and the ELF loader maps the code from
++  // a signed Mach-O copy (elf_file.cc).
++#ifndef __APPLE__
+   OatFile* with_dlopen = OatFileBase::OpenOatFile<DlOpenOatFile>(zip_fd,
+                                                                  vdex_filename,
+                                                                  oat_filename,
+@@ -1620,6 +1622,7 @@ OatFile* OatFile::Open(int zip_fd,
+   if (kPrintDlOpenErrorMessage) {
+     LOG(ERROR) << "Failed to dlopen: " << oat_filename << " with error " << *error_msg;
+   }
++#endif
+   // If we aren't trying to execute, we just use our own ElfFile loader for a couple reasons:
+   //
+   // On target, dlopen may fail when compiling due to selinux restrictions on installd.
 diff --git a/art/runtime/quick_exception_handler.cc b/art/runtime/quick_exception_handler.cc
 index 3bc718b0..30747cf9 100644
 --- a/art/runtime/quick_exception_handler.cc
@@ -1540,6 +1563,25 @@ index 3bc718b0..30747cf9 100644
        } else {
          new_frame->SetVReg(vreg, value);
        }
+diff --git a/art/runtime/runtime.cc b/art/runtime/runtime.cc
+index a1c757ae..def99655 100644
+--- a/art/runtime/runtime.cc
++++ b/art/runtime/runtime.cc
+@@ -607,6 +607,14 @@ struct AbortState {
+ 
+ void Runtime::Abort(const char* msg) {
+   auto old_value = gAborting.fetch_add(1);  // set before taking any locks
++#ifdef __APPLE__
++  // Say why first, and stop if aborting aborts again: what Abort uses can fail too, early in
++  // startup or while porting, and then it recursed until the stack overflowed.
++  std::cerr << (old_value == 0 ? "Runtime aborting: " : "Abort while aborting: ") << msg << std::endl;
++  if (old_value > 0) {
++    abort();
++  }
++#endif
+ 
+   // Only set the first abort message.
+   if (old_value == 0) {
 diff --git a/art/runtime/signal_catcher.cc b/art/runtime/signal_catcher.cc
 index 8da5feee..b1ce8a52 100644
 --- a/art/runtime/signal_catcher.cc
