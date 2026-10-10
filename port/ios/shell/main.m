@@ -15,7 +15,10 @@
 #import <UIKit/UIKit.h>
 #include <fcntl.h>
 #include <jni.h>
+#include <errno.h>
+#include <mach-o/loader.h>
 #include <mach/mach.h>
+#include <string.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <sys/mman.h>
@@ -33,39 +36,67 @@ static void Show(NSString *s) {
   });
 }
 
-// stdout and stderr into a pipe whose reader puts them on screen, and on the original stderr
-static int gErr = STDERR_FILENO, gLog = -1;
-
-static void *Pump(void *arg) {
-  int fd = (int)(intptr_t)arg, err = gErr;
-  char buf[4096];
-  for (ssize_t n; (n = read(fd, buf, sizeof buf)) > 0;) {
-    write(err, buf, n);
-    if (gLog >= 0) { write(gLog, buf, n); fsync(gLog); }   // kept if the process dies next
-    NSString *s = [[NSString alloc] initWithBytes:buf length:n encoding:NSUTF8StringEncoding];
-    if (s) Show(s);
-  }
-  return NULL;
-}
+// stdout and stderr go straight into Documents/husk-port.log (seen in the Files app):
+// written by the kernel as they come, they survive the process being killed. The screen
+// shows the file as it grows.
+static NSString *gLogPath;
+static unsigned long long gShown;
 
 static void Capture(void) {
-  int p[2];
-  if (pipe(p) != 0) return;
-  setvbuf(stdout, NULL, _IOLBF, 0);
-  gErr = dup(STDERR_FILENO);
   NSString *docs = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
-  gLog = open([docs stringByAppendingPathComponent:@"husk-port.log"].UTF8String, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-  pthread_t t;
-  pthread_create(&t, NULL, Pump, (void *)(intptr_t)p[0]);
-  dup2(p[1], STDOUT_FILENO);
-  dup2(p[1], STDERR_FILENO);
+  gLogPath = [docs stringByAppendingPathComponent:@"husk-port.log"];
+  int fd = open(gLogPath.UTF8String, O_WRONLY | O_CREAT | O_TRUNC | O_APPEND, 0644);
+  if (fd < 0) return;
+  setvbuf(stdout, NULL, _IONBF, 0);
+  setvbuf(stderr, NULL, _IONBF, 0);
+  dup2(fd, STDOUT_FILENO);
+  dup2(fd, STDERR_FILENO);
+  close(fd);
+  [NSTimer scheduledTimerWithTimeInterval:0.2 repeats:YES block:^(NSTimer *t) {
+    NSFileHandle *h = [NSFileHandle fileHandleForReadingAtPath:gLogPath];
+    [h seekToFileOffset:gShown];
+    NSData *d = [h readDataToEndOfFile];
+    [h closeFile];
+    if (d.length == 0) return;
+    gShown += d.length;
+    NSString *s = [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding];
+    if (s) Show(s);
+  }];
 }
 
-static NSString *Joined(NSString *art, NSString *list, BOOL paths) {
-  NSMutableArray *out = [NSMutableArray array];
-  for (NSString *loc in [list componentsSeparatedByString:@":"])
-    [out addObject:paths ? [art stringByAppendingPathComponent:[@"jars" stringByAppendingPathComponent:loc.lastPathComponent]] : loc];
-  return [out componentsJoinedByString:@":"];
+// What ART does with each boot oat file's code, tried on one before ART: register the signed
+// dylib's signature with the kernel, map its code executable (not run). Says which step fails.
+static void SignedCodeCheck(NSString *dylib) {
+  int fd = open(dylib.UTF8String, O_RDONLY);
+  if (fd < 0) { printf("husk-port: code check: cannot open %s\n", dylib.UTF8String); return; }
+  struct mach_header_64 h; pread(fd, &h, sizeof h, 0);
+  NSMutableData *cmds = [NSMutableData dataWithLength:h.sizeofcmds];
+  pread(fd, cmds.mutableBytes, h.sizeofcmds, sizeof h);
+  const struct linkedit_data_command *sig = NULL; uint64_t text_off = 0, text_size = 0;
+  for (uint32_t i = 0, off = 0; i < h.ncmds; i++) {
+    const struct load_command *lc = (const void *)((const char *)cmds.bytes + off);
+    if (lc->cmd == LC_CODE_SIGNATURE) sig = (const void *)lc;
+    if (lc->cmd == LC_SEGMENT_64 && strcmp(((const struct segment_command_64 *)lc)->segname, "__TEXT") == 0) {
+      text_off = ((const struct segment_command_64 *)lc)->fileoff; text_size = ((const struct segment_command_64 *)lc)->filesize;
+    }
+    off += lc->cmdsize;
+  }
+  printf("husk-port: code check %s: %s, __TEXT %#llx+%#llx\n", dylib.lastPathComponent.UTF8String,
+         sig ? "signed" : "NOT signed", text_off, text_size);
+  if (!sig) { close(fd); return; }
+  fsignatures_t fs = { .fs_file_start = 0, .fs_blob_start = (void *)(uintptr_t)sig->dataoff, .fs_blob_size = sig->datasize };
+  int r = fcntl(fd, F_ADDFILESIGS_RETURN, &fs);
+  printf("husk-port: code check: F_ADDFILESIGS_RETURN %s (covers to %#llx)\n", r == -1 ? strerror(errno) : "ok",
+         (unsigned long long)fs.fs_file_start);
+  // the last 16 KiB page of the code, mapped executable as ART maps it
+  uint64_t off = (text_off + text_size - 16384) & ~16383ull;
+  void *p = mmap(NULL, 16384, PROT_READ | PROT_EXEC, MAP_PRIVATE, fd, (off_t)off);
+  printf("husk-port: code check: mmap r-x at file offset %#llx: %s\n", off, p == MAP_FAILED ? strerror(errno) : "ok");
+  if (p != MAP_FAILED) {
+    printf("husk-port: code check: first word %#x\n", *(volatile uint32_t *)p);   // a page-in, validated
+    munmap(p, 16384);
+  }
+  close(fd);
 }
 
 // The address space as this device gives it to the app: its bounds, its big regions, and
@@ -112,6 +143,7 @@ static void *RunVM(void *unused) {
   }
   NSString *bundle = NSBundle.mainBundle.bundlePath;
   NSString *art = [bundle stringByAppendingPathComponent:@"art"];
+  SignedCodeCheck([art stringByAppendingPathComponent:@"arm64/boot-okhttp-hostdex.oat.dylib"]);
   NSString *dex = [bundle stringByAppendingPathComponent:@"app/classes.dex"];
   NSString *main = [NSBundle.mainBundle objectForInfoDictionaryKey:@"HuskMainClass"] ?: @"Hello";
   NSString *bcp = [[NSString stringWithContentsOfFile:[art stringByAppendingPathComponent:@"boot.classpath"]
@@ -129,6 +161,7 @@ static void *RunVM(void *unused) {
     [@"-Xbootclasspath:" stringByAppendingString:Joined(art, bcp, YES)],
     [@"-Xbootclasspath-locations:" stringByAppendingString:bcp],
     [@"-Djava.class.path=" stringByAppendingString:dex],
+    @"-verbose:oat",
     @"-Xss8m",
   ];
   JavaVMOption options[opts.count];
