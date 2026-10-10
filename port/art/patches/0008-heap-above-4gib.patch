@@ -589,10 +589,25 @@ index c5b111f8..78c3fbe1 100644
        if (!Runtime::Current()->GetHeap()->IsValidObjectAddress(o)) {
          LOG(FATAL) << StringPrintf("Found invalid object %#" PRIxPTR " in register v%u",
 diff --git a/art/runtime/entrypoints/quick/quick_alloc_entrypoints.cc b/art/runtime/entrypoints/quick/quick_alloc_entrypoints.cc
-index ecf6f670..5e4cb5db 100644
+index ecf6f670..e26132b9 100644
 --- a/art/runtime/entrypoints/quick/quick_alloc_entrypoints.cc
 +++ b/art/runtime/entrypoints/quick/quick_alloc_entrypoints.cc
-@@ -213,7 +213,8 @@ void SetQuickAllocEntryPointsInstrumented(bool instrumented) {
+@@ -192,14 +192,12 @@ void SetQuickAllocEntryPoints##suffix(QuickEntryPoints* qpoints, bool instrument
+ }
+ 
+ // Generate the entrypoint functions.
+-#if !defined(__APPLE__) || !defined(__LP64__)
+ GENERATE_ENTRYPOINTS(_dlmalloc)
+ GENERATE_ENTRYPOINTS(_rosalloc)
+ GENERATE_ENTRYPOINTS(_bump_pointer)
+ GENERATE_ENTRYPOINTS(_tlab)
+ GENERATE_ENTRYPOINTS(_region)
+ GENERATE_ENTRYPOINTS(_region_tlab)
+-#endif
+ 
+ static bool entry_points_instrumented = false;
+ static gc::AllocatorType entry_points_allocator = gc::kAllocatorTypeDlMalloc;
+@@ -213,7 +211,8 @@ void SetQuickAllocEntryPointsInstrumented(bool instrumented) {
  }
  
  void ResetQuickAllocEntryPoints(QuickEntryPoints* qpoints, bool is_marking) {
@@ -602,7 +617,7 @@ index ecf6f670..5e4cb5db 100644
    switch (entry_points_allocator) {
      case gc::kAllocatorTypeDlMalloc: {
        SetQuickAllocEntryPoints_dlmalloc(qpoints, entry_points_instrumented);
-@@ -251,10 +252,6 @@ void ResetQuickAllocEntryPoints(QuickEntryPoints* qpoints, bool is_marking) {
+@@ -251,10 +250,6 @@ void ResetQuickAllocEntryPoints(QuickEntryPoints* qpoints, bool is_marking) {
      default:
        break;
    }
