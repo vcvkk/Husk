@@ -39,6 +39,12 @@
 #define getrlimit64 getrlimit
 #define setrlimit64 setrlimit
 #define rlimit64 rlimit
+#define posix_fallocate64 posix_fallocate
+
+/* struct stat's timespecs */
+#define st_atim st_atimespec
+#define st_mtim st_mtimespec
+#define st_ctim st_ctimespec
 
 
 /* The thread id Linux code gets from syscall(__NR_gettid). */
