@@ -510,10 +510,10 @@ index 9e3beaf1..1c7a5721 100644
  
    bool VerifyProfileData() {
 diff --git a/art/libartbase/base/globals.h b/art/libartbase/base/globals.h
-index 618a7069..837c2d0b 100644
+index 618a7069..274b4e40 100644
 --- a/art/libartbase/base/globals.h
 +++ b/art/libartbase/base/globals.h
-@@ -48,6 +48,17 @@ static constexpr int kPageSize = 16384;
+@@ -48,6 +48,20 @@ static constexpr int kPageSize = 16384;
  // still load where pages are 4 KiB. (Later ART versions have the same constant.)
  static constexpr size_t kElfSegmentAlignment = 16384;
  
@@ -522,10 +522,13 @@ index 618a7069..837c2d0b 100644
 +// process no memory there (a 4 GiB __PAGEZERO, which the kernel insists on), so the heap lives in
 +// the 4 GiB window from kHeapBase, on every system alike. A reference is an address's low 32 bits;
 +// the address is kHeapBase | reference, one instruction (orr with an immediate) in compiled code.
-+// 32 GiB: clear of what Darwin maps low (executables, dyld's shared cache) and within the 63 GiB
-+// an iOS app has. The page at kHeapBase is kept inaccessible (MemMap::Init), so that a null
-+// reference made an address faults like a null pointer.
-+static constexpr uintptr_t kHeapBase = UINT64_C(0x800000000);
++// 496 GiB, near the top of what an iOS app may map with extended-virtual-addressing (up to
++// 512 GiB, as measured on an iPhone with iOS 27: dyld's shared region reaches 63 GiB, and the
++// kernel keeps 63-448 GiB reserved), where mmap's bottom-up placement is least likely to get
++// first; free on macOS and Linux alike. Bits 34-38: one orr immediate. The page at kHeapBase is
++// kept inaccessible (MemMap::Init), so that a null reference made an address faults like a null
++// pointer.
++static constexpr uintptr_t kHeapBase = UINT64_C(0x7c00000000);
 +static constexpr uintptr_t kHeapWindowSize = UINT64_C(4) * 1024 * 1024 * 1024;
 +
  // Clion, clang analyzer, etc can falsely believe that "if (kIsDebugBuild)" always
@@ -664,7 +667,7 @@ index f434cb40..a4ed7fb3 100644
  }
  
 diff --git a/art/runtime/arch/arm64/asm_support_arm64.S b/art/runtime/arch/arm64/asm_support_arm64.S
-index 715fc35f..57a3208b 100644
+index 715fc35f..a140df3c 100644
 --- a/art/runtime/arch/arm64/asm_support_arm64.S
 +++ b/art/runtime/arch/arm64/asm_support_arm64.S
 @@ -75,4 +75,10 @@
@@ -674,7 +677,7 @@ index 715fc35f..57a3208b 100644
 +// Make a register holding a reference's 32 bits (its W view, loaded from memory) the object's
 +// address: the heap is in the 4 GiB window from kHeapBase (libartbase/base/globals.h).
 +.macro DECODE_HEAP_REF xRef
-+    orr \xRef, \xRef, #0x800000000
++    orr \xRef, \xRef, #0x7c00000000
 +.endm
 +
  #endif  // ART_RUNTIME_ARCH_ARM64_ASM_SUPPORT_ARM64_S_

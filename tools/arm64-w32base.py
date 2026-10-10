@@ -1,9 +1,9 @@
 # Scans disassembled arm64 oat code (llvm-objdump -d) for code that breaks with the heap
 # above 4 GiB, where a reference is the low 32 bits of an address and a register's X view
-# holds the address (orr xN, xN, #0x800000000 decodes it):
+# holds the address (orr xN, xN, #0x7c00000000 decodes it):
 #   base   a memory access whose base was last written as a 32-bit value (not decoded)
 #   xtest  a null test or compare on the X view of a decoded reference: never 0, and null
-#          may be 0x800000000 there; it must test the W view
+#          may be 0x7c00000000 there; it must test the W view
 import re, sys, collections
 ins_re = re.compile(r'^\s+([0-9a-f]+):\s+(\S+)\s*(.*)$')
 fn_re = re.compile(r'^[0-9a-f]+ <(.*)>:$')
@@ -39,7 +39,7 @@ for line in open(sys.argv[1]):
     if op in ('cmp', 'ccmp', 'cmn', 'tst') and any(int(r) in decoded for r in regs[:2]):
         hit(('xtest', op), where)
     d = dest(op, args)
-    if op == 'orr' and '#0x800000000' in args:
+    if op == 'orr' and '#0x7c00000000' in args:
         d = ('x', int(args.split(',')[0].strip()[1:])); decoded.add(d[1])
     elif d:
         srcs = re.findall(r'\bx(\d+)\b', args)[1:]

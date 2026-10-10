@@ -22,7 +22,7 @@
 #include <unistd.h>
 
 // where ART's heap goes (art/libartbase/base/globals.h, patch 0008): fixed in the compiled code
-static const uint64_t kHeapBase = 0x800000000ull;
+static const uint64_t kHeapBase = 0x7c00000000ull;
 
 static UITextView *gText;
 
@@ -86,7 +86,8 @@ static BOOL AddressSpace(void) {
     a += size;
   }
   static const uint64_t bases[] = {0x200000000ull, 0x400000000ull, 0x800000000ull, 0xc00000000ull, 0x1000000000ull,
-                                   0x1800000000ull, 0x2000000000ull, 0x4000000000ull, 0x8000000000ull, 0x10000000000ull};
+                                   0x1800000000ull, 0x2000000000ull, 0x4000000000ull, 0x7000000000ull, 0x7800000000ull,
+                                   0x7c00000000ull, 0x8000000000ull};
   BOOL ours = NO;
   for (size_t i = 0; i < sizeof bases / sizeof *bases; i++) {
     void *p = mmap((void *)bases[i], 16384, PROT_NONE, MAP_PRIVATE | MAP_ANON, -1, 0);

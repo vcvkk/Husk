@@ -72,7 +72,7 @@ building `dex2oat`, compiling APKs, converting oat files.
   object's 32-bit address, so its heap must be below 4 GiB, and on Apple's
   arm64 systems no process gets memory there (a 4 GiB `__PAGEZERO` the
   kernel insists on; `tools/low4g-probe.c`). Patch 0008 moves the heap to the
-  4 GiB window from 32 GiB, on every system: a reference stays 32 bits, the
+  4 GiB window from 496 GiB (where an iPhone leaves room), on every system: a reference stays 32 bits, the
   address is `0x800000000 | reference`, one `orr` in compiled code. Done and
   tested on the arm64 Linux runner: tests/dvm passes both in the interpreter
   and with a boot image and everything compiled ahead of time for arm64. What
