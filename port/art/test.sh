@@ -20,10 +20,18 @@ for d in "$T"/*/; do
     if [ $fail -ge "$MAX_FAIL" ]; then
         printf '  skip  %s\n' "$t"; continue
     fi
-    # a stuck runtime gets SIGQUIT first, on which ART dumps every thread's stack, then KILL
-    (cd "$d" && timeout -s QUIT -k 15 120 dalvikvm ${DALVIKVM_FLAGS:-} -Xss8m -cp classes.dex "$t" \
-        > art.out 2> art.err)
-    code=$?
+    (cd "$d" && exec dalvikvm ${DALVIKVM_FLAGS:-} -Xss8m -cp classes.dex "$t" > art.out 2> art.err) &
+    pid=$!
+    for i in $(seq ${TIMEOUT:-60}); do kill -0 $pid 2>/dev/null || break; sleep 1; done
+    if kill -0 $pid 2>/dev/null; then
+        # stuck: every thread's native stack, from gdb, then KILL
+        if command -v gdb >/dev/null; then
+            ${GDB_SUDO-sudo} timeout 120 gdb -q -p $pid -batch -ex 'thread apply all bt 25' > "$d/art.gdb" 2>&1
+        fi
+        kill -9 $pid; wait $pid 2>/dev/null; code=124
+    else
+        wait $pid; code=$?
+    fi
     # ATL's runtime prints this line for an uncaught exception
     grep -v '^hacky_uncaught_exception_handler' "$d/art.out" > "$d/art.cmp"
     if cmp -s "$d/expected" "$d/art.cmp"; then
@@ -34,6 +42,8 @@ for d in "$T"/*/; do
         { grep -a -m5 -e 'Fatal' -e 'Exception' -e 'error' "$d/art.err" || true; } | sed 's/^/        stderr: /'
         # repeated lines once, then the end of it (a SIGQUIT dump, or a crash's report)
         [ $fail -le 2 ] && uniq -c "$d/art.err" | tail -${ERR_LINES:-120} | sed 's/^/        stderr| /'
+        [ $fail -le 1 ] && [ -f "$d/art.gdb" ] && grep -a -E '^Thread |^#' "$d/art.gdb" | cut -c1-200 \
+            | head -${GDB_LINES:-150} | sed 's/^/        gdb| /'
     fi
 done
 cache="${XDG_CACHE_HOME:-$HOME/.cache}/art"
