@@ -907,6 +907,112 @@ index c5b111f8..78c3fbe1 100644
        VLOG(jdwp) << "get " << tag << " object local " << vreg << " = " << o;
        if (!Runtime::Current()->GetHeap()->IsValidObjectAddress(o)) {
          LOG(FATAL) << StringPrintf("Found invalid object %#" PRIxPTR " in register v%u",
+diff --git a/art/runtime/elf_file.cc b/art/runtime/elf_file.cc
+index f6f5f3ca..8a8a96ea 100644
+--- a/art/runtime/elf_file.cc
++++ b/art/runtime/elf_file.cc
+@@ -32,6 +32,11 @@
+ #include "elf/elf_utils.h"
+ #include "elf_file_impl.h"
+ 
++#ifdef __APPLE__
++#include <fcntl.h>
++#include <mach-o/loader.h>
++#endif
++
+ namespace art {
+ 
+ using android::base::StringPrintf;
+@@ -1099,6 +1104,61 @@ static InstructionSet GetInstructionSetFromELF(uint16_t e_machine, uint32_t e_fl
+   return InstructionSet::kNone;
+ }
+ 
++#ifdef __APPLE__
++// Apple's systems execute only signed code, and dex2oat writes ELF. Beside each oat file
++// sits its code as a signed Mach-O dylib (tools/oat2macho: same addresses and file offsets),
++// <oat file>.dylib. Its signature is registered with the kernel for the file, then its
++// bytes are mapped where the ELF segment's go: not dlopen, which would put them anywhere,
++// and the code reaches the boot image beside it PC-relatively. Returns the dylib's file
++// descriptor, or -1 with *error_msg set.
++static int OpenSignedCode(const std::string& oat_path, std::string* error_msg) {
++  std::string path = oat_path + ".dylib";
++  int fd = TEMP_FAILURE_RETRY(open(path.c_str(), O_RDONLY | O_CLOEXEC));
++  if (fd < 0) {
++    *error_msg = StringPrintf("No signed code for %s: %s: %s", oat_path.c_str(), path.c_str(),
++                              strerror(errno));
++    return -1;
++  }
++  mach_header_64 header;
++  if (pread(fd, &header, sizeof(header), 0) != sizeof(header) || header.magic != MH_MAGIC_64) {
++    *error_msg = StringPrintf("%s is not a 64-bit Mach-O file", path.c_str());
++    close(fd);
++    return -1;
++  }
++  std::vector<uint8_t> commands(header.sizeofcmds);
++  if (pread(fd, commands.data(), commands.size(), sizeof(header)) !=
++      static_cast<ssize_t>(commands.size())) {
++    *error_msg = StringPrintf("%s: short load commands", path.c_str());
++    close(fd);
++    return -1;
++  }
++  const linkedit_data_command* signature = nullptr;
++  for (size_t off = 0, i = 0; i < header.ncmds && off + sizeof(load_command) <= commands.size(); i++) {
++    const load_command* lc = reinterpret_cast<const load_command*>(commands.data() + off);
++    if (lc->cmd == LC_CODE_SIGNATURE) {
++      signature = reinterpret_cast<const linkedit_data_command*>(lc);
++    }
++    off += lc->cmdsize;
++  }
++  if (signature == nullptr) {
++    *error_msg = StringPrintf("%s is not signed", path.c_str());
++    close(fd);
++    return -1;
++  }
++  fsignatures_t sigs = {};
++  sigs.fs_file_start = 0;
++  sigs.fs_blob_start = reinterpret_cast<void*>(static_cast<uintptr_t>(signature->dataoff));
++  sigs.fs_blob_size = signature->datasize;
++  if (fcntl(fd, F_ADDFILESIGS, &sigs) == -1) {
++    *error_msg = StringPrintf("%s: the kernel refused its signature: %s", path.c_str(),
++                              strerror(errno));
++    close(fd);
++    return -1;
++  }
++  return fd;
++}
++#endif
++
+ template <typename ElfTypes>
+ bool ElfFileImpl<ElfTypes>::Load(File* file,
+                                  bool executable,
+@@ -1229,13 +1289,26 @@ bool ElfFileImpl<ElfTypes>::Load(File* file,
+                                 file->GetPath().c_str());
+       return false;
+     }
++    int segment_fd = file->Fd();
++#ifdef __APPLE__
++    // code: from the signed Mach-O copy
++    std::unique_ptr<int, void (*)(int*)> code_fd(nullptr, [](int* fd) { close(*fd); delete fd; });
++    if ((prot & PROT_EXEC) != 0 && program_header->p_filesz != 0u) {
++      int fd = OpenSignedCode(file->GetPath(), error_msg);
++      if (fd < 0) {
++        return false;
++      }
++      code_fd.reset(new int(fd));
++      segment_fd = fd;
++    }
++#endif
+     if (program_header->p_filesz != 0u) {
+       MemMap segment =
+           MemMap::MapFileAtAddress(p_vaddr,
+                                    program_header->p_filesz,
+                                    prot,
+                                    flags,
+-                                   file->Fd(),
++                                   segment_fd,
+                                    program_header->p_offset,
+                                    /* low_4gb= */ false,
+                                    file->GetPath().c_str(),
 diff --git a/art/runtime/entrypoints/quick/quick_alloc_entrypoints.cc b/art/runtime/entrypoints/quick/quick_alloc_entrypoints.cc
 index ecf6f670..e26132b9 100644
 --- a/art/runtime/entrypoints/quick/quick_alloc_entrypoints.cc
