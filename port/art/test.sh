@@ -39,6 +39,9 @@ for d in "$T"/*/; do
     else
         printf '  FAIL  %-14s exit %d\n' "$t" $code; fail=$((fail + 1))
         { diff "$d/expected" "$d/art.cmp" || true; } | head -10 | sed 's/^/        /'
+        # an uncaught exception, which the comparison leaves out: in a daemon thread it can be why
+        { grep -a -A12 '^hacky_uncaught_exception_handler' "$d/art.out" || true; } | head -40 \
+            | sed 's/^/        uncaught| /'
         { grep -a -m5 -e 'Fatal' -e 'Exception' -e 'error' "$d/art.err" || true; } | sed 's/^/        stderr: /'
         # repeated lines once, then the end of it (a SIGQUIT dump, or a crash's report)
         [ $fail -le 2 ] && uniq -c "$d/art.err" | tail -${ERR_LINES:-120} | sed 's/^/        stderr| /'
