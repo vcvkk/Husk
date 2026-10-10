@@ -57,11 +57,17 @@ building `dex2oat`, compiling APKs, converting oat files.
   through its onboarding on clicks. Found on the way: libcore must be desugared
   (d8 without `--no-desugaring`; ART 10 cannot link lambda call sites), and
   wolfSSL must be built with JNI.
-- **ART on Darwin: Java runs on macOS arm64.** The runtime (dalvikvm, libart,
-  the class library's native code) builds for macOS from make's dry run
-  (`port/art/darwin`: a generated build.ninja, a compat layer for the Linux
-  headers Darwin lacks, ELF-to-Mach-O assembly). On the macOS runner it runs
-  tests/dvm's Hello in the interpreter, without a boot image.
+- **ART on Darwin: compiled Java runs on macOS arm64, without JIT.** The
+  runtime (dalvikvm, libart, the class library's native code) builds for macOS
+  from make's dry run (`port/art/darwin`: a generated build.ninja, a compat layer
+  for the Linux headers Darwin lacks, ELF-to-Mach-O assembly). On the macOS
+  runner tests/dvm's Hello runs on a boot image compiled on Linux
+  (`port/art/boot-image.sh`), its own code compiled ahead of time too: ART's ELF
+  loader maps each oat file's code from its signed Mach-O copy (`<oat>.dylib`,
+  registered with `F_ADDFILESIGS`) where the ELF puts it, so nothing is
+  interpreted or generated at run time (`-Xusejit:false`). This is how it will
+  run on iOS, where the app's signature covers those dylibs. Next: the same
+  build for iOS (`port/art/darwin/ios-deps.sh`, `gen-ninja.py --target ios`).
 - **The heap above 4 GiB.** ART 10 makes a reference between objects the
   object's 32-bit address, so its heap must be below 4 GiB, and on Apple's
   arm64 systems no process gets memory there (a 4 GiB `__PAGEZERO` the
@@ -75,9 +81,7 @@ building `dex2oat`, compiling APKs, converting oat files.
   (its decoded X view is never 0), the thread's 64-bit peer and exception
   pointers in full, and RosAlloc's fast path clearing the lock word (a free
   slot's next pointer overlaps the header). `tools/arm64-w32base.py` scans
-  disassembled oat code for the first two kinds. Next: the same on Darwin,
-  with the boot oat files' code mapped beside the image (their code reaches
-  image objects PC-relatively).
+  disassembled oat code for the first two kinds.
 - **16 KiB pages everywhere** (patch 0003): what Linux's dex2oat lays out is
   what Darwin maps; the tests pass on Linux with it.
 - **Not started: the framework's native half on UIKit/Metal.**
