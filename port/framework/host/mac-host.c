@@ -3,7 +3,7 @@
  * An app on ART and the framework, on macOS, with no window: what it draws is written out as PNG
  * files, a frame a second. For CI, where it shows what the iOS app would show.
  *
- *   mac-host --art DIR --apk APK [--data DIR] [--size 1080x2400] [--density 3] [--seconds 20]
+ *   mac-host --art DIR --apk APK [--fwres framework-res.apk] [--data DIR] [--size 1080x2400] [--density 3] [--seconds 20]
  *            [--frames DIR] [--tap X,Y@SECONDS]...
  *
  * --art is a boot image directory (port/art/boot-image.sh's layout) with the framework in it;
@@ -59,6 +59,7 @@ int main(int argc, char **argv)
         const char *k = argv[i], *v = argv[i + 1];
         if (!strcmp(k, "--art")) g_art = v;
         else if (!strcmp(k, "--apk")) cfg.apk = v;
+        else if (!strcmp(k, "--fwres")) cfg.framework_res = v;
         else if (!strcmp(k, "--data")) g_data = v;
         else if (!strcmp(k, "--size")) sscanf(v, "%dx%d", &cfg.width, &cfg.height);
         else if (!strcmp(k, "--density")) cfg.density = strtof(v, NULL);

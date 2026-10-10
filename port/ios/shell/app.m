@@ -7,6 +7,7 @@
 //   art/boot.classpath, art/jars/    the boot class path, the framework's jar last
 //   art/arm64/boot*.{art,oat,vdex}   the boot image; boot*.oat.dylib its code, signed with the app
 //   app/base.apk                     the APK; app/oat/arm64/base.odex{,.vdex,.dylib} its code
+//   app/framework-res.apk            the platform's resources (themes and the rest apps name as android:...)
 //
 // The log goes to Documents/husk-port.log (the Files app).
 #import <QuartzCore/QuartzCore.h>
@@ -64,14 +65,14 @@ static void *AppMain(void *unused)
         self.backgroundColor = UIColor.blackColor;
         self.layer.contentsGravity = kCAGravityResize;
         _ids = [NSMapTable strongToStrongObjectsMapTable];
-        _link = [CADisplayLink displayLinkWithTarget:self selector:@selector(frame:)];
+        _link = [CADisplayLink displayLinkWithTarget:self selector:@selector(nextFrame:)];
         if (@available(iOS 15.0, *)) _link.preferredFrameRateRange = CAFrameRateRangeMake(60, 120, 120);
         [_link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
     }
     return self;
 }
 
-- (void)frame:(CADisplayLink *)link
+- (void)nextFrame:(CADisplayLink *)link
 {
     const uint8_t *px; int w, h; bool any;
     if (!husk_frame_take(&px, &w, &h, &any)) return;
@@ -94,7 +95,7 @@ static void *AppMain(void *unused)
 
 - (void)send:(NSSet<UITouch *> *)touches phase:(int)phase
 {
-    CGFloat s = self.contentScaleFactor;
+    CGFloat s = UIScreen.mainScreen.scale;   // pixels, as the frame has them
     for (UITouch *t in touches) {
         NSNumber *n = [_ids objectForKey:t];
         if (!n) { n = @(_nextId++ % 16); [_ids setObject:n forKey:t]; }
@@ -111,7 +112,7 @@ static void *AppMain(void *unused)
 - (void)safeAreaInsetsDidChange
 {
     [super safeAreaInsetsDidChange];
-    CGFloat s = self.contentScaleFactor;
+    CGFloat s = UIScreen.mainScreen.scale;
     UIEdgeInsets i = self.safeAreaInsets;
     husk_app_insets((int)(i.left * s), (int)(i.top * s), (int)(i.right * s), (int)(i.bottom * s), 0);
 }
@@ -164,6 +165,7 @@ static char *GetClipboard(void)
     [NSFileManager.defaultManager createDirectoryAtPath:data withIntermediateDirectories:YES attributes:nil error:nil];
     husk_app_config cfg = {
         .apk = [gBundle stringByAppendingPathComponent:@"app/base.apk"].UTF8String,
+        .framework_res = [gBundle stringByAppendingPathComponent:@"app/framework-res.apk"].UTF8String,
         .data = data.UTF8String,
         .external = docs.UTF8String,
         .width = (int)(screen.bounds.size.width * scale),

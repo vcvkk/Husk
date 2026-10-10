@@ -3,14 +3,15 @@
 # An APK compiled ahead of time on a boot image that has the framework (port/framework) in it, for
 # the macOS test host and for an iOS app, on an arm64 Linux runner with ART installed:
 #
-#   port/framework/ci-app.sh APP.apk OUT_DIR
+#   port/framework/ci-app.sh APP.apk OUT_DIR [FRAMEWORK_RES.apk]
 #
 #   OUT_DIR/macos.tgz, OUT_DIR/ios.tgz: boot/ (jars/, arm64/, boot.classpath) and app/ (base.apk,
-#   oat/arm64/base.{odex,vdex,odex.dylib}), the code as Mach-O for that system. The app is compiled
+#   oat/arm64/base.{odex,vdex,odex.dylib}, and framework-res.apk, the platform's resources, when given),
+#   the code as Mach-O for that system. The app is compiled
 #   with the dex location base.apk, which ART resolves against where the APK is.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-APK="$(realpath "$1")"; OUT="$(realpath -m "$2")"
+APK="$(realpath "$1")"; OUT="$(realpath -m "$2")"; FWRES="${3:+$(realpath "$3")}"
 mkdir -p "$OUT"
 v=$(sed -n 's/^R8_VERSION=//p' "$ROOT/port/art/build.sh")
 export R8_JAR="${R8_JAR:-$OUT/r8.jar}"
@@ -23,6 +24,7 @@ B="$OUT/macos/boot"
 bcp=$(tr ':' '\n' < "$B/boot.classpath" | sed "s|^/boot/|$B/jars/|" | paste -sd: -)
 A="$OUT/macos/app"; mkdir -p "$A/oat/arm64"
 cp "$APK" "$A/base.apk"
+[ -n "$FWRES" ] && cp "$FWRES" "$A/framework-res.apk"
 SECONDS=0
 ANDROID_DATA="$B/android-data" dex2oat --runtime-arg -Xbootclasspath:"$bcp" \
     --runtime-arg -Xbootclasspath-locations:"$(cat "$B/boot.classpath")" --runtime-arg -Xmx1g \

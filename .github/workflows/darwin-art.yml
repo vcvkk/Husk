@@ -456,8 +456,10 @@ jobs:
       - uses: actions/cache@v4
         id: apk
         with:
-          path: tests/compose-hello/app/build/outputs/apk/release/app-release.apk
-          key: compose-hello-${{ hashFiles('tests/compose-hello/**') }}
+          path: |
+            tests/compose-hello/app/build/outputs/apk/release/app-release.apk
+            build/framework-res.apk
+          key: compose-hello-${{ hashFiles('tests/compose-hello/**', 'port/framework/strip-framework-res.py') }}
       - uses: actions/setup-java@v4
         if: steps.apk.outputs.cache-hit != 'true'
         with:
@@ -470,10 +472,19 @@ jobs:
       - name: Build
         if: steps.apk.outputs.cache-hit != 'true'
         run: gradle -p tests/compose-hello --no-daemon assembleRelease
+      # the platform's resources (themes, styles, drawables apps name as android:...), from the SDK
+      - name: Platform resources
+        if: steps.apk.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p build
+          python3 port/framework/strip-framework-res.py "$ANDROID_HOME/platforms/android-34/android.jar" build/framework-res.apk
+          ls -la build/framework-res.apk
       - uses: actions/upload-artifact@v4
         with:
           name: compose-hello-apk
-          path: tests/compose-hello/app/build/outputs/apk/release/app-release.apk
+          path: |
+            tests/compose-hello/app/build/outputs/apk/release/app-release.apk
+            build/framework-res.apk
 
   # the framework in a boot image, and the app compiled against it (port/framework/ci-app.sh)
   app-boot:
@@ -489,7 +500,7 @@ jobs:
           path: |
             build/app/macos.tgz
             build/app/ios.tgz
-          key: app-out-${{ hashFiles('port/art/patches/**', 'port/art/build.sh', 'port/art/dx-via-d8', 'port/art/vixl-meson.patch', 'port/art/boot-image.sh', 'port/framework/ci-app.sh', 'port/framework/build.sh', 'port/framework/src/**', 'port/framework/gen-src/**', 'port/framework/stubs/**', 'port/framework/gen/**', 'tools/oat2macho.c', 'tests/compose-hello/**') }}
+          key: app-out-${{ hashFiles('port/art/patches/**', 'port/art/build.sh', 'port/art/dx-via-d8', 'port/art/vixl-meson.patch', 'port/art/boot-image.sh', 'port/framework/ci-app.sh', 'port/framework/build.sh', 'port/framework/src/**', 'port/framework/gen-src/**', 'port/framework/stubs/**', 'port/framework/gen/**', 'port/framework/strip-framework-res.py', 'tools/oat2macho.c', 'tests/compose-hello/**') }}
       - uses: actions/download-artifact@v4
         if: steps.out.outputs.cache-hit != 'true'
         with:
@@ -525,7 +536,7 @@ jobs:
         run: port/art/ci-install.sh
       - name: Framework, boot image, the app
         if: steps.out.outputs.cache-hit != 'true'
-        run: port/framework/ci-app.sh build/apk/app-release.apk build/app
+        run: port/framework/ci-app.sh build/apk/tests/compose-hello/app/build/outputs/apk/release/app-release.apk build/app build/apk/build/framework-res.apk
       - uses: actions/cache/save@v4
         if: steps.out.outputs.cache-hit != 'true'
         with:
@@ -568,7 +579,7 @@ jobs:
       - name: Run the app
         run: |
           set +e
-          perl -e 'alarm shift; exec @ARGV' 120 build/fw/mac-host --art "$PWD/build/app/boot" --apk "$PWD/build/app/app/base.apk" \
+          perl -e 'alarm shift; exec @ARGV' 120 build/fw/mac-host --art "$PWD/build/app/boot" --apk "$PWD/build/app/app/base.apk" --fwres "$PWD/build/app/app/framework-res.apk" \
             --seconds 15 --frames build/frames --tap 540,1300@8 > build/app-run.log 2>&1
           status=$?
           echo "mac-host exit $status"
