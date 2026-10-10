@@ -565,7 +565,7 @@ index 715fc35f..57a3208b 100644
 +
  #endif  // ART_RUNTIME_ARCH_ARM64_ASM_SUPPORT_ARM64_S_
 diff --git a/art/runtime/arch/arm64/quick_entrypoints_arm64.S b/art/runtime/arch/arm64/quick_entrypoints_arm64.S
-index 93355c42..39bc61f6 100644
+index 93355c42..ce792d52 100644
 --- a/art/runtime/arch/arm64/quick_entrypoints_arm64.S
 +++ b/art/runtime/arch/arm64/quick_entrypoints_arm64.S
 @@ -678,6 +678,13 @@ SAVE_SIZE=6*8   // x4, x5, x19, x20, FP, LR saved.
@@ -679,7 +679,19 @@ index 93355c42..39bc61f6 100644
  #endif  // USE_READ_BARRIER
  .endm
  
-@@ -1885,6 +1941,7 @@ END \name
+@@ -1681,7 +1737,10 @@ ENTRY \c_name
+ #error "Class pointer needs to overwrite next pointer."
+ #endif
+     POISON_HEAP_REF w0
+-    str    w0, [x3, #MIRROR_OBJECT_CLASS_OFFSET]
++    // The next pointer's high half is where the lock word goes: zero now that the heap is above
++    // 4 GiB. One 64-bit store: the class reference, zero-extended, and an empty lock word.
++    mov    w1, w0
++    str    x1, [x3, #MIRROR_OBJECT_CLASS_OFFSET]
+                                                               // Push the new object onto the thread
+                                                               // local allocation stack and
+                                                               // increment the thread local
+@@ -1885,6 +1944,7 @@ END \name
      // Array classes are never finalizable or uninitialized, no need to check.
      ldr    \wTemp0, [\xClass, #MIRROR_CLASS_COMPONENT_TYPE_OFFSET] // Load component type
      UNPOISON_HEAP_REF \wTemp0
@@ -687,7 +699,7 @@ index 93355c42..39bc61f6 100644
      ldr    \wTemp0, [\xTemp0, #MIRROR_CLASS_OBJECT_PRIMITIVE_TYPE_OFFSET]
      lsr    \xTemp0, \xTemp0, #PRIMITIVE_TYPE_SIZE_SHIFT_SHIFT // Component size shift is in high 16
                                                                // bits.
-@@ -2000,10 +2057,12 @@ ENTRY art_quick_imt_conflict_trampoline
+@@ -2000,10 +2060,12 @@ ENTRY art_quick_imt_conflict_trampoline
  #error "Expecting declaring class and access flags to be consecutive for LDP."
  #endif
      ldp wIP0, w15, [xIP0, #ART_METHOD_DECLARING_CLASS_OFFSET]
