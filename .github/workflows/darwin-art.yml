@@ -40,7 +40,8 @@ jobs:
           clang -target arm64-apple-macos11.0 -dynamiclib -install_name @rpath/libdl_bio.dylib \
             port/art/darwin/dl_bio.c -o build/darwin/lib/libdl_bio.dylib
           python3 port/art/darwin/gen-ninja.py --src build/art_standalone --out build/darwin \
-            "${inc[@]}" "${lib[@]}" --lib "$PWD/build/darwin/lib" port/art/darwin/modules.json
+            "${inc[@]}" "${lib[@]}" --lib "$PWD/build/darwin/lib" \
+            --extra-src libart:port/art/darwin/libart_darwin.cc port/art/darwin/modules.json
 
       - name: Build (keep going)
         run: |

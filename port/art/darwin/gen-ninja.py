@@ -21,7 +21,7 @@ import shlex
 
 RUNTIME = ["dalvikvm", "libart", "libjavacore", "libopenjdk", "libopenjdkjvm"]
 SKIP = {"libunwind", "libbacktrace", "libwolfssljni", "libart-compiler", "libart-dexlayout",
-        "dex2oat", "libart-dex2oat.a", "acp", "libhost.a", "libsigchain"}
+        "dex2oat", "libart-dex2oat.a", "acp", "libhost.a"}
 # system libraries on Linux -> what to link on Darwin (None: in libSystem, or not needed)
 SYSTEM = {"c": None, "gcc": None, "pthread": None, "rt": None, "dl": None, "atomic": None, "bsd": None,
           "z": "z", "lz4": "lz4", "lzma": "lzma", "expat": "expat", "crypto": "crypto",

@@ -124,17 +124,26 @@ index 576c914f..08d882c0 100644
  
    uintptr_t sp = sc->sp;
 diff --git a/art/runtime/exec_utils.cc b/art/runtime/exec_utils.cc
-index 7718e0f1..3c59d152 100644
+index 7718e0f1..eea130b7 100644
 --- a/art/runtime/exec_utils.cc
 +++ b/art/runtime/exec_utils.cc
-@@ -60,7 +60,14 @@ int ExecAndReturnCode(std::vector<std::string>& arg_vector, std::string* error_m
+@@ -18,6 +18,9 @@
+ 
+ #include <sys/types.h>
+ #include <sys/wait.h>
++#if defined(__APPLE__)
++#include <crt_externs.h>
++#endif
+ #include <string>
+ #include <vector>
+ #include <cstring>
+@@ -60,7 +63,13 @@ int ExecAndReturnCode(std::vector<std::string>& arg_vector, std::string* error_m
      if (envp == nullptr) {
        execvp(program, &args[0]);
      } else {
 +#if defined(__APPLE__)
 +      // Darwin has no execvpe: the new environment is the one execvp passes on.
-+      extern char** environ;
-+      environ = envp;
++      *_NSGetEnviron() = envp;
 +      execvp(program, &args[0]);
 +#else
        execvpe(program, &args[0], envp);
@@ -327,6 +336,21 @@ index fcb47c2f..f6a6d52e 100644
  extern "C" int sigchain_sigaction(int signal, const struct sigaction* new_action, struct sigaction* old_action);
  extern "C" sighandler_t sigchain_signal(int signo, sighandler_t handler);
  #if !defined(__LP64__)
+diff --git a/libcore/luni/src/main/native/android_system_OsConstants.cpp b/libcore/luni/src/main/native/android_system_OsConstants.cpp
+index 993b1f7a..9af9a8ca 100644
+--- a/libcore/luni/src/main/native/android_system_OsConstants.cpp
++++ b/libcore/luni/src/main/native/android_system_OsConstants.cpp
+@@ -53,6 +53,10 @@
+ 
+ #include <net/if.h> // After <sys/socket.h> to work around a Mac header file bug.
+ 
++#if defined(__APPLE__)
++#include "linux_constants.h"  // the constants Darwin lacks
++#endif
++
+ #if defined(__BIONIC__)
+ #include <linux/capability.h>
+ #endif
 diff --git a/libcore/luni/src/main/native/libcore_io_Linux.cpp b/libcore/luni/src/main/native/libcore_io_Linux.cpp
 index 4e1937fa..5649bbf8 100644
 --- a/libcore/luni/src/main/native/libcore_io_Linux.cpp

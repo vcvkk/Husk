@@ -29,7 +29,7 @@ import sys
 
 REG = re.compile(r"^(?:[xwvqdshb]\d{1,2}|sp|wsp|xzr|wzr|lr|fp|ip[01]|pc|nzcv|fpcr|fpsr|tpidr_el0|lsl|lsr|asr|ror|"
                  r"uxt[bhwx]|sxt[bhwx]|eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le|al|nv)$", re.I)
-PREFIX = re.compile(r"^(?:art[A-Z_]\w*|Art\w+|Mterp\w+|mterp\w+|Execute\w+Impl\w*|ExecuteSwitchImplAsm|MterpHelper\w*|NterpGetMethod\w*|_Z\w+)$")
+PREFIX = re.compile(r"^(?:art[A-Z_]\w*|Art\w+|Mterp\w+|mterp\w+|Execute\w+Impl\w*|ExecuteSwitchImplAsm|MterpHelper\w*|NterpGetMethod\w*|__memcmp16|_Z\w+)$")
 IDENT = r"[A-Za-z_][A-Za-z0-9_$]*"
 
 
