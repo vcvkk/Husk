@@ -1258,10 +1258,35 @@ index f01bcbd8..3026951a 100644
  template<bool kPoisonReferences, class MirrorType>
  class MANAGED ObjectReference {
 diff --git a/art/runtime/monitor.cc b/art/runtime/monitor.cc
-index 676bceb7..934571a2 100644
+index 676bceb7..39216254 100644
 --- a/art/runtime/monitor.cc
 +++ b/art/runtime/monitor.cc
-@@ -1483,7 +1483,7 @@ void Monitor::VisitLocks(StackVisitor* stack_visitor,
+@@ -1040,6 +1040,24 @@ void Monitor::InflateThinLocked(Thread* self, Handle<mirror::Object> obj, LockWo
+     Inflate(self, self, obj.Get(), hash_code);
+   } else {
+     ThreadList* thread_list = Runtime::Current()->GetThreadList();
++    {
++      // A lock word naming no thread at all is corrupt (or obj is not an object): suspending
++      // its owner would retry forever. Report it instead.
++      MutexLock mu(self, *Locks::thread_list_lock_);
++      if (thread_list->FindThreadByThreadId(owner_thread_id) == nullptr) {
++        // in steps: a bogus object can crash any of them
++        LOG(ERROR) << "Thin lock owned by no thread: owner " << owner_thread_id
++                   << " lock word 0x" << std::hex
++                   << obj->GetField32<kVerifyNone>(mirror::Object::MonitorOffset()) << std::dec
++                   << " object " << reinterpret_cast<const void*>(obj.Get());
++        std::ostringstream oss;
++        self->DumpJavaStack(oss);
++        LOG(ERROR) << "Locking from:\n" << oss.str();
++        LOG(ERROR) << "class " << reinterpret_cast<const void*>(
++                          obj->GetClass<kVerifyNone, kWithoutReadBarrier>());
++        LOG(FATAL) << "object of type " << obj->PrettyTypeOf();
++      }
++    }
+     // Suspend the owner, inflate. First change to blocked and give up mutator_lock_.
+     self->SetMonitorEnterObject(obj.Get());
+     bool timed_out;
+@@ -1483,7 +1501,7 @@ void Monitor::VisitLocks(StackVisitor* stack_visitor,
        uint32_t value;
        success = stack_visitor->GetVReg(m, dex_reg, kReferenceVReg, &value);
        if (success) {
