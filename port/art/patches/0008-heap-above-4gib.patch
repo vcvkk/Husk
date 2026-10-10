@@ -1,5 +1,5 @@
 diff --git a/art/compiler/optimizing/code_generator_arm64.cc b/art/compiler/optimizing/code_generator_arm64.cc
-index 43acce56..6bd6a68a 100644
+index 43acce56..e6a0bdc7 100644
 --- a/art/compiler/optimizing/code_generator_arm64.cc
 +++ b/art/compiler/optimizing/code_generator_arm64.cc
 @@ -1056,7 +1056,11 @@ void ParallelMoveResolverARM64::FreeScratchLocation(Location loc) {
@@ -15,7 +15,27 @@ index 43acce56..6bd6a68a 100644
  }
  
  void CodeGeneratorARM64::GenerateFrameEntry() {
-@@ -1345,6 +1349,10 @@ void CodeGeneratorARM64::MoveLocation(Location destination,
+@@ -1170,7 +1174,9 @@ void CodeGeneratorARM64::AddLocationAsTemp(Location location, LocationSummary* l
+ void CodeGeneratorARM64::MarkGCCard(Register object, Register value, bool value_can_be_null) {
+   UseScratchRegisterScope temps(GetVIXLAssembler());
+   Register card = temps.AcquireX();
+-  Register temp = temps.AcquireW();   // Index within the CardTable - 32bit.
++  // Index within the CardTable: 64-bit, the object's address is above 4 GiB (heap window,
++  // libartbase/base/globals.h).
++  Register temp = temps.AcquireX();
+   vixl::aarch64::Label done;
+   if (value_can_be_null) {
+     __ Cbz(value, &done);
+@@ -1179,7 +1185,7 @@ void CodeGeneratorARM64::MarkGCCard(Register object, Register value, bool value_
+   __ Ldr(card, MemOperand(tr, Thread::CardTableOffset<kArm64PointerSize>().Int32Value()));
+   // Calculate the offset (in the card table) of the card corresponding to
+   // `object`.
+-  __ Lsr(temp, object, gc::accounting::CardTable::kCardShift);
++  __ Lsr(temp, object.X(), gc::accounting::CardTable::kCardShift);
+   // Write the `art::gc::accounting::CardTable::kCardDirty` value into the
+   // `object`'s card.
+   //
+@@ -1345,6 +1351,10 @@ void CodeGeneratorARM64::MoveLocation(Location destination,
      if (source.IsStackSlot() || source.IsDoubleStackSlot()) {
        DCHECK(dst.Is64Bits() == source.IsDoubleStackSlot());
        __ Ldr(dst, StackOperandFrom(source));
@@ -26,7 +46,7 @@ index 43acce56..6bd6a68a 100644
      } else if (source.IsSIMDStackSlot()) {
        __ Ldr(QRegisterFrom(destination), StackOperandFrom(source));
      } else if (source.IsConstant()) {
-@@ -1352,7 +1360,12 @@ void CodeGeneratorARM64::MoveLocation(Location destination,
+@@ -1352,7 +1362,12 @@ void CodeGeneratorARM64::MoveLocation(Location destination,
        MoveConstant(dst, source.GetConstant());
      } else if (source.IsRegister()) {
        if (destination.IsRegister()) {
@@ -40,7 +60,7 @@ index 43acce56..6bd6a68a 100644
        } else {
          DCHECK(destination.IsFpuRegister());
          DataType::Type source_type = DataType::Is64BitType(dst_type)
-@@ -1681,12 +1694,62 @@ void CodeGeneratorARM64::StoreRelease(HInstruction* instruction,
+@@ -1681,12 +1696,62 @@ void CodeGeneratorARM64::StoreRelease(HInstruction* instruction,
    }
  }
  
@@ -103,7 +123,7 @@ index 43acce56..6bd6a68a 100644
    __ Ldr(lr, MemOperand(tr, GetThreadOffset<kArm64PointerSize>(entrypoint).Int32Value()));
    {
      // Ensure the pc position is recorded immediately after the `blr` instruction.
-@@ -1718,7 +1781,7 @@ void InstructionCodeGeneratorARM64::GenerateClassInitializationCheck(SlowPathCod
+@@ -1718,7 +1783,7 @@ void InstructionCodeGeneratorARM64::GenerateClassInitializationCheck(SlowPathCod
  
    // Even if the initialized flag is set, we need to ensure consistent memory ordering.
    // TODO(vixl): Let the MacroAssembler handle MemOperand.
@@ -112,7 +132,7 @@ index 43acce56..6bd6a68a 100644
    __ Ldarb(temp, HeapOperand(temp));
    __ Cmp(temp, shifted_initialized_value);
    __ B(lo, slow_path->GetEntryLabel());
-@@ -2436,7 +2499,7 @@ void InstructionCodeGeneratorARM64::VisitArrayGet(HArrayGet* instruction) {
+@@ -2436,7 +2501,7 @@ void InstructionCodeGeneratorARM64::VisitArrayGet(HArrayGet* instruction) {
          }
          temp = obj;
        } else {
@@ -121,7 +141,7 @@ index 43acce56..6bd6a68a 100644
        }
        if (maybe_compressed_char_at) {
          vixl::aarch64::Label uncompressed_load, done;
-@@ -2549,7 +2612,7 @@ void InstructionCodeGeneratorARM64::VisitArraySet(HArraySet* instruction) {
+@@ -2549,7 +2614,7 @@ void InstructionCodeGeneratorARM64::VisitArraySet(HArraySet* instruction) {
          }
          temp = array;
        } else {
@@ -130,7 +150,7 @@ index 43acce56..6bd6a68a 100644
        }
        destination = HeapOperand(temp,
                                  XRegisterFrom(index),
-@@ -2592,7 +2655,7 @@ void InstructionCodeGeneratorARM64::VisitArraySet(HArraySet* instruction) {
+@@ -2592,7 +2657,7 @@ void InstructionCodeGeneratorARM64::VisitArraySet(HArraySet* instruction) {
            vixl::aarch64::Label non_zero;
            __ Cbnz(Register(value), &non_zero);
            if (!index.IsConstant()) {
@@ -139,7 +159,7 @@ index 43acce56..6bd6a68a 100644
            }
            {
              // Ensure that between store and MaybeRecordImplicitNullCheck there are no pools
-@@ -2659,7 +2722,7 @@ void InstructionCodeGeneratorARM64::VisitArraySet(HArraySet* instruction) {
+@@ -2659,7 +2724,7 @@ void InstructionCodeGeneratorARM64::VisitArraySet(HArraySet* instruction) {
        }
  
        if (!index.IsConstant()) {
@@ -148,7 +168,7 @@ index 43acce56..6bd6a68a 100644
        } else {
          // We no longer need the `temp` here so release it as the store below may
          // need a scratch register (if the constant index makes the offset too large)
-@@ -3375,6 +3438,17 @@ void InstructionCodeGeneratorARM64::VisitSelect(HSelect* select) {
+@@ -3375,6 +3440,17 @@ void InstructionCodeGeneratorARM64::VisitSelect(HSelect* select) {
               InputFPRegisterAt(select, 1),
               InputFPRegisterAt(select, 0),
               csel_cond);
@@ -166,7 +186,7 @@ index 43acce56..6bd6a68a 100644
    } else {
      __ Csel(OutputRegister(select),
              InputOperandAt(select, 1),
-@@ -3900,7 +3974,7 @@ void InstructionCodeGeneratorARM64::VisitCheckCast(HCheckCast* instruction) {
+@@ -3900,7 +3976,7 @@ void InstructionCodeGeneratorARM64::VisitCheckCast(HCheckCast* instruction) {
        __ Ldr(WRegisterFrom(maybe_temp3_loc), HeapOperand(temp.W(), object_array_data_offset));
        GetAssembler()->MaybeUnpoisonHeapReference(WRegisterFrom(maybe_temp3_loc));
        // Go to next interface.
@@ -175,7 +195,7 @@ index 43acce56..6bd6a68a 100644
        __ Sub(WRegisterFrom(maybe_temp2_loc), WRegisterFrom(maybe_temp2_loc), 2);
        // Compare the classes and continue the loop if they do not match.
        __ Cmp(cls, WRegisterFrom(maybe_temp3_loc));
-@@ -4098,8 +4172,10 @@ void CodeGeneratorARM64::GenerateStaticOrDirectCall(
+@@ -4098,8 +4174,10 @@ void CodeGeneratorARM64::GenerateStaticOrDirectCall(
        EmitAdrpPlaceholder(adrp_label, XRegisterFrom(temp));
        // Add LDR with its PC-relative .data.bimg.rel.ro patch.
        vixl::aarch64::Label* ldr_label = NewBootImageRelRoPatch(boot_image_offset, adrp_label);
@@ -187,7 +207,7 @@ index 43acce56..6bd6a68a 100644
        break;
      }
      case HInvokeStaticOrDirect::MethodLoadKind::kBssEntry: {
-@@ -4364,6 +4440,8 @@ void CodeGeneratorARM64::LoadBootImageAddress(vixl::aarch64::Register reg,
+@@ -4364,6 +4442,8 @@ void CodeGeneratorARM64::LoadBootImageAddress(vixl::aarch64::Register reg,
      // Add LDR with its PC-relative .data.bimg.rel.ro patch.
      vixl::aarch64::Label* ldr_label = NewBootImageRelRoPatch(boot_image_reference, adrp_label);
      EmitLdrOffsetPlaceholder(ldr_label, reg.W(), reg.X());
@@ -196,7 +216,7 @@ index 43acce56..6bd6a68a 100644
    } else {
      DCHECK(Runtime::Current()->UseJitCompilation());
      gc::Heap* heap = Runtime::Current()->GetHeap();
-@@ -4662,6 +4740,8 @@ void InstructionCodeGeneratorARM64::VisitLoadClass(HLoadClass* cls) NO_THREAD_SA
+@@ -4662,6 +4742,8 @@ void InstructionCodeGeneratorARM64::VisitLoadClass(HLoadClass* cls) NO_THREAD_SA
        vixl::aarch64::Label* ldr_label =
            codegen_->NewBootImageRelRoPatch(boot_image_offset, adrp_label);
        codegen_->EmitLdrOffsetPlaceholder(ldr_label, out.W(), out.X());
@@ -205,7 +225,7 @@ index 43acce56..6bd6a68a 100644
        break;
      }
      case HLoadClass::LoadKind::kBssEntry: {
-@@ -4836,6 +4916,8 @@ void InstructionCodeGeneratorARM64::VisitLoadString(HLoadString* load) NO_THREAD
+@@ -4836,6 +4918,8 @@ void InstructionCodeGeneratorARM64::VisitLoadString(HLoadString* load) NO_THREAD
        vixl::aarch64::Label* ldr_label =
            codegen_->NewBootImageRelRoPatch(boot_image_offset, adrp_label);
        codegen_->EmitLdrOffsetPlaceholder(ldr_label, out.W(), out.X());
@@ -214,7 +234,7 @@ index 43acce56..6bd6a68a 100644
        return;
      }
      case HLoadString::LoadKind::kBssEntry: {
-@@ -5841,7 +5923,8 @@ void CodeGeneratorARM64::GenerateGcRootFieldLoad(
+@@ -5841,7 +5925,8 @@ void CodeGeneratorARM64::GenerateGcRootFieldLoad(
        EmitLdrOffsetPlaceholder(fixup_label, root_reg, obj.X());
      }
      // Note that GC roots are not affected by heap poisoning, thus we
@@ -224,7 +244,7 @@ index 43acce56..6bd6a68a 100644
    }
    MaybeGenerateMarkingRegisterCheck(/* code= */ __LINE__);
  }
-@@ -6096,8 +6179,9 @@ void CodeGeneratorARM64::MaybeGenerateReadBarrierSlow(HInstruction* instruction,
+@@ -6096,8 +6181,9 @@ void CodeGeneratorARM64::MaybeGenerateReadBarrierSlow(HInstruction* instruction,
      // If heap poisoning is enabled, unpoisoning will be taken care of
      // by the runtime within the slow path.
      GenerateReadBarrierSlow(instruction, out, ref, obj, offset, index);
