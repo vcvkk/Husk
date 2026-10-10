@@ -165,7 +165,8 @@ rule gen
             obj = os.path.join(out, "obj", name, s.replace("out/host/linux-x86/", "").replace("/", "_") + ".o")
             rule = {"c": "cc", "c++": "cxx", "asm": "cc"}[ob["lang"]]
             flags = [gen(a) for a in translate(ob["args"], darwin_config)]
-            w.write(f"build {obj}: {rule} {s_abs} || {' '.join(all_gen)}\n  flags = {q(flags)}\n")
+            mine = [g for g in all_gen if f"/{name}_intermediates/" in g]
+            w.write(f"build {obj}: {rule} {s_abs} || {' '.join(mine)}\n  flags = {q(flags)}\n")
             objs.append(obj)
         if m["kind"] == "static":
             p = os.path.join(out, "lib", name)

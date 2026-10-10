@@ -1,0 +1,13 @@
+diff --git a/art/runtime/runtime.h b/art/runtime/runtime.h
+index 5665edec..b50eb397 100644
+--- a/art/runtime/runtime.h
++++ b/art/runtime/runtime.h
+@@ -427,7 +427,7 @@ class Runtime {
+       REQUIRES_SHARED(Locks::mutator_lock_);
+ 
+   #define GetCalleeSaveMethodOffset(type) \
+-    OFFSETOF_MEMBER(art::Runtime, art::Runtime::callee_save_methods_[static_cast<size_t>(type)])
++    OFFSETOF_MEMBER(art::Runtime, callee_save_methods_[static_cast<size_t>(type)])
+ 
+   InstructionSet GetInstructionSet() const {
+     return instruction_set_;
