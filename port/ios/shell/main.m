@@ -13,10 +13,16 @@
 // Nothing is compiled or generated at run time: ART maps each oat file's code from its
 // signed dylib (patch 0008) and runs without JIT.
 #import <UIKit/UIKit.h>
+#include <fcntl.h>
 #include <jni.h>
+#include <mach/mach.h>
 #include <pthread.h>
 #include <stdio.h>
+#include <sys/mman.h>
 #include <unistd.h>
+
+// where ART's heap goes (art/libartbase/base/globals.h, patch 0008): fixed in the compiled code
+static const uint64_t kHeapBase = 0x800000000ull;
 
 static UITextView *gText;
 
@@ -28,13 +34,14 @@ static void Show(NSString *s) {
 }
 
 // stdout and stderr into a pipe whose reader puts them on screen, and on the original stderr
-static int gErr = STDERR_FILENO;
+static int gErr = STDERR_FILENO, gLog = -1;
 
 static void *Pump(void *arg) {
   int fd = (int)(intptr_t)arg, err = gErr;
   char buf[4096];
   for (ssize_t n; (n = read(fd, buf, sizeof buf)) > 0;) {
     write(err, buf, n);
+    if (gLog >= 0) { write(gLog, buf, n); fsync(gLog); }   // kept if the process dies next
     NSString *s = [[NSString alloc] initWithBytes:buf length:n encoding:NSUTF8StringEncoding];
     if (s) Show(s);
   }
@@ -46,6 +53,8 @@ static void Capture(void) {
   if (pipe(p) != 0) return;
   setvbuf(stdout, NULL, _IOLBF, 0);
   gErr = dup(STDERR_FILENO);
+  NSString *docs = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+  gLog = open([docs stringByAppendingPathComponent:@"husk-port.log"].UTF8String, O_WRONLY | O_CREAT | O_TRUNC, 0644);
   pthread_t t;
   pthread_create(&t, NULL, Pump, (void *)(intptr_t)p[0]);
   dup2(p[1], STDOUT_FILENO);
@@ -59,7 +68,47 @@ static NSString *Joined(NSString *art, NSString *list, BOOL paths) {
   return [out componentsJoinedByString:@":"];
 }
 
+// The address space as this device gives it to the app: its bounds, its big regions, and
+// which of the bases the heap window could have are free. Returns whether ART's is.
+static BOOL AddressSpace(void) {
+  task_vm_info_data_t vmi; mach_msg_type_number_t n = TASK_VM_INFO_COUNT;
+  if (task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&vmi, &n) == KERN_SUCCESS)
+    printf("husk-port: address space %#llx-%#llx\n", (unsigned long long)vmi.min_address,
+           (unsigned long long)vmi.max_address);
+  printf("husk-port: regions of 256 MiB and more:\n");
+  vm_address_t a = 0; vm_size_t size; natural_t depth = 0;
+  for (int i = 0; i < 100000; i++) {
+    vm_region_submap_info_data_64_t info; mach_msg_type_number_t c = VM_REGION_SUBMAP_INFO_COUNT_64;
+    if (vm_region_recurse_64(mach_task_self(), &a, &size, &depth, (vm_region_recurse_info_t)&info, &c) != KERN_SUCCESS) break;
+    if (size >= (256ull << 20))
+      printf("  %#llx-%#llx %6llu MiB prot %d/%d tag %u\n", (unsigned long long)a, (unsigned long long)(a + size),
+             (unsigned long long)(size >> 20), info.protection, info.max_protection, info.user_tag);
+    a += size;
+  }
+  static const uint64_t bases[] = {0x200000000ull, 0x400000000ull, 0x800000000ull, 0xc00000000ull, 0x1000000000ull,
+                                   0x1800000000ull, 0x2000000000ull, 0x4000000000ull, 0x8000000000ull, 0x10000000000ull};
+  BOOL ours = NO;
+  for (size_t i = 0; i < sizeof bases / sizeof *bases; i++) {
+    void *p = mmap((void *)bases[i], 16384, PROT_NONE, MAP_PRIVATE | MAP_ANON, -1, 0);
+    BOOL ok = p == (void *)bases[i];
+    printf("husk-port: heap window at %#llx: %s (got %p)\n", (unsigned long long)bases[i], ok ? "free" : "NOT free", p);
+    if (p != MAP_FAILED) munmap(p, 16384);
+    if (bases[i] == kHeapBase) ours = ok;
+  }
+  void *any = mmap(NULL, 4ull << 30, PROT_NONE, MAP_PRIVATE | MAP_ANON, -1, 0);
+  printf("husk-port: 4 GiB anywhere: %p\n", any);
+  if (any != MAP_FAILED) munmap(any, 4ull << 30);
+  fflush(stdout);
+  return ours;
+}
+
 static void *RunVM(void *unused) {
+  if (!AddressSpace()) {
+    printf("husk-port: ART's heap window (%#llx) is not free on this device: not starting ART\n",
+           (unsigned long long)kHeapBase);
+    fflush(stdout);
+    return NULL;
+  }
   NSString *bundle = NSBundle.mainBundle.bundlePath;
   NSString *art = [bundle stringByAppendingPathComponent:@"art"];
   NSString *dex = [bundle stringByAppendingPathComponent:@"app/classes.dex"];
