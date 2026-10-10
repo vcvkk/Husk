@@ -194,8 +194,26 @@ jobs:
           ART_INSTALL=1 port/art/build.sh
       - name: Boot image
         run: port/art/boot-image.sh build/boot --macos
+      # Hello's own code, compiled against the image for where the macOS job runs it: an
+      # odex beside classes.dex is found by the dex file's location
+      - name: Hello, compiled ahead of time
+        run: |
+          v=$(sed -n 's/^R8_VERSION=//p' port/art/build.sh)
+          curl -fsSL -o build/r8.jar "https://dl.google.com/android/maven2/com/android/tools/r8/$v/r8-$v.jar"
+          H=build/boot/hello; mkdir -p $H/cls $H/oat/arm64
+          javac --release 8 -d $H/cls tests/dvm/Hello.java
+          java -cp build/r8.jar com.android.tools.r8.D8 --min-api 26 --output $H $H/cls/*.class
+          B="$PWD/build/boot"
+          bcp=$(tr ':' '\n' < "$B/boot.classpath" | sed "s|^/boot/|$B/jars/|" | paste -sd: -)
+          ANDROID_DATA="$B/android-data" dex2oat --runtime-arg -Xbootclasspath:"$bcp" \
+            --runtime-arg -Xbootclasspath-locations:"$(cat "$B/boot.classpath")" \
+            --boot-image="$B/boot.art" --instruction-set=arm64 --class-loader-context='PCL[]' \
+            --dex-file=$H/classes.dex --dex-location=/Users/runner/work/Husk/Husk/build/boot/hello/classes.dex \
+            --oat-file=$H/oat/arm64/classes.odex
+          build/boot/oat2macho --macos $H/oat/arm64/classes.odex $H/oat/arm64/classes.odex.dylib
+          ls -la $H/oat/arm64
       - name: Pack the boot image
-        run: tar -czf build/boot.tgz -C build boot/jars boot/arm64 boot/boot.classpath
+        run: tar -czf build/boot.tgz -C build boot/jars boot/arm64 boot/boot.classpath boot/hello
       - uses: actions/upload-artifact@v4
         with:
           name: boot-image
@@ -221,31 +239,28 @@ jobs:
           tar -xzf build/boot.tgz -C build
           mkdir -p build/darwin/java/dex/art
           ln -sfn ../../../lib build/darwin/java/dex/art/natives
-          for f in build/boot/arm64/*.dylib; do codesign -s - -f "$f"; done
-          codesign -v build/boot/arm64/*.dylib
-      - name: Hello on dalvikvm (boot image, compiled class library)
+          for f in build/boot/arm64/*.dylib build/boot/hello/oat/arm64/*.dylib; do codesign -s - -f "$f"; done
+          codesign -v build/boot/arm64/*.dylib build/boot/hello/oat/arm64/*.dylib
+      - name: Hello on dalvikvm (boot image, everything compiled ahead of time)
         run: |
           brew install lz4 xz icu4c openssl@3 epoll-shim > /dev/null 2>&1 || true
-          mkdir -p build/hello/cls build/android-data/dalvik-cache
-          v=$(sed -n 's/^R8_VERSION=//p' port/art/build.sh)
-          curl -fsSL -o build/r8.jar "https://dl.google.com/android/maven2/com/android/tools/r8/$v/r8-$v.jar"
-          javac --release 8 -d build/hello/cls tests/dvm/Hello.java
-          java -cp build/r8.jar com.android.tools.r8.D8 --min-api 26 --output build/hello build/hello/cls/*.class
+          mkdir -p build/android-data/dalvik-cache
           export ANDROID_DATA="$PWD/build/android-data"
           B="$PWD/build/boot"
           bcp=$(tr ':' '\n' < "$B/boot.classpath" | sed "s|^/boot/|$B/jars/|" | paste -sd: -)
           limit() { perl -e 'alarm shift; exec @ARGV' "$@"; }
           # no JIT: on Apple systems only signed code runs; everything is compiled ahead of time or interpreted
           args=(-Xusejit:false -Ximage:"$B/boot.art" -Xbootclasspath:"$bcp" -Xbootclasspath-locations:"$(cat "$B/boot.classpath")"
-                -Xss8m -cp classes.dex Hello)
-          cd build/hello
+                -verbose:oat -Xss8m -cp "$B/hello/classes.dex" Hello)
+          cd build/boot/hello
           set +e
-          ../darwin/bin/dalvikvm "${args[@]}" > ../hello.out 2> ../hello.err &
+          D=$GITHUB_WORKSPACE/build
+          $D/darwin/bin/dalvikvm "${args[@]}" > $D/hello.out 2> $D/hello.err &
           pid=$!
           for i in $(seq 60); do kill -0 $pid 2>/dev/null || break; sleep 1; done
           if kill -0 $pid 2>/dev/null; then
             echo "dalvikvm still running after 60 s"
-            limit 120 lldb -p $pid --batch -o 'thread backtrace all' > ../hello.lldb 2>&1
+            limit 120 lldb -p $pid --batch -o 'thread backtrace all' > $D/hello.lldb 2>&1
             kill -9 $pid
             status=124
           else
@@ -253,11 +268,13 @@ jobs:
             status=$?
           fi
           echo "dalvikvm exit $status"
-          cat ../hello.out
-          uniq -c ../hello.err | tail -80
+          cat $D/hello.out
+          # which oat files it ran, from -verbose:oat
+          grep -a -i -e 'odex' -e 'oat file' $D/hello.err | head -20
+          uniq -c $D/hello.err | tail -80
           if [ $status -gt 128 ]; then
             limit 120 lldb --batch -o run -k 'thread backtrace all' -k 'register read' -k quit -- \
-              ../darwin/bin/dalvikvm "${args[@]}" > ../hello.lldb 2>&1
+              $D/darwin/bin/dalvikvm "${args[@]}" > $D/hello.lldb 2>&1
           fi
-          [ -f ../hello.lldb ] && tail -200 ../hello.lldb
-          diff <(java -cp cls Hello 2>/dev/null) ../hello.out && [ $status -eq 0 ]
+          [ -f $D/hello.lldb ] && tail -200 $D/hello.lldb
+          printf 'Hello from husk-port%ss DVM\nsum 1..100 = 5050, args=0\n' "'" | diff - $D/hello.out && [ $status -eq 0 ]
