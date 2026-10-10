@@ -29,7 +29,7 @@ mkdir -p "$APP/Frameworks" "$APP/art" "$APP/app"
 
 xcrun --sdk iphoneos clang -target arm64-apple-ios14.0 -isysroot "$SDK" -fobjc-arc -O2 \
     -I"$SRC/libnativehelper/include/nativehelper" "$ROOT/port/ios/shell/main.m" -o "$APP/$NAME" \
-    -framework UIKit -framework Foundation -L"$RT/lib" -lart -Wl,-force_load,"$RT/lib/libsigchain.a" \
+    -framework UIKit -framework Foundation -L"$RT/lib" -lart -Wl,-force_load,"$RT/lib/libsigchain.a" -lc++ \
     -Wl,-rpath,@executable_path/Frameworks
 
 cp "$RT"/lib/*.dylib "$APP/Frameworks/"
