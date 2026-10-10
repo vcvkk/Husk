@@ -1,5 +1,5 @@
 diff --git a/art/compiler/optimizing/code_generator_arm64.cc b/art/compiler/optimizing/code_generator_arm64.cc
-index 43acce56..9149ea06 100644
+index 43acce56..ec69a3ff 100644
 --- a/art/compiler/optimizing/code_generator_arm64.cc
 +++ b/art/compiler/optimizing/code_generator_arm64.cc
 @@ -1056,7 +1056,11 @@ void ParallelMoveResolverARM64::FreeScratchLocation(Location loc) {
@@ -103,6 +103,42 @@ index 43acce56..9149ea06 100644
    __ Ldr(lr, MemOperand(tr, GetThreadOffset<kArm64PointerSize>(entrypoint).Int32Value()));
    {
      // Ensure the pc position is recorded immediately after the `blr` instruction.
+@@ -2436,7 +2499,7 @@ void InstructionCodeGeneratorARM64::VisitArrayGet(HArrayGet* instruction) {
+         }
+         temp = obj;
+       } else {
+-        __ Add(temp, obj, offset);
++        __ Add(temp.X(), obj.X(), offset);  // 64-bit: heap above 4 GiB
+       }
+       if (maybe_compressed_char_at) {
+         vixl::aarch64::Label uncompressed_load, done;
+@@ -2549,7 +2612,7 @@ void InstructionCodeGeneratorARM64::VisitArraySet(HArraySet* instruction) {
+         }
+         temp = array;
+       } else {
+-        __ Add(temp, array, offset);
++        __ Add(temp.X(), array.X(), offset);  // 64-bit: heap above 4 GiB
+       }
+       destination = HeapOperand(temp,
+                                 XRegisterFrom(index),
+@@ -2592,7 +2655,7 @@ void InstructionCodeGeneratorARM64::VisitArraySet(HArraySet* instruction) {
+           vixl::aarch64::Label non_zero;
+           __ Cbnz(Register(value), &non_zero);
+           if (!index.IsConstant()) {
+-            __ Add(temp, array, offset);
++            __ Add(temp.X(), array.X(), offset);  // 64-bit: heap above 4 GiB
+           }
+           {
+             // Ensure that between store and MaybeRecordImplicitNullCheck there are no pools
+@@ -2659,7 +2722,7 @@ void InstructionCodeGeneratorARM64::VisitArraySet(HArraySet* instruction) {
+       }
+ 
+       if (!index.IsConstant()) {
+-        __ Add(temp, array, offset);
++        __ Add(temp.X(), array.X(), offset);  // 64-bit: heap above 4 GiB
+       } else {
+         // We no longer need the `temp` here so release it as the store below may
+         // need a scratch register (if the constant index makes the offset too large)
 @@ -3375,6 +3438,17 @@ void InstructionCodeGeneratorARM64::VisitSelect(HSelect* select) {
               InputFPRegisterAt(select, 1),
               InputFPRegisterAt(select, 0),
@@ -182,8 +218,37 @@ index 43acce56..9149ea06 100644
    }
  }
  
+diff --git a/art/compiler/optimizing/instruction_simplifier_arm64.cc b/art/compiler/optimizing/instruction_simplifier_arm64.cc
+index e23decbd..826ada48 100644
+--- a/art/compiler/optimizing/instruction_simplifier_arm64.cc
++++ b/art/compiler/optimizing/instruction_simplifier_arm64.cc
+@@ -194,9 +194,14 @@ void InstructionSimplifierArm64Visitor::VisitAnd(HAnd* instruction) {
+   }
+ }
+ 
++// An HIntermediateAddress is an int32 (an array's address plus the data offset, which ART 10 had
++// below 4 GiB): with the heap above 4 GiB (libartbase/base/globals.h) it would lose the address's
++// upper half, in the add that makes it and in a spill. Array accesses address from the array.
++static constexpr bool kExtractArrayAccessAddress = false;
++
+ void InstructionSimplifierArm64Visitor::VisitArrayGet(HArrayGet* instruction) {
+   size_t data_offset = CodeGenerator::GetArrayDataOffset(instruction);
+-  if (TryExtractArrayAccessAddress(instruction,
++  if (kExtractArrayAccessAddress && TryExtractArrayAccessAddress(instruction,
+                                    instruction->GetArray(),
+                                    instruction->GetIndex(),
+                                    data_offset)) {
+@@ -207,7 +212,7 @@ void InstructionSimplifierArm64Visitor::VisitArrayGet(HArrayGet* instruction) {
+ void InstructionSimplifierArm64Visitor::VisitArraySet(HArraySet* instruction) {
+   size_t access_size = DataType::Size(instruction->GetComponentType());
+   size_t data_offset = mirror::Array::DataOffset(access_size).Uint32Value();
+-  if (TryExtractArrayAccessAddress(instruction,
++  if (kExtractArrayAccessAddress && TryExtractArrayAccessAddress(instruction,
+                                    instruction->GetArray(),
+                                    instruction->GetIndex(),
+                                    data_offset)) {
 diff --git a/art/compiler/optimizing/intrinsics_arm64.cc b/art/compiler/optimizing/intrinsics_arm64.cc
-index 33d7709e..b64e8e00 100644
+index 33d7709e..ea268091 100644
 --- a/art/compiler/optimizing/intrinsics_arm64.cc
 +++ b/art/compiler/optimizing/intrinsics_arm64.cc
 @@ -88,6 +88,11 @@ static void MoveFromReturnRegister(Location trg,
@@ -198,6 +263,29 @@ index 33d7709e..b64e8e00 100644
      __ Mov(trg_reg, res_reg, kDiscardForSameWReg);
    } else {
      vixl::aarch64::VRegister trg_reg = FPRegisterFrom(trg, type);
+@@ -1338,8 +1343,9 @@ void IntrinsicCodeGeneratorARM64::VisitStringCompareTo(HInvoke* invoke) {
+     // `temp1` will hold the compressed data pointer, `temp2` the uncompressed data pointer.
+     // Note that flags have been set by the `str` compression flag extraction to `temp3`
+     // before branching to the `different_compression` label.
+-    __ Csel(temp1, str, arg, eq);   // Pointer to the compressed string.
+-    __ Csel(temp2, str, arg, ne);   // Pointer to the uncompressed string.
++    // 64-bit: the strings' addresses are above 4 GiB (heap window, libartbase/base/globals.h).
++    __ Csel(temp1.X(), str.X(), arg.X(), eq);   // Pointer to the compressed string.
++    __ Csel(temp2.X(), str.X(), arg.X(), ne);   // Pointer to the uncompressed string.
+ 
+     // We want to free up the temp3, currently holding `str` compression flag, for comparison.
+     // So, we move it to the bottom bit of the iteration count `temp0` which we then need to treat
+@@ -1348,8 +1354,8 @@ void IntrinsicCodeGeneratorARM64::VisitStringCompareTo(HInvoke* invoke) {
+     __ Lsl(temp0, temp0, 1u);
+ 
+     // Adjust temp1 and temp2 from string pointers to data pointers.
+-    __ Add(temp1, temp1, Operand(value_offset));
+-    __ Add(temp2, temp2, Operand(value_offset));
++    __ Add(temp1.X(), temp1.X(), Operand(value_offset));
++    __ Add(temp2.X(), temp2.X(), Operand(value_offset));
+ 
+     // Complete the move of the compression flag.
+     __ Sub(temp0, temp0, Operand(temp3));
 diff --git a/art/compiler/utils/arm64/assembler_arm64.cc b/art/compiler/utils/arm64/assembler_arm64.cc
 index d7ade058..0b7d2d82 100644
 --- a/art/compiler/utils/arm64/assembler_arm64.cc
