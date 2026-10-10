@@ -20,10 +20,10 @@ shift; [ $# -gt 0 ] && shift
 EXTRA=("$@")
 PREFIX="${PREFIX:-/usr/local}"
 JARS="$PREFIX/lib/$(gcc -dumpmachine)/java/dex/art"
-# the runtime's default boot class path, in its order, less what apps on Apple systems do without:
-# the test libraries (core-junit, hamcrest, junit-runner) and wolfssljni, whose native half is
-# not built for Apple (security.properties names its provider first; absent, it is skipped)
-BCP=(core-oj core-libart okhttp bouncycastle apache-xml apachehttp)
+# the runtime's default boot class path, in its order, less the test libraries (core-junit,
+# hamcrest, junit-runner). wolfssljni is TLS (security.properties names its provider first); its
+# native half, libwolfssljni.dylib, is port/art/darwin/wolfssl.sh's
+BCP=(core-oj core-libart okhttp bouncycastle apache-xml apachehttp wolfssljni)
 mkdir -p "$OUT/jars" "$OUT/arm64"
 args=(); locs=()
 for j in "${BCP[@]}"; do

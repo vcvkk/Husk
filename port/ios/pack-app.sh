@@ -33,6 +33,12 @@ xcrun --sdk iphoneos clang -target arm64-apple-ios14.0 -isysroot "$SDK" -fobjc-a
 cp "$RT"/lib/*.dylib "$APP/Frameworks/"
 cp -R "$FILES/boot/jars" "$FILES/boot/arm64" "$FILES/boot/boot.classpath" "$APP/art/"
 cp -R "$FILES/app" "$APP/app"
+# the CA certificates TLS trusts: wolfssljni reads $ANDROID_ROOT/etc/security/cacerts, ANDROID_ROOT
+# being art/ (port/framework/jni/launch.c); Mozilla's, as curl publishes them
+mkdir -p "$APP/art/etc/security/cacerts"
+curl -fsSL https://curl.se/ca/cacert.pem | awk -v d="$APP/art/etc/security/cacerts" \
+    '/BEGIN CERTIFICATE/ { f = sprintf("%s/ca%03d.pem", d, ++n) } f { print > f } /END CERTIFICATE/ { close(f); f = "" }'
+ls "$APP/art/etc/security/cacerts" | wc -l
 
 sed -e "s|@NAME@|$NAME|g" -e "s|@ID@|$ID|g" -e "s|@MAIN@||g" "$ROOT/port/ios/Info.plist" > "$APP/Info.plist"
 plutil -lint "$APP/Info.plist" > /dev/null

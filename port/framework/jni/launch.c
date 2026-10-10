@@ -10,6 +10,7 @@
  */
 #include "husk-launch.h"
 
+#include <dlfcn.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -59,7 +60,20 @@ bool husk_vm_start(const char *art, const char *data_dir, const char *const *ext
     snprintf(path, sizeof path, "%s/dalvik-cache", data_dir); mkdir(data_dir, 0755); mkdir(path, 0755);
     snprintf(path, sizeof path, "%s/dalvik-cache/arm64", data_dir); mkdir(path, 0755);
     setenv("ANDROID_DATA", data_dir, 1);
-    if (!getenv("ANDROID_ROOT")) setenv("ANDROID_ROOT", art, 1);
+    if (!getenv("ANDROID_ROOT")) setenv("ANDROID_ROOT", art, 1);   /* and its etc/security/cacerts, wolfssljni's */
+    /* System.loadLibrary's path (java.library.path): the runtime's directory, where libwolfssljni is too */
+    Dl_info dl;
+    if (dladdr((void *)JNI_CreateJavaVM, &dl) && dl.dli_fname) {
+        char lib[4096];
+        const char *old = getenv("LD_LIBRARY_PATH");
+        snprintf(lib, sizeof lib, "%s", dl.dli_fname);
+        char *slash = strrchr(lib, '/');
+        if (slash) {
+            *slash = 0;
+            if (old && *old) snprintf(slash, sizeof lib - (size_t)(slash - lib), ":%s", old);
+            setenv("LD_LIBRARY_PATH", lib, 1);
+        }
+    }
 
     char image[2048], bcp[65536], bcl[65536];
     snprintf(image, sizeof image, "-Ximage:%s/boot.art", art);

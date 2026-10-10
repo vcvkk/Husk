@@ -93,6 +93,16 @@ jobs:
         run: |
           mkdir -p build/darwin/include
           cp -R build/art_standalone/libnativehelper/include/nativehelper build/darwin/include/
+      - uses: actions/cache@v4
+        if: steps.dout.outputs.cache-hit != 'true'
+        with:
+          path: build/wolfssl-macos/prefix
+          key: wolfssl-macos-${{ hashFiles('port/art/darwin/wolfssl.sh', 'port/art/build.sh') }}
+      - name: TLS (wolfSSL with JNI)
+        if: steps.dout.outputs.cache-hit != 'true'
+        run: |
+          port/art/darwin/wolfssl.sh macos build/darwin/lib build/darwin/include/nativehelper \
+            build/art_standalone/external/wolfssljni build/wolfssl-macos
       - uses: actions/cache/save@v4
         if: steps.dout.outputs.cache-hit != 'true'
         with:
@@ -392,6 +402,16 @@ jobs:
         with:
           path: ~/Library/Caches/ccache
           key: ccache-ios-${{ github.sha }}
+      - uses: actions/cache@v4
+        if: steps.iout.outputs.cache-hit != 'true'
+        with:
+          path: build/wolfssl-ios/prefix
+          key: wolfssl-ios-${{ hashFiles('port/art/darwin/wolfssl.sh', 'port/art/build.sh') }}
+      - name: TLS (wolfSSL with JNI)
+        if: steps.iout.outputs.cache-hit != 'true'
+        run: |
+          port/art/darwin/wolfssl.sh ios build/ios/lib build/art_standalone/libnativehelper/include/nativehelper \
+            build/art_standalone/external/wolfssljni build/wolfssl-ios
       - name: Pack the iOS runtime
         if: steps.iout.outputs.cache-hit != 'true'
         run: |
