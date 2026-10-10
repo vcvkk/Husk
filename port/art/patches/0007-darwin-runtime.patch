@@ -1,0 +1,316 @@
+diff --git a/art/runtime/arch/arm64/context_arm64.cc b/art/runtime/arch/arm64/context_arm64.cc
+index 7284aa9d..7623d7f1 100644
+--- a/art/runtime/arch/arm64/context_arm64.cc
++++ b/art/runtime/arch/arm64/context_arm64.cc
+@@ -33,7 +33,7 @@
+ namespace art {
+ namespace arm64 {
+ 
+-static constexpr uint64_t gZero = 0;
++static constexpr uintptr_t gZero = 0;
+ 
+ void Arm64Context::Reset() {
+   std::fill_n(gprs_, arraysize(gprs_), nullptr);
+@@ -82,7 +82,7 @@ void Arm64Context::SetFPR(uint32_t reg, uintptr_t value) {
+ 
+ void Arm64Context::SmashCallerSaves() {
+   // This needs to be 0 because we want a null/zero return value.
+-  gprs_[X0] = const_cast<uint64_t*>(&gZero);
++  gprs_[X0] = const_cast<uintptr_t*>(&gZero);
+   gprs_[X1] = nullptr;
+   gprs_[X2] = nullptr;
+   gprs_[X3] = nullptr;
+diff --git a/art/runtime/arch/arm64/context_arm64.h b/art/runtime/arch/arm64/context_arm64.h
+index 95dac90a..51fc7504 100644
+--- a/art/runtime/arch/arm64/context_arm64.h
++++ b/art/runtime/arch/arm64/context_arm64.h
+@@ -91,7 +91,7 @@ class Arm64Context final : public Context {
+   // Pointers to register locations, initialized to null or the specific registers below. We need
+   // an additional one for the PC.
+   uintptr_t* gprs_[kNumberOfXRegisters + 1];
+-  uint64_t * fprs_[kNumberOfDRegisters];
++  uintptr_t* fprs_[kNumberOfDRegisters];  // uintptr_t like gprs_: on Darwin uint64_t is a different type
+   // Hold values for sp, pc and arg0 if they are not located within a stack frame.
+   uintptr_t sp_, pc_, arg0_;
+ };
+diff --git a/art/runtime/arch/arm64/fault_handler_arm64.cc b/art/runtime/arch/arm64/fault_handler_arm64.cc
+index 576c914f..6ae86b8e 100644
+--- a/art/runtime/arch/arm64/fault_handler_arm64.cc
++++ b/art/runtime/arch/arm64/fault_handler_arm64.cc
+@@ -18,6 +18,9 @@
+ 
+ #include <sys/ucontext.h>
+ 
++#include <type_traits>
++#include <utility>
++
+ #include "arch/instruction_set.h"
+ #include "art_method.h"
+ #include "base/enums.h"
+@@ -42,11 +45,38 @@ extern "C" void art_quick_implicit_suspend();
+ 
+ namespace art {
+ 
++// The signal context the handlers below read and change: x0..x30, sp, pc, and the
++// faulting address. Linux keeps them in a struct sigcontext; Darwin in the thread
++// and exception states of its mcontext, where x0..x28, fp and lr are consecutive.
++struct SigContext {
++#if defined(__APPLE__)
++  explicit SigContext(void* context)
++      : regs(reinterpret_cast<uint64_t*>(&reinterpret_cast<ucontext_t*>(context)->uc_mcontext->__ss)),
++        sp(reinterpret_cast<ucontext_t*>(context)->uc_mcontext->__ss.__sp),
++        pc(reinterpret_cast<ucontext_t*>(context)->uc_mcontext->__ss.__pc),
++        fault_address(reinterpret_cast<ucontext_t*>(context)->uc_mcontext->__es.__far) {}
++  uint64_t* regs;
++  __uint64_t& sp;
++  __uint64_t& pc;
++  __uint64_t fault_address;
++#else
++  explicit SigContext(void* context)
++      : regs(reinterpret_cast<struct sigcontext*>(&reinterpret_cast<ucontext_t*>(context)->uc_mcontext)->regs),
++        sp(reinterpret_cast<struct sigcontext*>(&reinterpret_cast<ucontext_t*>(context)->uc_mcontext)->sp),
++        pc(reinterpret_cast<struct sigcontext*>(&reinterpret_cast<ucontext_t*>(context)->uc_mcontext)->pc),
++        fault_address(reinterpret_cast<struct sigcontext*>(&reinterpret_cast<ucontext_t*>(context)->uc_mcontext)->fault_address) {}
++  std::remove_reference_t<decltype(std::declval<sigcontext&>().regs[0])>* regs;
++  decltype(std::declval<sigcontext&>().sp)& sp;
++  decltype(std::declval<sigcontext&>().pc)& pc;
++  decltype(std::declval<sigcontext&>().fault_address) fault_address;
++#endif
++};
++
+ void FaultManager::GetMethodAndReturnPcAndSp(siginfo_t* siginfo ATTRIBUTE_UNUSED, void* context,
+                                              ArtMethod** out_method,
+                                              uintptr_t* out_return_pc, uintptr_t* out_sp) {
+-  struct ucontext *uc = reinterpret_cast<struct ucontext *>(context);
+-  struct sigcontext *sc = reinterpret_cast<struct sigcontext*>(&uc->uc_mcontext);
++  SigContext sc_(context);
++  SigContext* sc = &sc_;
+   *out_sp = static_cast<uintptr_t>(sc->sp);
+   VLOG(signals) << "sp: " << *out_sp;
+   if (*out_sp == 0) {
+@@ -81,8 +111,8 @@ bool NullPointerHandler::Action(int sig ATTRIBUTE_UNUSED, siginfo_t* info, void*
+   // PC at the point of call.  For Null checks we insert a GC map that is immediately after
+   // the load/store instruction that might cause the fault.
+ 
+-  struct ucontext *uc = reinterpret_cast<struct ucontext*>(context);
+-  struct sigcontext *sc = reinterpret_cast<struct sigcontext*>(&uc->uc_mcontext);
++  SigContext sc_(context);
++  SigContext* sc = &sc_;
+ 
+   // Push the gc map location to the stack and pass the fault address in LR.
+   sc->sp -= sizeof(uintptr_t);
+@@ -110,8 +140,8 @@ bool SuspensionHandler::Action(int sig ATTRIBUTE_UNUSED, siginfo_t* info ATTRIBU
+       (Thread::ThreadSuspendTriggerOffset<PointerSize::k64>().Int32Value() << 7);
+   uint32_t checkinst2 = 0xf9400000;
+ 
+-  struct ucontext *uc = reinterpret_cast<struct ucontext *>(context);
+-  struct sigcontext *sc = reinterpret_cast<struct sigcontext*>(&uc->uc_mcontext);
++  SigContext sc_(context);
++  SigContext* sc = &sc_;
+   uint8_t* ptr2 = reinterpret_cast<uint8_t*>(sc->pc);
+   uint8_t* ptr1 = ptr2 - 4;
+   VLOG(signals) << "checking suspend";
+@@ -156,8 +186,8 @@ bool SuspensionHandler::Action(int sig ATTRIBUTE_UNUSED, siginfo_t* info ATTRIBU
+ 
+ bool StackOverflowHandler::Action(int sig ATTRIBUTE_UNUSED, siginfo_t* info ATTRIBUTE_UNUSED,
+                                   void* context) {
+-  struct ucontext *uc = reinterpret_cast<struct ucontext *>(context);
+-  struct sigcontext *sc = reinterpret_cast<struct sigcontext*>(&uc->uc_mcontext);
++  SigContext sc_(context);
++  SigContext* sc = &sc_;
+   VLOG(signals) << "stack overflow handler with sp at " << std::hex << &uc;
+   VLOG(signals) << "sigcontext: " << std::hex << sc;
+ 
+diff --git a/art/runtime/exec_utils.cc b/art/runtime/exec_utils.cc
+index 7718e0f1..3c59d152 100644
+--- a/art/runtime/exec_utils.cc
++++ b/art/runtime/exec_utils.cc
+@@ -60,7 +60,14 @@ int ExecAndReturnCode(std::vector<std::string>& arg_vector, std::string* error_m
+     if (envp == nullptr) {
+       execvp(program, &args[0]);
+     } else {
++#if defined(__APPLE__)
++      // Darwin has no execvpe: the new environment is the one execvp passes on.
++      extern char** environ;
++      environ = envp;
++      execvp(program, &args[0]);
++#else
+       execvpe(program, &args[0], envp);
++#endif
+     }
+     PLOG(ERROR) << "Failed to execve(" << command_line << ")";
+     // _exit to avoid atexit handlers in child.
+diff --git a/art/runtime/jni/check_jni.cc b/art/runtime/jni/check_jni.cc
+index 664f857a..a4e0646f 100644
+--- a/art/runtime/jni/check_jni.cc
++++ b/art/runtime/jni/check_jni.cc
+@@ -2189,7 +2189,7 @@ class CheckJNI {
+     if (sc.Check(soa, true, "Ecm.", args) && sc.CheckInstantiableNonArray(soa, c) &&
+         sc.CheckConstructor(mid)) {
+       JniValueType result;
+-      result.L = baseEnv(env)->NewObjectA(env, c, mid, vargs);
++      result.L = baseEnv(env)->NewObjectA(env, c, mid, const_cast<jvalue*>(vargs));
+       if (sc.Check(soa, false, "L", &result)) {
+         return result.L;
+       }
+diff --git a/art/runtime/jni/jni_internal.cc b/art/runtime/jni/jni_internal.cc
+index 0a82aac9..da98aa45 100644
+--- a/art/runtime/jni/jni_internal.cc
++++ b/art/runtime/jni/jni_internal.cc
+@@ -23,7 +23,12 @@
+ #include <optional>
+ #include <utility>
+ 
++#if defined(__APPLE__)
++#include <mach-o/dyld.h>
++#include <mach-o/loader.h>
++#else
+ #include <link.h>
++#endif
+ 
+ #include "art_field-inl.h"
+ #include "art_method-inl.h"
+@@ -249,8 +254,35 @@ class CodeRangeCache final {
+     libnativehelper_loaded_ = false;
+     libopenjdk_loaded_ = false;
+ 
++#if defined(__APPLE__)
++    // Darwin has no dl_iterate_phdr: walk dyld's images and their executable segments.
++    for (uint32_t i = 0, n = _dyld_image_count(); i < n; i++) {
++      const struct mach_header_64* mh = reinterpret_cast<const struct mach_header_64*>(_dyld_get_image_header(i));
++      if (mh == nullptr || mh->magic != MH_MAGIC_64) continue;
++      const char* name = _dyld_get_image_name(i);
++      uintptr_t slide = static_cast<uintptr_t>(_dyld_get_image_vmaddr_slide(i));
++      const uint8_t* lc = reinterpret_cast<const uint8_t*>(mh + 1);
++      for (uint32_t c = 0; c < mh->ncmds; c++) {
++        const struct load_command* cmd = reinterpret_cast<const struct load_command*>(lc);
++        if (cmd->cmd == LC_SEGMENT_64) {
++          const struct segment_command_64* seg = reinterpret_cast<const struct segment_command_64*>(cmd);
++          if ((seg->initprot & VM_PROT_EXECUTE) != 0 && seg->vmsize != 0) {
++            uintptr_t start = slide + seg->vmaddr;
++            const uintptr_t limit = art::RoundUp(start + seg->vmsize, art::kPageSize);
++            art::MemoryTypeRange<SharedObjectKind> range{start, limit, GetKind(name, start, limit)};
++            if (!builder_->Add(range)) {
++              LOG(WARNING) << "Overlapping/invalid range found in Mach-O headers: " << range;
++            }
++          }
++        }
++        lc += cmd->cmdsize;
++      }
++      NoteLibrary(name);
++    }
++#else
+     // Iterate over ELF headers populating table_builder with executable ranges.
+     dl_iterate_phdr(VisitElfInfo, this);
++#endif
+     memory_type_table_ = builder_->Build();
+ 
+     // Check expected libraries loaded when iterating headers.
+@@ -276,6 +308,7 @@ class CodeRangeCache final {
+     return true;
+   }
+ 
++#if !defined(__APPLE__)
+   static int VisitElfInfo(struct dl_phdr_info *info, size_t size ATTRIBUTE_UNUSED, void *data)
+       NO_THREAD_SAFETY_ANALYSIS {
+     auto cache = reinterpret_cast<CodeRangeCache*>(data);
+@@ -296,18 +329,22 @@ class CodeRangeCache final {
+     }
+ 
+     // Update sanity check state.
+-    std::string_view dlpi_name{info->dlpi_name};
+-    if (!cache->libjavacore_loaded_) {
+-      cache->libjavacore_loaded_ = art::EndsWith(dlpi_name, kLibjavacore);
++    cache->NoteLibrary(info->dlpi_name);
++    return 0;
++  }
++#endif
++
++  void NoteLibrary(const char* name) {
++    std::string_view so_name{name != nullptr ? name : ""};
++    if (!libjavacore_loaded_) {
++      libjavacore_loaded_ = art::EndsWith(so_name, kLibjavacore);
+     }
+-    if (!cache->libnativehelper_loaded_) {
+-      cache->libnativehelper_loaded_ = art::EndsWith(dlpi_name, kLibnativehelper);
++    if (!libnativehelper_loaded_) {
++      libnativehelper_loaded_ = art::EndsWith(so_name, kLibnativehelper);
+     }
+-    if (!cache->libopenjdk_loaded_) {
+-      cache->libopenjdk_loaded_ = art::EndsWith(dlpi_name, kLibopenjdk);
++    if (!libopenjdk_loaded_) {
++      libopenjdk_loaded_ = art::EndsWith(so_name, kLibopenjdk);
+     }
+-
+-    return 0;
+   }
+ 
+   static SharedObjectKind GetKind(const char* so_name, uintptr_t start, uintptr_t limit) {
+diff --git a/art/runtime/parsed_options.cc b/art/runtime/parsed_options.cc
+index 1f893611..c07be4d0 100644
+--- a/art/runtime/parsed_options.cc
++++ b/art/runtime/parsed_options.cc
+@@ -577,12 +577,12 @@ bool ParsedOptions::DoParse(const RuntimeOptions& options,
+   if(!args.Exists(M::BootClassPath)) {
+     Dl_info libart_so_dl_info;
+     // art_sigsegv_fault chosen arbitrarily, what matters is that it's a symbol exported by by libart.so
+-    dladdr(art_sigsegv_fault, &libart_so_dl_info);
++    dladdr(reinterpret_cast<void*>(art_sigsegv_fault), &libart_so_dl_info);
+     // make sure we didn't get NULL
+     if(libart_so_dl_info.dli_fname) {
+       // it's simpler if we can modify the string, so strdup it
+-      char *path_to_jars = "/../java/dex/art/";
+-      char *libart_so_full_path = malloc(strlen(libart_so_dl_info.dli_fname) + strlen(path_to_jars) + 1); // overallocating but that's fine
++      const char *path_to_jars = "/../java/dex/art/";
++      char *libart_so_full_path = (char *)malloc(strlen(libart_so_dl_info.dli_fname) + strlen(path_to_jars) + 1); // overallocating but that's fine
+       strcpy(libart_so_full_path, libart_so_dl_info.dli_fname);
+       *strrchr(libart_so_full_path, '/') = '\0'; // now we should have something like /usr/lib64/art
+       strcat(libart_so_full_path, path_to_jars);
+diff --git a/art/runtime/ti/agent.cc b/art/runtime/ti/agent.cc
+index d66f2c26..02b96509 100644
+--- a/art/runtime/ti/agent.cc
++++ b/art/runtime/ti/agent.cc
+@@ -120,7 +120,7 @@ std::unique_ptr<Agent> AgentSpec::DoDlOpen(JNIEnv* env,
+   bool needs_native_bridge = false;
+   void *dlopen_handle = bionic_dlopen(name_.c_str(), RTLD_NOW);
+   if (dlopen_handle == nullptr) {
+-    char* bionic_dlerror_msg = bionic_dlerror();
++    const char* bionic_dlerror_msg = bionic_dlerror();
+     *error_msg = StringPrintf("Unable to bionic_dlopen %s: %s",
+                               name_.c_str(),
+                               bionic_dlerror_msg);
+diff --git a/art/sigchainlib/sigchain.h b/art/sigchainlib/sigchain.h
+index fcb47c2f..f6a6d52e 100644
+--- a/art/sigchainlib/sigchain.h
++++ b/art/sigchainlib/sigchain.h
+@@ -36,6 +36,10 @@ extern "C" void RemoveSpecialSignalHandlerFn(int signal, bool (*fn)(int, siginfo
+ 
+ extern "C" void EnsureFrontOfChain(int signal);
+ 
++#if defined(__APPLE__)
++typedef sig_t sighandler_t;
++#endif
++
+ extern "C" int sigchain_sigaction(int signal, const struct sigaction* new_action, struct sigaction* old_action);
+ extern "C" sighandler_t sigchain_signal(int signo, sighandler_t handler);
+ #if !defined(__LP64__)
+diff --git a/libcore/luni/src/main/native/libcore_io_Linux.cpp b/libcore/luni/src/main/native/libcore_io_Linux.cpp
+index 4e1937fa..5649bbf8 100644
+--- a/libcore/luni/src/main/native/libcore_io_Linux.cpp
++++ b/libcore/luni/src/main/native/libcore_io_Linux.cpp
+@@ -1458,9 +1458,15 @@ static jobject Linux_getsockoptUcred(JNIEnv* env, jobject, jobject javaFd, jint
+ static jint Linux_gettid(JNIEnv* env __unused, jobject) {
+ #if defined(__BIONIC__)
+   return TEMP_FAILURE_RETRY(gettid());
++#else
++#if defined(__APPLE__)
++  uint64_t tid = 0;
++  pthread_threadid_np(nullptr, &tid);
++  return static_cast<jint>(tid);
+ #else
+   return syscall(__NR_gettid);
+ #endif
++#endif
+ }
+ 
+ static jint Linux_getuid(JNIEnv*, jobject) {

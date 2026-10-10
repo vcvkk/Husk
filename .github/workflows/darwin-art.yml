@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Packages
-        run: brew install ninja lz4 xz icu4c openssl@3 || true
+        run: brew install ninja lz4 xz icu4c openssl@3 epoll-shim || true
 
       - name: ART sources with husk-port's patches
         run: |
@@ -34,6 +34,8 @@ jobs:
           mkdir -p build/darwin/lib
           inc=(); lib=()
           for f in icu4c lz4 xz openssl@3; do p=$(brew --prefix $f); inc+=(--include "$p/include"); lib+=(--lib "$p/lib"); done
+          # epoll over kqueue, for libutils' Looper and OpenJDK's EPoll
+          p=$(brew --prefix epoll-shim); inc+=(--include "$p/include/libepoll-shim"); lib+=(--lib "$p/lib" --ldflag=-lepoll-shim)
           clang -target arm64-apple-macos11.0 -dynamiclib -install_name @rpath/libdl_bio.dylib \
             port/art/darwin/dl_bio.c -o build/darwin/lib/libdl_bio.dylib
           python3 port/art/darwin/gen-ninja.py --src build/art_standalone --out build/darwin \
