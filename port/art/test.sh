@@ -16,7 +16,7 @@ mkdir -p "$ANDROID_DATA" "$OUT/oat"
 pass=0; fail=0
 for d in "$T"/*/; do
     t="$(basename "$d")"
-    (cd "$d" && timeout 600 dalvikvm ${DALVIKVM_FLAGS:-} -Xss8m -cp classes.dex "$t" > art.out 2> art.err)
+    (cd "$d" && timeout 120 dalvikvm ${DALVIKVM_FLAGS:-} -Xss8m -cp classes.dex "$t" > art.out 2> art.err)
     code=$?
     # ATL's runtime prints this line for an uncaught exception
     grep -v '^hacky_uncaught_exception_handler' "$d/art.out" > "$d/art.cmp"
