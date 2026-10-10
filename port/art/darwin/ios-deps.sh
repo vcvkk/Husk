@@ -36,7 +36,12 @@ cmake -S "$WORK/expat-2.6.4" -B "$WORK/expat-build" "${cmake_ios[@]}" -DEXPAT_BU
 cmake --build "$WORK/expat-build" -j8 --target install > /dev/null
 
 fetch https://github.com/jiixyj/epoll-shim/archive/refs/tags/v0.0.20240608.tar.gz epoll-shim-0.0.20240608
-cmake -S "$WORK/epoll-shim-0.0.20240608" -B "$WORK/epoll-build" "${cmake_ios[@]}" > /dev/null
+# a check it would run: iOS's kernel is the Mac's, so the Mac's answer
+cmake -S "$WORK/epoll-shim-0.0.20240608" -B "$WORK/epoll-host" > /dev/null
+oneshot=$(sed -n 's/^ALLOWS_ONESHOT_TIMERS_WITH_TIMEOUT_ZERO_EXITCODE:[A-Z]*=//p' "$WORK/epoll-host/CMakeCache.txt")
+cmake -S "$WORK/epoll-shim-0.0.20240608" -B "$WORK/epoll-build" "${cmake_ios[@]}" \
+  -DALLOWS_ONESHOT_TIMERS_WITH_TIMEOUT_ZERO_EXITCODE="${oneshot:-0}" \
+  -DALLOWS_ONESHOT_TIMERS_WITH_TIMEOUT_ZERO_EXITCODE__TRYRUN_OUTPUT= > /dev/null
 cmake --build "$WORK/epoll-build" -j8 --target install > /dev/null
 
 # ICU: built for the Mac first, whose tools the iOS build runs; data linked statically
