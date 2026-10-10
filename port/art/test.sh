@@ -14,9 +14,15 @@ OUT="${OUT:-$ROOT/build/art-tests}"
 export ANDROID_DATA="$OUT/android-data"
 mkdir -p "$ANDROID_DATA" "$OUT/oat"
 pass=0; fail=0
+MAX_FAIL="${MAX_FAIL:-3}"   # after this many failures the rest are skipped: CI time
 for d in "$T"/*/; do
     t="$(basename "$d")"
-    (cd "$d" && timeout 120 dalvikvm ${DALVIKVM_FLAGS:-} -Xss8m -cp classes.dex "$t" > art.out 2> art.err)
+    if [ $fail -ge "$MAX_FAIL" ]; then
+        printf '  skip  %s\n' "$t"; continue
+    fi
+    # a stuck runtime gets SIGQUIT first, on which ART dumps every thread's stack, then KILL
+    (cd "$d" && timeout -s QUIT -k 15 120 dalvikvm ${DALVIKVM_FLAGS:-} -Xss8m -cp classes.dex "$t" \
+        > art.out 2> art.err)
     code=$?
     # ATL's runtime prints this line for an uncaught exception
     grep -v '^hacky_uncaught_exception_handler' "$d/art.out" > "$d/art.cmp"
@@ -26,7 +32,8 @@ for d in "$T"/*/; do
         printf '  FAIL  %-14s exit %d\n' "$t" $code; fail=$((fail + 1))
         { diff "$d/expected" "$d/art.cmp" || true; } | head -10 | sed 's/^/        /'
         { grep -a -m5 -e 'Fatal' -e 'Exception' -e 'error' "$d/art.err" || true; } | sed 's/^/        stderr: /'
-        [ $fail -le 2 ] && tail -15 "$d/art.err" | sed 's/^/        stderr| /'
+        # repeated lines once, then the end of it (a SIGQUIT dump, or a crash's report)
+        [ $fail -le 2 ] && uniq -c "$d/art.err" | tail -${ERR_LINES:-120} | sed 's/^/        stderr| /'
     fi
 done
 cache="${XDG_CACHE_HOME:-$HOME/.cache}/art"
