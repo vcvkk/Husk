@@ -29,9 +29,13 @@ SYSTEM = {"c": None, "gcc": None, "pthread": None, "rt": None, "dl": None, "atom
 
 # Linux lets a shared library leave symbols for whatever loads it; Darwin's linker wants each
 # one found. Libraries the build does not name, and symbols of a cycle (libcutils links
-# libutils, whose NativeHandle calls libcutils), resolved at load time.
+# libutils, whose NativeHandle calls libcutils; libopenjdk finds libart's directory through
+# one of its symbols, which libart has loaded by then), resolved at load time.
 EXTRA_LIBS = {"libutils": ["liblog"]}
-LOOKUP = {"libutils": ["_native_handle_close", "_native_handle_delete"]}
+LOOKUP = {"libutils": ["_native_handle_close", "_native_handle_delete"],
+          "libopenjdk": ["_art_sigsegv_fault"]}
+# OpenJDK's macOS code converts file names with CoreFoundation
+FRAMEWORKS = {"libopenjdk": ["CoreFoundation"]}
 
 DROP = {"-Wa,--noexecstack", "-fpermissive", "-ffloat-store", "-Werror", "-no-canonical-prefixes",
         "-DLINUX", "-D__GLIBC__", "-m64", "-fstack-protector", "-g", "-ggdb3"}
@@ -219,6 +223,8 @@ rule gen
             if d:
                 ld.append("-l" + d)
         ld += [f"-Wl,-U,{s}" for s in LOOKUP.get(name, [])]
+        for f in FRAMEWORKS.get(name, []):
+            ld += ["-framework", f]
         if m["kind"] == "shared":
             p = os.path.join(out, "lib", name + ".so")
             w.write(f"build {p}: so {' '.join(objs)} | {' '.join(deps)}\n  soname = {name}.so\n  ldflags = {q(ld)}\n")
