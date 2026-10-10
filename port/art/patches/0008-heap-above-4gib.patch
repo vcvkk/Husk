@@ -1,3 +1,259 @@
+diff --git a/art/compiler/optimizing/code_generator_arm64.cc b/art/compiler/optimizing/code_generator_arm64.cc
+index 43acce56..9149ea06 100644
+--- a/art/compiler/optimizing/code_generator_arm64.cc
++++ b/art/compiler/optimizing/code_generator_arm64.cc
+@@ -1056,7 +1056,11 @@ void ParallelMoveResolverARM64::FreeScratchLocation(Location loc) {
+ 
+ void ParallelMoveResolverARM64::EmitMove(size_t index) {
+   MoveOperands* move = moves_[index];
+-  codegen_->MoveLocation(move->GetDestination(), move->GetSource(), DataType::Type::kVoid);
++  // References are typed, so that one loaded from a stack slot is made an address.
++  DataType::Type type = move->GetType() == DataType::Type::kReference
++      ? DataType::Type::kReference
++      : DataType::Type::kVoid;
++  codegen_->MoveLocation(move->GetDestination(), move->GetSource(), type);
+ }
+ 
+ void CodeGeneratorARM64::GenerateFrameEntry() {
+@@ -1345,6 +1349,10 @@ void CodeGeneratorARM64::MoveLocation(Location destination,
+     if (source.IsStackSlot() || source.IsDoubleStackSlot()) {
+       DCHECK(dst.Is64Bits() == source.IsDoubleStackSlot());
+       __ Ldr(dst, StackOperandFrom(source));
++      if (dst_type == DataType::Type::kReference) {
++        // A stack slot holds a reference's 32 bits (heap above 4 GiB).
++        GetAssembler()->DecodeHeapReference(Register(dst));
++      }
+     } else if (source.IsSIMDStackSlot()) {
+       __ Ldr(QRegisterFrom(destination), StackOperandFrom(source));
+     } else if (source.IsConstant()) {
+@@ -1352,7 +1360,12 @@ void CodeGeneratorARM64::MoveLocation(Location destination,
+       MoveConstant(dst, source.GetConstant());
+     } else if (source.IsRegister()) {
+       if (destination.IsRegister()) {
+-        __ Mov(Register(dst), RegisterFrom(source, dst_type));
++        if (dst_type == DataType::Type::kReference) {
++          // A 32-bit move would clear the address's upper half (heap above 4 GiB).
++          __ Mov(XRegisterFrom(destination), XRegisterFrom(source));
++        } else {
++          __ Mov(Register(dst), RegisterFrom(source, dst_type));
++        }
+       } else {
+         DCHECK(destination.IsFpuRegister());
+         DataType::Type source_type = DataType::Is64BitType(dst_type)
+@@ -1681,12 +1694,62 @@ void CodeGeneratorARM64::StoreRelease(HInstruction* instruction,
+   }
+ }
+ 
++// The argument registers in which an entrypoint takes objects. Compiled code may hold a null
++// reference as the heap base (its W view 0; heap above 4 GiB, libartbase/base/globals.h); the
++// runtime's null is 0, so these are made 0 when their W view is.
++static uint32_t ObjectArgumentRegisters(QuickEntrypointEnum entrypoint) {
++  switch (entrypoint) {
++    case kQuickLockObject:
++    case kQuickUnlockObject:
++    case kQuickDeliverException:
++    case kQuickInstanceofNonTrivial:
++    case kQuickCheckInstanceOf:
++    case kQuickAllocStringFromBytes:
++    case kQuickAllocStringFromString:
++    case kQuickIndexOf:
++      return 1u << 0;
++    case kQuickStringCompareTo:
++      return (1u << 0) | (1u << 1);
++    case kQuickAputObject:
++      return (1u << 0) | (1u << 2);
++    case kQuickAllocStringFromChars:
++      return 1u << 2;
++    case kQuickSet8Instance:
++    case kQuickSet16Instance:
++    case kQuickSet32Instance:
++    case kQuickSet64Instance:
++    case kQuickSetObjStatic:
++    case kQuickGetByteInstance:
++    case kQuickGetBooleanInstance:
++    case kQuickGetShortInstance:
++    case kQuickGetCharInstance:
++    case kQuickGet32Instance:
++    case kQuickGet64Instance:
++    case kQuickGetObjInstance:
++    case kQuickInvokeDirectTrampolineWithAccessCheck:
++    case kQuickInvokeInterfaceTrampolineWithAccessCheck:
++    case kQuickInvokeSuperTrampolineWithAccessCheck:
++    case kQuickInvokeVirtualTrampolineWithAccessCheck:
++      return 1u << 1;
++    case kQuickSetObjInstance:
++      return (1u << 1) | (1u << 2);
++    default:
++      return 0u;
++  }
++}
++
+ void CodeGeneratorARM64::InvokeRuntime(QuickEntrypointEnum entrypoint,
+                                        HInstruction* instruction,
+                                        uint32_t dex_pc,
+                                        SlowPathCode* slow_path) {
+   ValidateInvokeRuntime(entrypoint, instruction, slow_path);
+ 
++  for (uint32_t regs = ObjectArgumentRegisters(entrypoint); regs != 0u; regs &= regs - 1u) {
++    unsigned code = CTZ(regs);
++    __ Cmp(Register(code, kWRegSize), 0);
++    __ Csel(Register(code, kXRegSize), xzr, Register(code, kXRegSize), eq);
++  }
++
+   __ Ldr(lr, MemOperand(tr, GetThreadOffset<kArm64PointerSize>(entrypoint).Int32Value()));
+   {
+     // Ensure the pc position is recorded immediately after the `blr` instruction.
+@@ -3375,6 +3438,17 @@ void InstructionCodeGeneratorARM64::VisitSelect(HSelect* select) {
+              InputFPRegisterAt(select, 1),
+              InputFPRegisterAt(select, 0),
+              csel_cond);
++  } else if (select->GetType() == DataType::Type::kReference) {
++    // On X registers: a 32-bit select would clear the address's upper half (heap above 4 GiB).
++    Operand true_value = InputOperandAt(select, 1);
++    Operand false_value = InputOperandAt(select, 0);
++    if (true_value.IsPlainRegister()) {
++      true_value = Operand(true_value.GetRegister().X());
++    }
++    if (false_value.IsPlainRegister()) {
++      false_value = Operand(false_value.GetRegister().X());
++    }
++    __ Csel(OutputRegister(select).X(), true_value, false_value, csel_cond);
+   } else {
+     __ Csel(OutputRegister(select),
+             InputOperandAt(select, 1),
+@@ -4098,8 +4172,10 @@ void CodeGeneratorARM64::GenerateStaticOrDirectCall(
+       EmitAdrpPlaceholder(adrp_label, XRegisterFrom(temp));
+       // Add LDR with its PC-relative .data.bimg.rel.ro patch.
+       vixl::aarch64::Label* ldr_label = NewBootImageRelRoPatch(boot_image_offset, adrp_label);
+-      // Note: Boot image is in the low 4GiB and the entry is 32-bit, so emit a 32-bit load.
++      // Note: the entry is 32-bit, so emit a 32-bit load.
+       EmitLdrOffsetPlaceholder(ldr_label, WRegisterFrom(temp), XRegisterFrom(temp));
++      // The boot image is in the heap window: the entry is its address's low 32 bits.
++      GetAssembler()->DecodeHeapReference(WRegisterFrom(temp));
+       break;
+     }
+     case HInvokeStaticOrDirect::MethodLoadKind::kBssEntry: {
+@@ -4364,6 +4440,8 @@ void CodeGeneratorARM64::LoadBootImageAddress(vixl::aarch64::Register reg,
+     // Add LDR with its PC-relative .data.bimg.rel.ro patch.
+     vixl::aarch64::Label* ldr_label = NewBootImageRelRoPatch(boot_image_reference, adrp_label);
+     EmitLdrOffsetPlaceholder(ldr_label, reg.W(), reg.X());
++    // The boot image is in the heap window: the entry is its address's low 32 bits.
++    GetAssembler()->DecodeHeapReference(reg);
+   } else {
+     DCHECK(Runtime::Current()->UseJitCompilation());
+     gc::Heap* heap = Runtime::Current()->GetHeap();
+@@ -4662,6 +4740,8 @@ void InstructionCodeGeneratorARM64::VisitLoadClass(HLoadClass* cls) NO_THREAD_SA
+       vixl::aarch64::Label* ldr_label =
+           codegen_->NewBootImageRelRoPatch(boot_image_offset, adrp_label);
+       codegen_->EmitLdrOffsetPlaceholder(ldr_label, out.W(), out.X());
++      // The boot image is in the heap window: the entry is its address's low 32 bits.
++      codegen_->GetAssembler()->DecodeHeapReference(out);
+       break;
+     }
+     case HLoadClass::LoadKind::kBssEntry: {
+@@ -4836,6 +4916,8 @@ void InstructionCodeGeneratorARM64::VisitLoadString(HLoadString* load) NO_THREAD
+       vixl::aarch64::Label* ldr_label =
+           codegen_->NewBootImageRelRoPatch(boot_image_offset, adrp_label);
+       codegen_->EmitLdrOffsetPlaceholder(ldr_label, out.W(), out.X());
++      // The boot image is in the heap window: the entry is its address's low 32 bits.
++      codegen_->GetAssembler()->DecodeHeapReference(out);
+       return;
+     }
+     case HLoadString::LoadKind::kBssEntry: {
+@@ -5841,7 +5923,8 @@ void CodeGeneratorARM64::GenerateGcRootFieldLoad(
+       EmitLdrOffsetPlaceholder(fixup_label, root_reg, obj.X());
+     }
+     // Note that GC roots are not affected by heap poisoning, thus we
+-    // do not have to unpoison `root_reg` here.
++    // do not have to unpoison `root_reg` here. It holds the root's 32 bits: make it an address.
++    GetAssembler()->DecodeHeapReference(root_reg);
+   }
+   MaybeGenerateMarkingRegisterCheck(/* code= */ __LINE__);
+ }
+@@ -6096,8 +6179,9 @@ void CodeGeneratorARM64::MaybeGenerateReadBarrierSlow(HInstruction* instruction,
+     // If heap poisoning is enabled, unpoisoning will be taken care of
+     // by the runtime within the slow path.
+     GenerateReadBarrierSlow(instruction, out, ref, obj, offset, index);
+-  } else if (kPoisonHeapReferences) {
+-    GetAssembler()->UnpoisonHeapReference(WRegisterFrom(out));
++  } else {
++    // Unpoisons if heap poisoning is on, and makes the register an address (heap above 4 GiB).
++    GetAssembler()->MaybeUnpoisonHeapReference(WRegisterFrom(out));
+   }
+ }
+ 
+diff --git a/art/compiler/optimizing/intrinsics_arm64.cc b/art/compiler/optimizing/intrinsics_arm64.cc
+index 33d7709e..b64e8e00 100644
+--- a/art/compiler/optimizing/intrinsics_arm64.cc
++++ b/art/compiler/optimizing/intrinsics_arm64.cc
+@@ -88,6 +88,11 @@ static void MoveFromReturnRegister(Location trg,
+   if (DataType::IsIntegralType(type) || type == DataType::Type::kReference) {
+     Register trg_reg = RegisterFrom(trg, type);
+     Register res_reg = RegisterFrom(ARM64ReturnLocation(type), type);
++    if (type == DataType::Type::kReference) {
++      // A 32-bit move would clear the address's upper half (heap above 4 GiB).
++      trg_reg = trg_reg.X();
++      res_reg = res_reg.X();
++    }
+     __ Mov(trg_reg, res_reg, kDiscardForSameWReg);
+   } else {
+     vixl::aarch64::VRegister trg_reg = FPRegisterFrom(trg, type);
+diff --git a/art/compiler/utils/arm64/assembler_arm64.cc b/art/compiler/utils/arm64/assembler_arm64.cc
+index d7ade058..0b7d2d82 100644
+--- a/art/compiler/utils/arm64/assembler_arm64.cc
++++ b/art/compiler/utils/arm64/assembler_arm64.cc
+@@ -188,6 +188,14 @@ void Arm64Assembler::MaybeUnpoisonHeapReference(Register reg) {
+   if (kPoisonHeapReferences) {
+     UnpoisonHeapReference(reg);
+   }
++  DecodeHeapReference(reg);
++}
++
++void Arm64Assembler::DecodeHeapReference(Register reg) {
++  // A reference loaded from memory is the low 32 bits of the object's address in the heap
++  // window (globals.h, kHeapBase); the register's X view becomes the address. Applying it to
++  // a register that already holds an address changes nothing.
++  ___ Orr(reg.X(), reg.X(), kHeapBase);
+ }
+ 
+ void Arm64Assembler::GenerateMarkingRegisterCheck(Register temp, int code) {
+diff --git a/art/compiler/utils/arm64/assembler_arm64.h b/art/compiler/utils/arm64/assembler_arm64.h
+index c4700568..55d2bfa9 100644
+--- a/art/compiler/utils/arm64/assembler_arm64.h
++++ b/art/compiler/utils/arm64/assembler_arm64.h
+@@ -105,6 +105,9 @@ class Arm64Assembler final : public Assembler {
+   void MaybePoisonHeapReference(vixl::aarch64::Register reg);
+   // Unpoison a heap reference contained in `reg` if heap poisoning is enabled.
+   void MaybeUnpoisonHeapReference(vixl::aarch64::Register reg);
++  // Make the X view of a register holding a reference loaded from memory (its W view) the
++  // object's address: see DecodeHeapReference in the .cc. MaybeUnpoisonHeapReference does it too.
++  void DecodeHeapReference(vixl::aarch64::Register reg);
+ 
+   // Emit code checking the status of the Marking Register, and aborting
+   // the program if MR does not match the value stored in the art::Thread
+diff --git a/art/compiler/utils/arm64/jni_macro_assembler_arm64.cc b/art/compiler/utils/arm64/jni_macro_assembler_arm64.cc
+index 0eab49f2..3524d795 100644
+--- a/art/compiler/utils/arm64/jni_macro_assembler_arm64.cc
++++ b/art/compiler/utils/arm64/jni_macro_assembler_arm64.cc
+@@ -292,6 +292,8 @@ void Arm64JNIMacroAssembler::LoadRef(ManagedRegister m_dst, FrameOffset offs) {
+   Arm64ManagedRegister dst = m_dst.AsArm64();
+   CHECK(dst.IsXRegister()) << dst;
+   LoadWFromOffset(kLoadWord, dst.AsOverlappingWRegister(), SP, offs.Int32Value());
++  // The reference's 32 bits, made its address (heap above 4 GiB).
++  asm_.DecodeHeapReference(reg_x(dst.AsXRegister()));
+ }
+ 
+ void Arm64JNIMacroAssembler::LoadRef(ManagedRegister m_dst,
+@@ -306,6 +308,9 @@ void Arm64JNIMacroAssembler::LoadRef(ManagedRegister m_dst,
+   if (unpoison_reference) {
+     WRegister ref_reg = dst.AsOverlappingWRegister();
+     asm_.MaybeUnpoisonHeapReference(reg_w(ref_reg));
++  } else {
++    // The reference's 32 bits, made its address (heap above 4 GiB).
++    asm_.DecodeHeapReference(reg_x(dst.AsXRegister()));
+   }
+ }
+ 
 diff --git a/art/libartbase/base/globals.h b/art/libartbase/base/globals.h
 index 618a7069..837c2d0b 100644
 --- a/art/libartbase/base/globals.h
@@ -152,6 +408,173 @@ index f434cb40..a4ed7fb3 100644
    return intp & 0xFFFFFFFFU;
  }
  
+diff --git a/art/runtime/arch/arm64/asm_support_arm64.S b/art/runtime/arch/arm64/asm_support_arm64.S
+index 715fc35f..57a3208b 100644
+--- a/art/runtime/arch/arm64/asm_support_arm64.S
++++ b/art/runtime/arch/arm64/asm_support_arm64.S
+@@ -75,4 +75,10 @@
+ #endif  // USE_HEAP_POISONING
+ .endm
+ 
++// Make a register holding a reference's 32 bits (its W view, loaded from memory) the object's
++// address: the heap is in the 4 GiB window from kHeapBase (libartbase/base/globals.h).
++.macro DECODE_HEAP_REF xRef
++    orr \xRef, \xRef, #0x800000000
++.endm
++
+ #endif  // ART_RUNTIME_ARCH_ARM64_ASM_SUPPORT_ARM64_S_
+diff --git a/art/runtime/arch/arm64/quick_entrypoints_arm64.S b/art/runtime/arch/arm64/quick_entrypoints_arm64.S
+index 93355c42..39bc61f6 100644
+--- a/art/runtime/arch/arm64/quick_entrypoints_arm64.S
++++ b/art/runtime/arch/arm64/quick_entrypoints_arm64.S
+@@ -678,6 +678,13 @@ SAVE_SIZE=6*8   // x4, x5, x19, x20, FP, LR saved.
+     cmp w10, #'F'
+     beq 3f
+ 
++    // A reference: compiled code may hold null as the heap base (its W view 0, heap above
++    // 4 GiB); the runtime's null is 0.
++    cmp w10, #'L'
++    bne 5f
++    cmp w0, #0
++    csel x0, xzr, x0, eq
++5:
+     // Just store x0. Doesn't matter if it is 64 or 32 bits.
+     str x0, [x4]
+ 
+@@ -752,6 +759,7 @@ ENTRY art_quick_invoke_stub
+ 
+     add x10, x5, #1         // Load shorty address, plus one to skip return value.
+     ldr w1, [x9],#4         // Load "this" parameter, and increment arg pointer.
++    DECODE_HEAP_REF x1      // A reference's 32 bits: its address (heap above 4 GiB).
+ 
+     // Loop to fill registers.
+ .LfillRegisters:
+@@ -791,9 +799,19 @@ ENTRY art_quick_invoke_stub
+     cmp x8, # 6*12          // Skip this load if all registers full.
+     beq .Ladvance4
+ 
++    cmp w17, #'L'           // A reference: loaded and decoded (heap above 4 GiB).
++    beq .LisRef
++
+     add x17, x11, x8        // Calculate subroutine to jump to.
+     br x17
+ 
++.LisRef:
++    mov x17, #12
++    udiv x17, x8, x17       // The register's index; .LstoreRef2's entries are 16 bytes.
++    adr x16, .LstoreRef2
++    add x17, x16, x17, lsl #4
++    br x17
++
+ .Ladvance4:
+     add x9, x9, #4
+     b .LfillRegisters
+@@ -812,6 +830,23 @@ ENTRY art_quick_invoke_stub
+     b \return
+ .endm
+ 
++// Macro for loading a reference parameter into a register: its 32 bits, then its address.
++.macro LOADREF counter wregister xregister return
++    ldr \wregister , [x9], #4
++    DECODE_HEAP_REF \xregister
++    add \counter, \counter, 12
++    b \return
++.endm
++
++// Store references.
++.LstoreRef2:
++    LOADREF x8 w2 x2 .LfillRegisters
++    LOADREF x8 w3 x3 .LfillRegisters
++    LOADREF x8 w4 x4 .LfillRegisters
++    LOADREF x8 w5 x5 .LfillRegisters
++    LOADREF x8 w6 x6 .LfillRegisters
++    LOADREF x8 w7 x7 .LfillRegisters
++
+ // Store ints.
+ .LstoreW2:
+     LOADREG x8 4 w2 .LfillRegisters
+@@ -924,9 +959,19 @@ ENTRY art_quick_invoke_static_stub
+     cmp x8, # 7*12          // Skip this load if all registers full.
+     beq .Ladvance4_2
+ 
++    cmp w17, #'L'           // A reference: loaded and decoded (heap above 4 GiB).
++    beq .LisRef2
++
+     add x17, x11, x8        // Calculate subroutine to jump to.
+     br x17
+ 
++.LisRef2:
++    mov x17, #12
++    udiv x17, x8, x17       // The register's index; .LstoreRef1_2's entries are 16 bytes.
++    adr x16, .LstoreRef1_2
++    add x17, x16, x17, lsl #4
++    br x17
++
+ .Ladvance4_2:
+     add x9, x9, #4
+     b .LfillRegisters2
+@@ -935,6 +980,16 @@ ENTRY art_quick_invoke_static_stub
+     add x9, x9, #8
+     b .LfillRegisters2
+ 
++// Store references.
++.LstoreRef1_2:
++    LOADREF x8 w1 x1 .LfillRegisters2
++    LOADREF x8 w2 x2 .LfillRegisters2
++    LOADREF x8 w3 x3 .LfillRegisters2
++    LOADREF x8 w4 x4 .LfillRegisters2
++    LOADREF x8 w5 x5 .LfillRegisters2
++    LOADREF x8 w6 x6 .LfillRegisters2
++    LOADREF x8 w7 x7 .LfillRegisters2
++
+ // Store ints.
+ .LstoreW1_2:
+     LOADREG x8 4 w1 .LfillRegisters2
+@@ -1361,6 +1416,7 @@ END art_quick_check_instance_of
+ #else
+     ldr \wDest, [\xObj, #\offset]   // Heap reference = 32b. This also zero-extends to \xDest.
+     UNPOISON_HEAP_REF \wDest
++    DECODE_HEAP_REF \xDest
+ #endif  // USE_READ_BARRIER
+ .endm
+ 
+@@ -1885,6 +1941,7 @@ END \name
+     // Array classes are never finalizable or uninitialized, no need to check.
+     ldr    \wTemp0, [\xClass, #MIRROR_CLASS_COMPONENT_TYPE_OFFSET] // Load component type
+     UNPOISON_HEAP_REF \wTemp0
++    DECODE_HEAP_REF \xTemp0
+     ldr    \wTemp0, [\xTemp0, #MIRROR_CLASS_OBJECT_PRIMITIVE_TYPE_OFFSET]
+     lsr    \xTemp0, \xTemp0, #PRIMITIVE_TYPE_SIZE_SHIFT_SHIFT // Component size shift is in high 16
+                                                               // bits.
+@@ -2000,10 +2057,12 @@ ENTRY art_quick_imt_conflict_trampoline
+ #error "Expecting declaring class and access flags to be consecutive for LDP."
+ #endif
+     ldp wIP0, w15, [xIP0, #ART_METHOD_DECLARING_CLASS_OFFSET]
++    DECODE_HEAP_REF xIP0
+     // If the method is obsolete, just go through the dex cache miss slow path.
+     tbnz x15, #ACC_OBSOLETE_METHOD_SHIFT, .Limt_conflict_trampoline_dex_cache_miss
+     ldr wIP0, [xIP0, #MIRROR_CLASS_DEX_CACHE_OFFSET]  // Load the DexCache (without read barrier).
+     UNPOISON_HEAP_REF wIP0
++    DECODE_HEAP_REF xIP0
+     ubfx x15, xIP1, #0, #METHOD_DEX_CACHE_HASH_BITS  // Calculate DexCache method slot index.
+     ldr xIP0, [xIP0, #MIRROR_DEX_CACHE_RESOLVED_METHODS_OFFSET]  // Load the resolved methods.
+     add xIP0, xIP0, x15, lsl #(POINTER_SIZE_SHIFT + 1)  // Load DexCache method slot address.
+diff --git a/art/runtime/common_throws.cc b/art/runtime/common_throws.cc
+index a1168afd..1f351910 100644
+--- a/art/runtime/common_throws.cc
++++ b/art/runtime/common_throws.cc
+@@ -462,6 +462,11 @@ static bool IsValidReadBarrierImplicitCheck(uintptr_t addr) {
+ 
+ static bool IsValidImplicitCheck(uintptr_t addr, const Instruction& instr)
+     REQUIRES_SHARED(Locks::mutator_lock_) {
++  // A null reference made an address can be the heap base (heap above 4 GiB): the offset is
++  // what is checked.
++  if (addr >= kHeapBase) {
++    addr -= kHeapBase;
++  }
+   if (!CanDoImplicitNullCheckOn(addr)) {
+     return false;
+   }
 diff --git a/art/runtime/debugger.cc b/art/runtime/debugger.cc
 index c5b111f8..78c3fbe1 100644
 --- a/art/runtime/debugger.cc
@@ -165,6 +588,23 @@ index c5b111f8..78c3fbe1 100644
        VLOG(jdwp) << "get " << tag << " object local " << vreg << " = " << o;
        if (!Runtime::Current()->GetHeap()->IsValidObjectAddress(o)) {
          LOG(FATAL) << StringPrintf("Found invalid object %#" PRIxPTR " in register v%u",
+diff --git a/art/runtime/fault_handler.h b/art/runtime/fault_handler.h
+index f6cf2d77..efd0b4bc 100644
+--- a/art/runtime/fault_handler.h
++++ b/art/runtime/fault_handler.h
+@@ -101,7 +101,11 @@ class NullPointerHandler final : public FaultHandler {
+     // Note that the runtime will do more exhaustive checks (that we cannot
+     // reasonably do in signal processing code) based on the dex instruction
+     // faulting.
+-    return CanDoImplicitNullCheckOn(reinterpret_cast<uintptr_t>(siginfo->si_addr));
++    // A null reference made an address is 0 or the heap base (heap above 4 GiB,
++    // libartbase/base/globals.h), whose page is kept inaccessible.
++    uintptr_t addr = reinterpret_cast<uintptr_t>(siginfo->si_addr);
++    return CanDoImplicitNullCheckOn(addr) ||
++        (addr >= kHeapBase && CanDoImplicitNullCheckOn(addr - kHeapBase));
+   }
+ 
+  private:
 diff --git a/art/runtime/gc/heap.cc b/art/runtime/gc/heap.cc
 index ff53f789..60edd620 100644
 --- a/art/runtime/gc/heap.cc
@@ -408,3 +848,26 @@ index 80a563b5..df5a2284 100644
    } else {
      shadow_frame->SetVReg(vreg, new_value);
    }
+diff --git a/art/runtime/thread.cc b/art/runtime/thread.cc
+index ff090dd4..47bc4a1b 100644
+--- a/art/runtime/thread.cc
++++ b/art/runtime/thread.cc
+@@ -3818,8 +3818,16 @@ class ReferenceMapVisitor : public StackVisitor {
+             LOG(FATAL) << "Found an unsaved callee-save register " << i << " (null GPRAddress) "
+                        << "set in register_mask=" << register_mask << " at " << DescribeLocation();
+           }
+-          if (*ref_addr != nullptr) {
+-            vreg_info.VisitRegister(ref_addr, i, this);
++          // Compiled code may hold a null reference as the heap base: the register's low 32
++          // bits are the reference (heap above 4 GiB, libartbase/base/globals.h).
++          uint32_t compressed = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(*ref_addr));
++          if (compressed != 0u) {
++            mirror::Object* ref = mirror::ReferenceAsPointer(compressed);
++            mirror::Object* new_ref = ref;
++            vreg_info.VisitRegister(&new_ref, i, this);
++            if (new_ref != ref) {
++              *ref_addr = new_ref;
++            }
+           }
+         }
+       }
