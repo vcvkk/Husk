@@ -1,0 +1,59 @@
+name: ART runtime on Darwin
+
+# Builds ART's runtime (dalvikvm, libart, the class library's native code) for
+# macOS arm64 from port/art/darwin/modules.json, keeping going past errors, and
+# reports them grouped by file: the work list for the Darwin port.
+
+on:
+  push:
+    branches: [husk-port]
+    paths: ['port/art/**', '.github/workflows/darwin-art.yml']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Packages
+        run: brew install ninja lz4 xz icu4c openssl@3 || true
+
+      - name: ART sources with husk-port's patches
+        run: |
+          rev=$(sed -n 's/^ART_REV=//p' port/art/build.sh)
+          git init -q build/art_standalone
+          git -C build/art_standalone remote add origin https://gitlab.com/android_translation_layer/art_standalone.git
+          git -C build/art_standalone fetch -q --depth 1 origin "$rev"
+          git -C build/art_standalone checkout -q FETCH_HEAD
+          for p in port/art/patches/*.patch; do git -C build/art_standalone apply "$p"; done
+
+      - name: Generate build.ninja
+        run: |
+          mkdir -p build/darwin/lib
+          inc=(); lib=()
+          for f in icu4c lz4 xz openssl@3; do p=$(brew --prefix $f); inc+=(--include "$p/include"); lib+=(--lib "$p/lib"); done
+          clang -target arm64-apple-macos11.0 -dynamiclib -install_name @rpath/libdl_bio.dylib \
+            port/art/darwin/dl_bio.c -o build/darwin/lib/libdl_bio.dylib
+          python3 port/art/darwin/gen-ninja.py --src build/art_standalone --out build/darwin \
+            "${inc[@]}" "${lib[@]}" --lib "$PWD/build/darwin/lib" port/art/darwin/modules.json
+
+      - name: Build (keep going)
+        run: |
+          set +e
+          ninja -C build/darwin -k 0 > build/darwin/ninja.log 2>&1
+          status=$?
+          echo "ninja exit $status"
+          python3 port/art/darwin/errors.py build/darwin/ninja.log | tee build/darwin/errors.txt
+          exit $status
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: darwin-art
+          path: |
+            build/darwin/ninja.log
+            build/darwin/errors.txt
+            build/darwin/build.ninja
+          if-no-files-found: ignore

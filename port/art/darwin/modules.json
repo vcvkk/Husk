@@ -1,0 +1,9359 @@
+{
+"flagsets": [
+[
+"-I",
+"external/vixl/src",
+"-I",
+"art/libelffile",
+"-I",
+"art/libartbase",
+"-I",
+"art/libdexfile",
+"-I",
+"art/libartpalette/include",
+"-I",
+"art/cmdline",
+"-I",
+"art/disassembler",
+"-I",
+"art/runtime",
+"-I",
+"art/compiler",
+"-I",
+"art/tools/cpp-define-generator",
+"-I",
+"bionic/libc/private",
+"-I",
+"art/dalvikvm",
+"-I",
+"out/host/linux-x86/obj/EXECUTABLES/dalvikvm_intermediates",
+"-I",
+"out/host/linux-x86/gen/EXECUTABLES/dalvikvm_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-Wsign-promo",
+"-fpermissive",
+"-std=gnu++23",
+"-DNDEBUG",
+"-UDEBUG",
+"-fno-rtti",
+"-std=gnu++17",
+"-ggdb3",
+"-Wall",
+"-Wextra",
+"-Wstrict-aliasing",
+"-fstrict-aliasing",
+"-Wunreachable-code",
+"-Wredundant-decls",
+"-Wunused",
+"-Wno-invalid-offsetof",
+"-Wno-deprecated-declarations",
+"-Wno-comment",
+"-Wno-attributes",
+"-fvisibility=protected",
+"-DART_DEFAULT_GC_TYPE_IS_CMS",
+"-DBUILDING_LIBART=1",
+"-DART_STACK_OVERFLOW_GAP_arm=8192",
+"-DART_STACK_OVERFLOW_GAP_arm64=8192",
+"-DART_STACK_OVERFLOW_GAP_mips=16384",
+"-DART_STACK_OVERFLOW_GAP_mips64=16384",
+"-DART_STACK_OVERFLOW_GAP_x86=8192",
+"-DART_STACK_OVERFLOW_GAP_x86_64=8192",
+"-DART_FRAME_SIZE_LIMIT=1736",
+"-DART_DEFAULT_COMPACT_DEX_LEVEL=none",
+"-I/usr/local/include/vixl",
+"-I/usr/include/vixl",
+"-DIMT_SIZE=64",
+"-DART_BASE_ADDRESS=0x60000000",
+"-DART_DEFAULT_INSTRUCTION_SET_FEATURES=default",
+"-DART_ENABLE_CODEGEN_arm",
+"-DART_ENABLE_CODEGEN_arm64",
+"-DVIXL_INCLUDE_TARGET_A64",
+"-DVIXL_INCLUDE_TARGET_T32",
+"-DVIXL_CODE_BUFFER_MMAP",
+"-DART_BASE_ADDRESS_MIN_DELTA=-0x1000000",
+"-DART_BASE_ADDRESS_MAX_DELTA=0x1000000",
+"-Wall",
+"-Wextra",
+"-fpie"
+],
+[
+"-I",
+"libcore/include",
+"-I",
+"libnativehelper",
+"-I",
+"out/host/linux-x86/obj/SHARED_LIBRARIES/libnativehelper_intermediates",
+"-I",
+"out/host/linux-x86/gen/SHARED_LIBRARIES/libnativehelper_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-Wsign-promo",
+"-fpermissive",
+"-std=gnu++23",
+"-DNDEBUG",
+"-UDEBUG",
+"-Werror",
+"-fvisibility=protected",
+"-fPIC"
+],
+[
+"-I",
+"system/core/liblog",
+"-I",
+"out/host/linux-x86/obj/SHARED_LIBRARIES/liblog_intermediates",
+"-I",
+"out/host/linux-x86/gen/SHARED_LIBRARIES/liblog_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-DFAKE_LOG_DEVICE=1",
+"-fPIC"
+],
+[
+"-I",
+"external/vixl/src",
+"-I",
+"art/libelffile",
+"-I",
+"art/libartbase",
+"-I",
+"art/libdexfile",
+"-I",
+"art/libartpalette/include",
+"-I",
+"art/cmdline",
+"-I",
+"art/disassembler",
+"-I",
+"art/runtime",
+"-I",
+"art/compiler",
+"-I",
+"art/tools/cpp-define-generator",
+"-I",
+"bionic/libc/private",
+"-I",
+"art/sigchainlib",
+"-I",
+"out/host/linux-x86/obj/STATIC_LIBRARIES/libsigchain_intermediates",
+"-I",
+"out/host/linux-x86/gen/STATIC_LIBRARIES/libsigchain_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-Wsign-promo",
+"-fpermissive",
+"-std=gnu++23",
+"-DNDEBUG",
+"-UDEBUG",
+"-fno-rtti",
+"-std=gnu++17",
+"-ggdb3",
+"-Wall",
+"-Wextra",
+"-Wstrict-aliasing",
+"-fstrict-aliasing",
+"-Wunreachable-code",
+"-Wredundant-decls",
+"-Wunused",
+"-Wno-invalid-offsetof",
+"-Wno-deprecated-declarations",
+"-Wno-comment",
+"-Wno-attributes",
+"-fvisibility=protected",
+"-DART_DEFAULT_GC_TYPE_IS_CMS",
+"-DBUILDING_LIBART=1",
+"-DART_STACK_OVERFLOW_GAP_arm=8192",
+"-DART_STACK_OVERFLOW_GAP_arm64=8192",
+"-DART_STACK_OVERFLOW_GAP_mips=16384",
+"-DART_STACK_OVERFLOW_GAP_mips64=16384",
+"-DART_STACK_OVERFLOW_GAP_x86=8192",
+"-DART_STACK_OVERFLOW_GAP_x86_64=8192",
+"-DART_FRAME_SIZE_LIMIT=1736",
+"-DART_DEFAULT_COMPACT_DEX_LEVEL=none",
+"-I/usr/local/include/vixl",
+"-I/usr/include/vixl",
+"-DIMT_SIZE=64",
+"-DART_BASE_ADDRESS=0x60000000",
+"-DART_DEFAULT_INSTRUCTION_SET_FEATURES=default",
+"-DART_ENABLE_CODEGEN_arm",
+"-DART_ENABLE_CODEGEN_arm64",
+"-DVIXL_INCLUDE_TARGET_A64",
+"-DVIXL_INCLUDE_TARGET_T32",
+"-DVIXL_CODE_BUFFER_MMAP",
+"-DART_BASE_ADDRESS_MIN_DELTA=-0x1000000",
+"-DART_BASE_ADDRESS_MAX_DELTA=0x1000000",
+"-fPIC"
+],
+[
+"-I",
+"build/libs/host/include",
+"-I",
+"build/tools/acp",
+"-I",
+"out/host/linux-x86/obj/EXECUTABLES/acp_intermediates",
+"-I",
+"out/host/linux-x86/gen/EXECUTABLES/acp_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-fpie"
+],
+[
+"-I",
+"build/libs/host/include",
+"-I",
+"build/libs/host",
+"-I",
+"out/host/linux-x86/obj/STATIC_LIBRARIES/libhost_intermediates",
+"-I",
+"out/host/linux-x86/gen/STATIC_LIBRARIES/libhost_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-fPIC"
+],
+[
+"-I",
+"external/vixl/src",
+"-I",
+"art/libelffile",
+"-I",
+"art/libartbase",
+"-I",
+"art/libdexfile",
+"-I",
+"art/libartpalette/include",
+"-I",
+"art/cmdline",
+"-I",
+"art/disassembler",
+"-I",
+"art/runtime",
+"-I",
+"art/compiler",
+"-I",
+"art/tools/cpp-define-generator",
+"-I",
+"bionic/libc/private",
+"-I",
+"art/dex2oat",
+"-I",
+"out/host/linux-x86/obj/EXECUTABLES/dex2oat_intermediates",
+"-I",
+"out/host/linux-x86/gen/EXECUTABLES/dex2oat_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-I",
+"art/libprofile/.",
+"-I",
+"art/compiler/.",
+"-I",
+"art/dexlayout/.",
+"-I",
+"art/runtime/.",
+"-I",
+"art/libdexfile/.",
+"-I",
+"art/libartbase/.",
+"-I",
+"art/libartpalette/include",
+"-I",
+"libbase/include",
+"-I",
+"art/dex2oat/.",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-Wsign-promo",
+"-fpermissive",
+"-std=gnu++23",
+"-DNDEBUG",
+"-UDEBUG",
+"-fno-rtti",
+"-std=gnu++17",
+"-ggdb3",
+"-Wall",
+"-Wextra",
+"-Wstrict-aliasing",
+"-fstrict-aliasing",
+"-Wunreachable-code",
+"-Wredundant-decls",
+"-Wunused",
+"-Wno-invalid-offsetof",
+"-Wno-deprecated-declarations",
+"-Wno-comment",
+"-Wno-attributes",
+"-fvisibility=protected",
+"-DART_DEFAULT_GC_TYPE_IS_CMS",
+"-DBUILDING_LIBART=1",
+"-DART_STACK_OVERFLOW_GAP_arm=8192",
+"-DART_STACK_OVERFLOW_GAP_arm64=8192",
+"-DART_STACK_OVERFLOW_GAP_mips=16384",
+"-DART_STACK_OVERFLOW_GAP_mips64=16384",
+"-DART_STACK_OVERFLOW_GAP_x86=8192",
+"-DART_STACK_OVERFLOW_GAP_x86_64=8192",
+"-DART_FRAME_SIZE_LIMIT=1736",
+"-DART_DEFAULT_COMPACT_DEX_LEVEL=none",
+"-I/usr/local/include/vixl",
+"-I/usr/include/vixl",
+"-DIMT_SIZE=64",
+"-DART_BASE_ADDRESS=0x60000000",
+"-DART_DEFAULT_INSTRUCTION_SET_FEATURES=default",
+"-DART_ENABLE_CODEGEN_arm",
+"-DART_ENABLE_CODEGEN_arm64",
+"-DVIXL_INCLUDE_TARGET_A64",
+"-DVIXL_INCLUDE_TARGET_T32",
+"-DVIXL_CODE_BUFFER_MMAP",
+"-DART_BASE_ADDRESS_MIN_DELTA=-0x1000000",
+"-DART_BASE_ADDRESS_MAX_DELTA=0x1000000",
+"-fpie"
+],
+[
+"-I",
+"external/vixl/src",
+"-I",
+"art/libelffile",
+"-I",
+"art/libartbase",
+"-I",
+"art/libdexfile",
+"-I",
+"art/libartpalette/include",
+"-I",
+"art/cmdline",
+"-I",
+"art/disassembler",
+"-I",
+"art/runtime",
+"-I",
+"art/compiler",
+"-I",
+"art/tools/cpp-define-generator",
+"-I",
+"bionic/libc/private",
+"-I",
+"art/libprofile",
+"-I",
+"out/host/linux-x86/obj/SHARED_LIBRARIES/libprofile_intermediates",
+"-I",
+"out/host/linux-x86/gen/SHARED_LIBRARIES/libprofile_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-I",
+"libbase/include",
+"-I",
+"libziparchive/include",
+"-I",
+"art/libartbase/.",
+"-I",
+"art/libartpalette/include",
+"-I",
+"art/libdexfile/.",
+"-I",
+"libziparchive/include",
+"-I",
+"libbase/include",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-Wsign-promo",
+"-fpermissive",
+"-std=gnu++23",
+"-DNDEBUG",
+"-UDEBUG",
+"-DBUILDING_LIBART=1",
+"-fno-rtti",
+"-std=gnu++17",
+"-ggdb3",
+"-Wall",
+"-Wextra",
+"-Wstrict-aliasing",
+"-fstrict-aliasing",
+"-Wunreachable-code",
+"-Wredundant-decls",
+"-Wunused",
+"-Wno-invalid-offsetof",
+"-Wno-deprecated-declarations",
+"-Wno-comment",
+"-Wno-attributes",
+"-fvisibility=protected",
+"-DART_DEFAULT_GC_TYPE_IS_CMS",
+"-DBUILDING_LIBART=1",
+"-DART_STACK_OVERFLOW_GAP_arm=8192",
+"-DART_STACK_OVERFLOW_GAP_arm64=8192",
+"-DART_STACK_OVERFLOW_GAP_mips=16384",
+"-DART_STACK_OVERFLOW_GAP_mips64=16384",
+"-DART_STACK_OVERFLOW_GAP_x86=8192",
+"-DART_STACK_OVERFLOW_GAP_x86_64=8192",
+"-DART_FRAME_SIZE_LIMIT=1736",
+"-DART_DEFAULT_COMPACT_DEX_LEVEL=none",
+"-I/usr/local/include/vixl",
+"-I/usr/include/vixl",
+"-DIMT_SIZE=64",
+"-DART_BASE_ADDRESS=0x60000000",
+"-DART_DEFAULT_INSTRUCTION_SET_FEATURES=default",
+"-DART_ENABLE_CODEGEN_arm",
+"-DART_ENABLE_CODEGEN_arm64",
+"-DVIXL_INCLUDE_TARGET_A64",
+"-DVIXL_INCLUDE_TARGET_T32",
+"-DVIXL_CODE_BUFFER_MMAP",
+"-DART_BASE_ADDRESS_MIN_DELTA=-0x1000000",
+"-DART_BASE_ADDRESS_MAX_DELTA=0x1000000",
+"-fPIC"
+],
+[
+"-I",
+"libbase/include",
+"-I",
+"libbase",
+"-I",
+"out/host/linux-x86/obj/SHARED_LIBRARIES/libbase_intermediates",
+"-I",
+"out/host/linux-x86/gen/SHARED_LIBRARIES/libbase_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-Wsign-promo",
+"-fpermissive",
+"-std=gnu++23",
+"-DNDEBUG",
+"-UDEBUG",
+"-Wall",
+"-Wextra",
+"-fPIC"
+],
+[
+"-I",
+"libziparchive/include",
+"-I",
+"libziparchive/incfs_support/include/",
+"-I",
+"libziparchive",
+"-I",
+"out/host/linux-x86/obj/SHARED_LIBRARIES/libziparchive_intermediates",
+"-I",
+"out/host/linux-x86/gen/SHARED_LIBRARIES/libziparchive_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-I",
+"libbase/include",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-Wsign-promo",
+"-fpermissive",
+"-std=gnu++23",
+"-DNDEBUG",
+"-UDEBUG",
+"-DZLIB_CONST",
+"-D_FILE_OFFSET_BITS=64",
+"-DINCFS_SUPPORT_DISABLED=1",
+"-fPIC",
+"-Wold-style-cast",
+"-Wno-missing-field-initializers",
+"-Wconversion",
+"-Wno-sign-conversion"
+],
+[
+"-I",
+"external/vixl/src",
+"-I",
+"art/libelffile",
+"-I",
+"art/libartbase",
+"-I",
+"art/libdexfile",
+"-I",
+"art/libartpalette/include",
+"-I",
+"art/cmdline",
+"-I",
+"art/disassembler",
+"-I",
+"art/runtime",
+"-I",
+"art/compiler",
+"-I",
+"art/tools/cpp-define-generator",
+"-I",
+"bionic/libc/private",
+"-I",
+"art/libartbase",
+"-I",
+"out/host/linux-x86/obj/SHARED_LIBRARIES/libartbase_intermediates",
+"-I",
+"out/host/linux-x86/gen/SHARED_LIBRARIES/libartbase_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-I",
+"system/core/libutils/include",
+"-I",
+"libziparchive/include",
+"-I",
+"art/libartpalette/include",
+"-I",
+"libbase/include",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-Wsign-promo",
+"-fpermissive",
+"-std=gnu++23",
+"-DNDEBUG",
+"-UDEBUG",
+"-DBUILDING_LIBART=1",
+"-fno-rtti",
+"-std=gnu++17",
+"-ggdb3",
+"-Wall",
+"-Wextra",
+"-Wstrict-aliasing",
+"-fstrict-aliasing",
+"-Wunreachable-code",
+"-Wredundant-decls",
+"-Wunused",
+"-Wno-invalid-offsetof",
+"-Wno-deprecated-declarations",
+"-Wno-comment",
+"-Wno-attributes",
+"-fvisibility=protected",
+"-DART_DEFAULT_GC_TYPE_IS_CMS",
+"-DBUILDING_LIBART=1",
+"-DART_STACK_OVERFLOW_GAP_arm=8192",
+"-DART_STACK_OVERFLOW_GAP_arm64=8192",
+"-DART_STACK_OVERFLOW_GAP_mips=16384",
+"-DART_STACK_OVERFLOW_GAP_mips64=16384",
+"-DART_STACK_OVERFLOW_GAP_x86=8192",
+"-DART_STACK_OVERFLOW_GAP_x86_64=8192",
+"-DART_FRAME_SIZE_LIMIT=1736",
+"-DART_DEFAULT_COMPACT_DEX_LEVEL=none",
+"-I/usr/local/include/vixl",
+"-I/usr/include/vixl",
+"-DIMT_SIZE=64",
+"-DART_BASE_ADDRESS=0x60000000",
+"-DART_DEFAULT_INSTRUCTION_SET_FEATURES=default",
+"-DART_ENABLE_CODEGEN_arm",
+"-DART_ENABLE_CODEGEN_arm64",
+"-DVIXL_INCLUDE_TARGET_A64",
+"-DVIXL_INCLUDE_TARGET_T32",
+"-DVIXL_CODE_BUFFER_MMAP",
+"-DART_BASE_ADDRESS_MIN_DELTA=-0x1000000",
+"-DART_BASE_ADDRESS_MAX_DELTA=0x1000000",
+"-fPIC"
+],
+[
+"-I",
+"system/core/libutils/include",
+"-I",
+"system/core/libutils",
+"-I",
+"out/host/linux-x86/obj/SHARED_LIBRARIES/libutils_intermediates",
+"-I",
+"out/host/linux-x86/gen/SHARED_LIBRARIES/libutils_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-I",
+"libbase/include",
+"-I",
+"system/core/libutils/binder/include",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-Wsign-promo",
+"-fpermissive",
+"-std=gnu++23",
+"-DNDEBUG",
+"-UDEBUG",
+"-Wall",
+"-Wno-exit-time-destructors",
+"-DANDROID_UTILS_REF_BASE_DISABLE_IMPLICIT_CONSTRUCTION",
+"-fPIC"
+],
+[
+"-I",
+"system/core/libutils/binder/../include",
+"-I",
+"system/core/libutils/binder",
+"-I",
+"out/host/linux-x86/obj/STATIC_LIBRARIES/libutils_binder_intermediates",
+"-I",
+"out/host/linux-x86/gen/STATIC_LIBRARIES/libutils_binder_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-Wsign-promo",
+"-fpermissive",
+"-std=gnu++23",
+"-DNDEBUG",
+"-UDEBUG",
+"-Winvalid-offsetof",
+"-Wsequence-point",
+"-Wzero-as-null-pointer-constant",
+"-fPIC"
+],
+[
+"-I",
+"external/vixl/src",
+"-I",
+"art/libelffile",
+"-I",
+"art/libartbase",
+"-I",
+"art/libdexfile",
+"-I",
+"art/libartpalette/include",
+"-I",
+"art/cmdline",
+"-I",
+"art/disassembler",
+"-I",
+"art/runtime",
+"-I",
+"art/compiler",
+"-I",
+"art/tools/cpp-define-generator",
+"-I",
+"bionic/libc/private",
+"-I",
+"art/libartpalette",
+"-I",
+"out/host/linux-x86/obj/SHARED_LIBRARIES/libartpalette_intermediates",
+"-I",
+"out/host/linux-x86/gen/SHARED_LIBRARIES/libartpalette_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-I",
+"libbase/include",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-Wsign-promo",
+"-fpermissive",
+"-std=gnu++23",
+"-DNDEBUG",
+"-UDEBUG",
+"-fno-rtti",
+"-std=gnu++17",
+"-ggdb3",
+"-Wall",
+"-Wextra",
+"-Wstrict-aliasing",
+"-fstrict-aliasing",
+"-Wunreachable-code",
+"-Wredundant-decls",
+"-Wunused",
+"-Wno-invalid-offsetof",
+"-Wno-deprecated-declarations",
+"-Wno-comment",
+"-Wno-attributes",
+"-fvisibility=protected",
+"-DART_DEFAULT_GC_TYPE_IS_CMS",
+"-DBUILDING_LIBART=1",
+"-DART_STACK_OVERFLOW_GAP_arm=8192",
+"-DART_STACK_OVERFLOW_GAP_arm64=8192",
+"-DART_STACK_OVERFLOW_GAP_mips=16384",
+"-DART_STACK_OVERFLOW_GAP_mips64=16384",
+"-DART_STACK_OVERFLOW_GAP_x86=8192",
+"-DART_STACK_OVERFLOW_GAP_x86_64=8192",
+"-DART_FRAME_SIZE_LIMIT=1736",
+"-DART_DEFAULT_COMPACT_DEX_LEVEL=none",
+"-I/usr/local/include/vixl",
+"-I/usr/include/vixl",
+"-DIMT_SIZE=64",
+"-DART_BASE_ADDRESS=0x60000000",
+"-DART_DEFAULT_INSTRUCTION_SET_FEATURES=default",
+"-DART_ENABLE_CODEGEN_arm",
+"-DART_ENABLE_CODEGEN_arm64",
+"-DVIXL_INCLUDE_TARGET_A64",
+"-DVIXL_INCLUDE_TARGET_T32",
+"-DVIXL_CODE_BUFFER_MMAP",
+"-DART_BASE_ADDRESS_MIN_DELTA=-0x1000000",
+"-DART_BASE_ADDRESS_MAX_DELTA=0x1000000",
+"-fPIC"
+],
+[
+"-I",
+"external/vixl/src",
+"-I",
+"art/libelffile",
+"-I",
+"art/libartbase",
+"-I",
+"art/libdexfile",
+"-I",
+"art/libartpalette/include",
+"-I",
+"art/cmdline",
+"-I",
+"art/disassembler",
+"-I",
+"art/runtime",
+"-I",
+"art/compiler",
+"-I",
+"art/tools/cpp-define-generator",
+"-I",
+"bionic/libc/private",
+"-I",
+"art/libdexfile",
+"-I",
+"out/host/linux-x86/obj/SHARED_LIBRARIES/libdexfile_intermediates",
+"-I",
+"out/host/linux-x86/gen/SHARED_LIBRARIES/libdexfile_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-I",
+"system/core/libutils/include",
+"-I",
+"libziparchive/include",
+"-I",
+"art/libartbase/.",
+"-I",
+"art/libartpalette/include",
+"-I",
+"libbase/include",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-Wsign-promo",
+"-fpermissive",
+"-std=gnu++23",
+"-DNDEBUG",
+"-UDEBUG",
+"-fno-rtti",
+"-std=gnu++17",
+"-ggdb3",
+"-Wall",
+"-Wextra",
+"-Wstrict-aliasing",
+"-fstrict-aliasing",
+"-Wunreachable-code",
+"-Wredundant-decls",
+"-Wunused",
+"-Wno-invalid-offsetof",
+"-Wno-deprecated-declarations",
+"-Wno-comment",
+"-Wno-attributes",
+"-fvisibility=protected",
+"-DART_DEFAULT_GC_TYPE_IS_CMS",
+"-DBUILDING_LIBART=1",
+"-DART_STACK_OVERFLOW_GAP_arm=8192",
+"-DART_STACK_OVERFLOW_GAP_arm64=8192",
+"-DART_STACK_OVERFLOW_GAP_mips=16384",
+"-DART_STACK_OVERFLOW_GAP_mips64=16384",
+"-DART_STACK_OVERFLOW_GAP_x86=8192",
+"-DART_STACK_OVERFLOW_GAP_x86_64=8192",
+"-DART_FRAME_SIZE_LIMIT=1736",
+"-DART_DEFAULT_COMPACT_DEX_LEVEL=none",
+"-I/usr/local/include/vixl",
+"-I/usr/include/vixl",
+"-DIMT_SIZE=64",
+"-DART_BASE_ADDRESS=0x60000000",
+"-DART_DEFAULT_INSTRUCTION_SET_FEATURES=default",
+"-DART_ENABLE_CODEGEN_arm",
+"-DART_ENABLE_CODEGEN_arm64",
+"-DVIXL_INCLUDE_TARGET_A64",
+"-DVIXL_INCLUDE_TARGET_T32",
+"-DVIXL_CODE_BUFFER_MMAP",
+"-DART_BASE_ADDRESS_MIN_DELTA=-0x1000000",
+"-DART_BASE_ADDRESS_MAX_DELTA=0x1000000",
+"-fPIC"
+],
+[
+"-I",
+"art/disassembler",
+"-I",
+"art/compiler/generated",
+"-I",
+"external/vixl/src",
+"-I",
+"art/libelffile",
+"-I",
+"art/libartbase",
+"-I",
+"art/libdexfile",
+"-I",
+"art/libartpalette/include",
+"-I",
+"art/cmdline",
+"-I",
+"art/disassembler",
+"-I",
+"art/runtime",
+"-I",
+"art/compiler",
+"-I",
+"art/tools/cpp-define-generator",
+"-I",
+"bionic/libc/private",
+"-I",
+"art/compiler",
+"-I",
+"out/host/linux-x86/obj/SHARED_LIBRARIES/libart-compiler_intermediates",
+"-I",
+"out/host/linux-x86/gen/SHARED_LIBRARIES/libart-compiler_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-I",
+"art/runtime/.",
+"-I",
+"art/libartbase/.",
+"-I",
+"art/libartpalette/include",
+"-I",
+"art/libprofile/.",
+"-I",
+"art/libdexfile/.",
+"-I",
+"libbase/include",
+"-I",
+"art/libelffile/.",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-Wsign-promo",
+"-fpermissive",
+"-std=gnu++23",
+"-DNDEBUG",
+"-UDEBUG",
+"-fno-rtti",
+"-std=gnu++17",
+"-ggdb3",
+"-Wall",
+"-Wextra",
+"-Wstrict-aliasing",
+"-fstrict-aliasing",
+"-Wunreachable-code",
+"-Wredundant-decls",
+"-Wunused",
+"-Wno-invalid-offsetof",
+"-Wno-deprecated-declarations",
+"-Wno-comment",
+"-Wno-attributes",
+"-fvisibility=protected",
+"-DART_DEFAULT_GC_TYPE_IS_CMS",
+"-DBUILDING_LIBART=1",
+"-DART_STACK_OVERFLOW_GAP_arm=8192",
+"-DART_STACK_OVERFLOW_GAP_arm64=8192",
+"-DART_STACK_OVERFLOW_GAP_mips=16384",
+"-DART_STACK_OVERFLOW_GAP_mips64=16384",
+"-DART_STACK_OVERFLOW_GAP_x86=8192",
+"-DART_STACK_OVERFLOW_GAP_x86_64=8192",
+"-DART_FRAME_SIZE_LIMIT=1736",
+"-DART_DEFAULT_COMPACT_DEX_LEVEL=none",
+"-I/usr/local/include/vixl",
+"-I/usr/include/vixl",
+"-DIMT_SIZE=64",
+"-DART_BASE_ADDRESS=0x60000000",
+"-DART_DEFAULT_INSTRUCTION_SET_FEATURES=default",
+"-DART_ENABLE_CODEGEN_arm",
+"-DART_ENABLE_CODEGEN_arm64",
+"-DVIXL_INCLUDE_TARGET_A64",
+"-DVIXL_INCLUDE_TARGET_T32",
+"-DVIXL_CODE_BUFFER_MMAP",
+"-DART_BASE_ADDRESS_MIN_DELTA=-0x1000000",
+"-DART_BASE_ADDRESS_MAX_DELTA=0x1000000",
+"-fPIC"
+],
+[
+"-I",
+"art/sigchainlib",
+"-I",
+"external/zlib",
+"-I",
+"system/core/libnativebridge/include/",
+"-I",
+"art/runtime/generated",
+"-I",
+"external/vixl/src",
+"-I",
+"art/libelffile",
+"-I",
+"art/libartbase",
+"-I",
+"art/libdexfile",
+"-I",
+"art/libartpalette/include",
+"-I",
+"art/cmdline",
+"-I",
+"art/disassembler",
+"-I",
+"art/runtime",
+"-I",
+"art/compiler",
+"-I",
+"art/tools/cpp-define-generator",
+"-I",
+"bionic/libc/private",
+"-I",
+"art/runtime",
+"-I",
+"out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates",
+"-I",
+"out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-I",
+"art/libartbase/.",
+"-I",
+"art/libdexfile/.",
+"-I",
+"art/libprofile/.",
+"-I",
+"art/libartpalette/include",
+"-I",
+"libbase/include",
+"-I",
+"art/libelffile/.",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-D__ASSEMBLY__"
+],
+[
+"-I",
+"art/sigchainlib",
+"-I",
+"external/zlib",
+"-I",
+"system/core/libnativebridge/include/",
+"-I",
+"art/runtime/generated",
+"-I",
+"external/vixl/src",
+"-I",
+"art/libelffile",
+"-I",
+"art/libartbase",
+"-I",
+"art/libdexfile",
+"-I",
+"art/libartpalette/include",
+"-I",
+"art/cmdline",
+"-I",
+"art/disassembler",
+"-I",
+"art/runtime",
+"-I",
+"art/compiler",
+"-I",
+"art/tools/cpp-define-generator",
+"-I",
+"bionic/libc/private",
+"-I",
+"art/runtime",
+"-I",
+"out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates",
+"-I",
+"out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-I",
+"art/libartbase/.",
+"-I",
+"art/libdexfile/.",
+"-I",
+"art/libprofile/.",
+"-I",
+"art/libartpalette/include",
+"-I",
+"libbase/include",
+"-I",
+"art/libelffile/.",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-Wsign-promo",
+"-fpermissive",
+"-std=gnu++23",
+"-DNDEBUG",
+"-UDEBUG",
+"-DBUILDING_LIBART=1",
+"-fno-rtti",
+"-std=gnu++17",
+"-ggdb3",
+"-Wall",
+"-Wextra",
+"-Wstrict-aliasing",
+"-fstrict-aliasing",
+"-Wunreachable-code",
+"-Wredundant-decls",
+"-Wunused",
+"-Wno-invalid-offsetof",
+"-Wno-deprecated-declarations",
+"-Wno-comment",
+"-Wno-attributes",
+"-fvisibility=protected",
+"-DART_DEFAULT_GC_TYPE_IS_CMS",
+"-DBUILDING_LIBART=1",
+"-DART_STACK_OVERFLOW_GAP_arm=8192",
+"-DART_STACK_OVERFLOW_GAP_arm64=8192",
+"-DART_STACK_OVERFLOW_GAP_mips=16384",
+"-DART_STACK_OVERFLOW_GAP_mips64=16384",
+"-DART_STACK_OVERFLOW_GAP_x86=8192",
+"-DART_STACK_OVERFLOW_GAP_x86_64=8192",
+"-DART_FRAME_SIZE_LIMIT=1736",
+"-DART_DEFAULT_COMPACT_DEX_LEVEL=none",
+"-I/usr/local/include/vixl",
+"-I/usr/include/vixl",
+"-DIMT_SIZE=64",
+"-DART_BASE_ADDRESS=0x60000000",
+"-DART_DEFAULT_INSTRUCTION_SET_FEATURES=default",
+"-DART_ENABLE_CODEGEN_arm",
+"-DART_ENABLE_CODEGEN_arm64",
+"-DVIXL_INCLUDE_TARGET_A64",
+"-DVIXL_INCLUDE_TARGET_T32",
+"-DVIXL_CODE_BUFFER_MMAP",
+"-DART_BASE_ADDRESS_MIN_DELTA=-0x1000000",
+"-DART_BASE_ADDRESS_MAX_DELTA=0x1000000",
+"-fPIC"
+],
+[
+"-I",
+"system/core/libnativebridge/include",
+"-I",
+"system/core/libnativebridge",
+"-I",
+"out/host/linux-x86/obj/SHARED_LIBRARIES/libnativebridge_intermediates",
+"-I",
+"out/host/linux-x86/gen/SHARED_LIBRARIES/libnativebridge_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-Wsign-promo",
+"-fpermissive",
+"-std=gnu++23",
+"-DNDEBUG",
+"-UDEBUG",
+"-Werror",
+"-Wall",
+"-fPIC",
+"-std=gnu++11",
+"-fvisibility=protected"
+],
+[
+"-I",
+"system/core/libbacktrace",
+"-I",
+"out/host/linux-x86/obj/SHARED_LIBRARIES/libbacktrace_intermediates",
+"-I",
+"out/host/linux-x86/gen/SHARED_LIBRARIES/libbacktrace_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-I",
+"libbase/include",
+"-I",
+"external/libunwind/include",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-Wsign-promo",
+"-fpermissive",
+"-std=gnu++23",
+"-DNDEBUG",
+"-UDEBUG",
+"-Wall",
+"-Wno-extern-c-compat",
+"-fno-omit-frame-pointer",
+"-fPIC",
+"-std=gnu++11"
+],
+[
+"-I",
+"system/core/libbacktrace",
+"-I",
+"out/host/linux-x86/obj/SHARED_LIBRARIES/libbacktrace_intermediates",
+"-I",
+"out/host/linux-x86/gen/SHARED_LIBRARIES/libbacktrace_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-I",
+"libbase/include",
+"-I",
+"external/libunwind/include",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-Wall",
+"-Wno-extern-c-compat",
+"-fno-omit-frame-pointer",
+"-fPIC",
+"-std=gnu99"
+],
+[
+"-I",
+"external/libunwind/src",
+"-I",
+"external/libunwind/include",
+"-I",
+"external/libunwind/include/tdep-aarch64",
+"-I",
+"external/libunwind",
+"-I",
+"out/host/linux-x86/obj/SHARED_LIBRARIES/libunwind_intermediates",
+"-I",
+"out/host/linux-x86/gen/SHARED_LIBRARIES/libunwind_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-Wno-unused-parameter",
+"-DHAVE_CONFIG_H",
+"-DNDEBUG",
+"-D_GNU_SOURCE",
+"-fPIC"
+],
+[
+"-I",
+"system/core/libcutils",
+"-I",
+"out/host/linux-x86/obj/SHARED_LIBRARIES/libcutils_intermediates",
+"-I",
+"out/host/linux-x86/gen/SHARED_LIBRARIES/libcutils_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-I",
+"system/core/libutils/include",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-fPIC"
+],
+[
+"-I",
+"external/vixl/src",
+"-I",
+"art/libelffile",
+"-I",
+"art/libartbase",
+"-I",
+"art/libdexfile",
+"-I",
+"art/libartpalette/include",
+"-I",
+"art/cmdline",
+"-I",
+"art/disassembler",
+"-I",
+"art/runtime",
+"-I",
+"art/compiler",
+"-I",
+"art/tools/cpp-define-generator",
+"-I",
+"bionic/libc/private",
+"-I",
+"art/sigchainlib",
+"-I",
+"out/host/linux-x86/obj/SHARED_LIBRARIES/libsigchain_intermediates",
+"-I",
+"out/host/linux-x86/gen/SHARED_LIBRARIES/libsigchain_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-Wsign-promo",
+"-fpermissive",
+"-std=gnu++23",
+"-DNDEBUG",
+"-UDEBUG",
+"-fno-rtti",
+"-std=gnu++17",
+"-ggdb3",
+"-Wall",
+"-Wextra",
+"-Wstrict-aliasing",
+"-fstrict-aliasing",
+"-Wunreachable-code",
+"-Wredundant-decls",
+"-Wunused",
+"-Wno-invalid-offsetof",
+"-Wno-deprecated-declarations",
+"-Wno-comment",
+"-Wno-attributes",
+"-fvisibility=protected",
+"-DART_DEFAULT_GC_TYPE_IS_CMS",
+"-DBUILDING_LIBART=1",
+"-DART_STACK_OVERFLOW_GAP_arm=8192",
+"-DART_STACK_OVERFLOW_GAP_arm64=8192",
+"-DART_STACK_OVERFLOW_GAP_mips=16384",
+"-DART_STACK_OVERFLOW_GAP_mips64=16384",
+"-DART_STACK_OVERFLOW_GAP_x86=8192",
+"-DART_STACK_OVERFLOW_GAP_x86_64=8192",
+"-DART_FRAME_SIZE_LIMIT=1736",
+"-DART_DEFAULT_COMPACT_DEX_LEVEL=none",
+"-I/usr/local/include/vixl",
+"-I/usr/include/vixl",
+"-DIMT_SIZE=64",
+"-DART_BASE_ADDRESS=0x60000000",
+"-DART_DEFAULT_INSTRUCTION_SET_FEATURES=default",
+"-DART_ENABLE_CODEGEN_arm",
+"-DART_ENABLE_CODEGEN_arm64",
+"-DVIXL_INCLUDE_TARGET_A64",
+"-DVIXL_INCLUDE_TARGET_T32",
+"-DVIXL_CODE_BUFFER_MMAP",
+"-DART_BASE_ADDRESS_MIN_DELTA=-0x1000000",
+"-DART_BASE_ADDRESS_MAX_DELTA=0x1000000",
+"-fPIC"
+],
+[
+"-I",
+"external/vixl/src",
+"-I",
+"art/libelffile",
+"-I",
+"art/libartbase",
+"-I",
+"art/libdexfile",
+"-I",
+"art/libartpalette/include",
+"-I",
+"art/cmdline",
+"-I",
+"art/disassembler",
+"-I",
+"art/runtime",
+"-I",
+"art/compiler",
+"-I",
+"art/tools/cpp-define-generator",
+"-I",
+"bionic/libc/private",
+"-I",
+"art/libelffile",
+"-I",
+"out/host/linux-x86/obj/STATIC_LIBRARIES/libelffile_intermediates",
+"-I",
+"out/host/linux-x86/gen/STATIC_LIBRARIES/libelffile_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-I",
+"art/libartbase/.",
+"-I",
+"libbase/include",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-Wsign-promo",
+"-fpermissive",
+"-std=gnu++23",
+"-DNDEBUG",
+"-UDEBUG",
+"-fno-rtti",
+"-std=gnu++17",
+"-ggdb3",
+"-Wall",
+"-Wextra",
+"-Wstrict-aliasing",
+"-fstrict-aliasing",
+"-Wunreachable-code",
+"-Wredundant-decls",
+"-Wunused",
+"-Wno-invalid-offsetof",
+"-Wno-deprecated-declarations",
+"-Wno-comment",
+"-Wno-attributes",
+"-fvisibility=protected",
+"-DART_DEFAULT_GC_TYPE_IS_CMS",
+"-DBUILDING_LIBART=1",
+"-DART_STACK_OVERFLOW_GAP_arm=8192",
+"-DART_STACK_OVERFLOW_GAP_arm64=8192",
+"-DART_STACK_OVERFLOW_GAP_mips=16384",
+"-DART_STACK_OVERFLOW_GAP_mips64=16384",
+"-DART_STACK_OVERFLOW_GAP_x86=8192",
+"-DART_STACK_OVERFLOW_GAP_x86_64=8192",
+"-DART_FRAME_SIZE_LIMIT=1736",
+"-DART_DEFAULT_COMPACT_DEX_LEVEL=none",
+"-I/usr/local/include/vixl",
+"-I/usr/include/vixl",
+"-DIMT_SIZE=64",
+"-DART_BASE_ADDRESS=0x60000000",
+"-DART_DEFAULT_INSTRUCTION_SET_FEATURES=default",
+"-DART_ENABLE_CODEGEN_arm",
+"-DART_ENABLE_CODEGEN_arm64",
+"-DVIXL_INCLUDE_TARGET_A64",
+"-DVIXL_INCLUDE_TARGET_T32",
+"-DVIXL_CODE_BUFFER_MMAP",
+"-DART_BASE_ADDRESS_MIN_DELTA=-0x1000000",
+"-DART_BASE_ADDRESS_MAX_DELTA=0x1000000",
+"-fPIC"
+],
+[
+"-I",
+"external/vixl/src",
+"-I",
+"art/libelffile",
+"-I",
+"art/libartbase",
+"-I",
+"art/libdexfile",
+"-I",
+"art/libartpalette/include",
+"-I",
+"art/cmdline",
+"-I",
+"art/disassembler",
+"-I",
+"art/runtime",
+"-I",
+"art/compiler",
+"-I",
+"art/tools/cpp-define-generator",
+"-I",
+"bionic/libc/private",
+"-I",
+"art/dexlayout",
+"-I",
+"out/host/linux-x86/obj/SHARED_LIBRARIES/libart-dexlayout_intermediates",
+"-I",
+"out/host/linux-x86/gen/SHARED_LIBRARIES/libart-dexlayout_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-I",
+"art/libartbase/.",
+"-I",
+"art/libartpalette/include",
+"-I",
+"art/libdexfile/.",
+"-I",
+"art/libprofile/.",
+"-I",
+"libbase/include",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-Wsign-promo",
+"-fpermissive",
+"-std=gnu++23",
+"-DNDEBUG",
+"-UDEBUG",
+"-fno-rtti",
+"-std=gnu++17",
+"-ggdb3",
+"-Wall",
+"-Wextra",
+"-Wstrict-aliasing",
+"-fstrict-aliasing",
+"-Wunreachable-code",
+"-Wredundant-decls",
+"-Wunused",
+"-Wno-invalid-offsetof",
+"-Wno-deprecated-declarations",
+"-Wno-comment",
+"-Wno-attributes",
+"-fvisibility=protected",
+"-DART_DEFAULT_GC_TYPE_IS_CMS",
+"-DBUILDING_LIBART=1",
+"-DART_STACK_OVERFLOW_GAP_arm=8192",
+"-DART_STACK_OVERFLOW_GAP_arm64=8192",
+"-DART_STACK_OVERFLOW_GAP_mips=16384",
+"-DART_STACK_OVERFLOW_GAP_mips64=16384",
+"-DART_STACK_OVERFLOW_GAP_x86=8192",
+"-DART_STACK_OVERFLOW_GAP_x86_64=8192",
+"-DART_FRAME_SIZE_LIMIT=1736",
+"-DART_DEFAULT_COMPACT_DEX_LEVEL=none",
+"-I/usr/local/include/vixl",
+"-I/usr/include/vixl",
+"-DIMT_SIZE=64",
+"-DART_BASE_ADDRESS=0x60000000",
+"-DART_DEFAULT_INSTRUCTION_SET_FEATURES=default",
+"-DART_ENABLE_CODEGEN_arm",
+"-DART_ENABLE_CODEGEN_arm64",
+"-DVIXL_INCLUDE_TARGET_A64",
+"-DVIXL_INCLUDE_TARGET_T32",
+"-DVIXL_CODE_BUFFER_MMAP",
+"-DART_BASE_ADDRESS_MIN_DELTA=-0x1000000",
+"-DART_BASE_ADDRESS_MAX_DELTA=0x1000000",
+"-fPIC"
+],
+[
+"-I",
+"art/dex2oat/generated",
+"-I",
+"external/vixl/src",
+"-I",
+"art/libelffile",
+"-I",
+"art/libartbase",
+"-I",
+"art/libdexfile",
+"-I",
+"art/libartpalette/include",
+"-I",
+"art/cmdline",
+"-I",
+"art/disassembler",
+"-I",
+"art/runtime",
+"-I",
+"art/compiler",
+"-I",
+"art/tools/cpp-define-generator",
+"-I",
+"bionic/libc/private",
+"-I",
+"art/dex2oat",
+"-I",
+"out/host/linux-x86/obj/STATIC_LIBRARIES/libart-dex2oat_intermediates",
+"-I",
+"out/host/linux-x86/gen/STATIC_LIBRARIES/libart-dex2oat_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-I",
+"art/compiler/.",
+"-I",
+"art/dexlayout/.",
+"-I",
+"art/runtime/.",
+"-I",
+"art/libartpalette/include",
+"-I",
+"art/libprofile/.",
+"-I",
+"libbase/include",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-Wsign-promo",
+"-fpermissive",
+"-std=gnu++23",
+"-DNDEBUG",
+"-UDEBUG",
+"-fno-rtti",
+"-std=gnu++17",
+"-ggdb3",
+"-Wall",
+"-Wextra",
+"-Wstrict-aliasing",
+"-fstrict-aliasing",
+"-Wunreachable-code",
+"-Wredundant-decls",
+"-Wunused",
+"-Wno-invalid-offsetof",
+"-Wno-deprecated-declarations",
+"-Wno-comment",
+"-Wno-attributes",
+"-fvisibility=protected",
+"-DART_DEFAULT_GC_TYPE_IS_CMS",
+"-DBUILDING_LIBART=1",
+"-DART_STACK_OVERFLOW_GAP_arm=8192",
+"-DART_STACK_OVERFLOW_GAP_arm64=8192",
+"-DART_STACK_OVERFLOW_GAP_mips=16384",
+"-DART_STACK_OVERFLOW_GAP_mips64=16384",
+"-DART_STACK_OVERFLOW_GAP_x86=8192",
+"-DART_STACK_OVERFLOW_GAP_x86_64=8192",
+"-DART_FRAME_SIZE_LIMIT=1736",
+"-DART_DEFAULT_COMPACT_DEX_LEVEL=none",
+"-I/usr/local/include/vixl",
+"-I/usr/include/vixl",
+"-DIMT_SIZE=64",
+"-DART_BASE_ADDRESS=0x60000000",
+"-DART_DEFAULT_INSTRUCTION_SET_FEATURES=default",
+"-DART_ENABLE_CODEGEN_arm",
+"-DART_ENABLE_CODEGEN_arm64",
+"-DVIXL_INCLUDE_TARGET_A64",
+"-DVIXL_INCLUDE_TARGET_T32",
+"-DVIXL_CODE_BUFFER_MMAP",
+"-DART_BASE_ADDRESS_MIN_DELTA=-0x1000000",
+"-DART_BASE_ADDRESS_MAX_DELTA=0x1000000",
+"-fPIC"
+],
+[
+"-I",
+"libcore/include",
+"-I",
+"libcore/ojluni/src/main/native",
+"-I",
+"external/fdlibm",
+"-I",
+"external/zlib",
+"-I",
+"external/icu/icu4c/source/common",
+"-I",
+"libcore",
+"-I",
+"out/host/linux-x86/obj/SHARED_LIBRARIES/libjavacore_intermediates",
+"-I",
+"out/host/linux-x86/gen/SHARED_LIBRARIES/libjavacore_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-I",
+"libbase/include",
+"-I",
+"libziparchive/include",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-Wsign-promo",
+"-fpermissive",
+"-std=gnu++23",
+"-DNDEBUG",
+"-UDEBUG",
+"-Wall",
+"-Wextra",
+"-fPIC",
+"-DU_USING_ICU_NAMESPACE=0"
+],
+[
+"-I",
+"libcore/include",
+"-I",
+"libcore/ojluni/src/main/native",
+"-I",
+"external/fdlibm",
+"-I",
+"external/zlib",
+"-I",
+"external/icu/icu4c/source/common",
+"-I",
+"libcore",
+"-I",
+"out/host/linux-x86/obj/SHARED_LIBRARIES/libopenjdk_intermediates",
+"-I",
+"out/host/linux-x86/gen/SHARED_LIBRARIES/libopenjdk_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-I",
+"libbase/include",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-Wsign-promo",
+"-fpermissive",
+"-std=gnu++23",
+"-DNDEBUG",
+"-UDEBUG",
+"-D_LARGEFILE64_SOURCE",
+"-D_GNU_SOURCE",
+"-DLINUX",
+"-D__GLIBC__",
+"-Wall",
+"-Wextra",
+"-Wno-unused-parameter",
+"-Wno-unused-variable",
+"-Wno-parentheses-equality",
+"-Wno-constant-logical-operand",
+"-Wno-sometimes-uninitialized",
+"-fPIC"
+],
+[
+"-I",
+"libcore/include",
+"-I",
+"libcore/ojluni/src/main/native",
+"-I",
+"external/fdlibm",
+"-I",
+"external/zlib",
+"-I",
+"external/icu/icu4c/source/common",
+"-I",
+"libcore",
+"-I",
+"out/host/linux-x86/obj/SHARED_LIBRARIES/libopenjdk_intermediates",
+"-I",
+"out/host/linux-x86/gen/SHARED_LIBRARIES/libopenjdk_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-I",
+"libbase/include",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-D_LARGEFILE64_SOURCE",
+"-D_GNU_SOURCE",
+"-DLINUX",
+"-D__GLIBC__",
+"-Wall",
+"-Wextra",
+"-Wno-unused-parameter",
+"-Wno-unused-variable",
+"-Wno-parentheses-equality",
+"-Wno-constant-logical-operand",
+"-Wno-sometimes-uninitialized",
+"-fPIC"
+],
+[
+"-I",
+"external/vixl/src",
+"-I",
+"art/libelffile",
+"-I",
+"art/libartbase",
+"-I",
+"art/libdexfile",
+"-I",
+"art/libartpalette/include",
+"-I",
+"art/cmdline",
+"-I",
+"art/disassembler",
+"-I",
+"art/runtime",
+"-I",
+"art/compiler",
+"-I",
+"art/tools/cpp-define-generator",
+"-I",
+"bionic/libc/private",
+"-I",
+"art/openjdkjvm",
+"-I",
+"out/host/linux-x86/obj/SHARED_LIBRARIES/libopenjdkjvm_intermediates",
+"-I",
+"out/host/linux-x86/gen/SHARED_LIBRARIES/libopenjdkjvm_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-I",
+"art/runtime/.",
+"-I",
+"art/libartbase/.",
+"-I",
+"libbase/include",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-Wsign-promo",
+"-fpermissive",
+"-std=gnu++23",
+"-DNDEBUG",
+"-UDEBUG",
+"-fno-rtti",
+"-std=gnu++17",
+"-ggdb3",
+"-Wall",
+"-Wextra",
+"-Wstrict-aliasing",
+"-fstrict-aliasing",
+"-Wunreachable-code",
+"-Wredundant-decls",
+"-Wunused",
+"-Wno-invalid-offsetof",
+"-Wno-deprecated-declarations",
+"-Wno-comment",
+"-Wno-attributes",
+"-fvisibility=protected",
+"-DART_DEFAULT_GC_TYPE_IS_CMS",
+"-DBUILDING_LIBART=1",
+"-DART_STACK_OVERFLOW_GAP_arm=8192",
+"-DART_STACK_OVERFLOW_GAP_arm64=8192",
+"-DART_STACK_OVERFLOW_GAP_mips=16384",
+"-DART_STACK_OVERFLOW_GAP_mips64=16384",
+"-DART_STACK_OVERFLOW_GAP_x86=8192",
+"-DART_STACK_OVERFLOW_GAP_x86_64=8192",
+"-DART_FRAME_SIZE_LIMIT=1736",
+"-DART_DEFAULT_COMPACT_DEX_LEVEL=none",
+"-I/usr/local/include/vixl",
+"-I/usr/include/vixl",
+"-DIMT_SIZE=64",
+"-DART_BASE_ADDRESS=0x60000000",
+"-DART_DEFAULT_INSTRUCTION_SET_FEATURES=default",
+"-DART_ENABLE_CODEGEN_arm",
+"-DART_ENABLE_CODEGEN_arm64",
+"-DVIXL_INCLUDE_TARGET_A64",
+"-DVIXL_INCLUDE_TARGET_T32",
+"-DVIXL_CODE_BUFFER_MMAP",
+"-DART_BASE_ADDRESS_MIN_DELTA=-0x1000000",
+"-DART_BASE_ADDRESS_MAX_DELTA=0x1000000",
+"-fPIC"
+],
+[
+"-I",
+"external/fdlibm",
+"-I",
+"out/host/linux-x86/obj/STATIC_LIBRARIES/libfdlibm_intermediates",
+"-I",
+"out/host/linux-x86/gen/STATIC_LIBRARIES/libfdlibm_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-D_IEEE_LIBM",
+"-fno-strict-aliasing",
+"-ffloat-store",
+"-fPIC"
+],
+[
+"-I",
+"external/vixl/src",
+"-I",
+"art/libelffile",
+"-I",
+"art/libartbase",
+"-I",
+"art/libdexfile",
+"-I",
+"art/libartpalette/include",
+"-I",
+"art/cmdline",
+"-I",
+"art/disassembler",
+"-I",
+"art/runtime",
+"-I",
+"art/compiler",
+"-I",
+"art/tools/cpp-define-generator",
+"-I",
+"bionic/libc/private",
+"-I",
+"art/openjdkjvm",
+"-I",
+"out/host/linux-x86/obj/STATIC_LIBRARIES/libopenjdkjvm_intermediates",
+"-I",
+"out/host/linux-x86/gen/STATIC_LIBRARIES/libopenjdkjvm_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-I",
+"art/runtime/.",
+"-I",
+"art/libartbase/.",
+"-I",
+"libbase/include",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-Wsign-promo",
+"-fpermissive",
+"-std=gnu++23",
+"-DNDEBUG",
+"-UDEBUG",
+"-fno-rtti",
+"-std=gnu++17",
+"-ggdb3",
+"-Wall",
+"-Wextra",
+"-Wstrict-aliasing",
+"-fstrict-aliasing",
+"-Wunreachable-code",
+"-Wredundant-decls",
+"-Wunused",
+"-Wno-invalid-offsetof",
+"-Wno-deprecated-declarations",
+"-Wno-comment",
+"-Wno-attributes",
+"-fvisibility=protected",
+"-DART_DEFAULT_GC_TYPE_IS_CMS",
+"-DBUILDING_LIBART=1",
+"-DART_STACK_OVERFLOW_GAP_arm=8192",
+"-DART_STACK_OVERFLOW_GAP_arm64=8192",
+"-DART_STACK_OVERFLOW_GAP_mips=16384",
+"-DART_STACK_OVERFLOW_GAP_mips64=16384",
+"-DART_STACK_OVERFLOW_GAP_x86=8192",
+"-DART_STACK_OVERFLOW_GAP_x86_64=8192",
+"-DART_FRAME_SIZE_LIMIT=1736",
+"-DART_DEFAULT_COMPACT_DEX_LEVEL=none",
+"-I/usr/local/include/vixl",
+"-I/usr/include/vixl",
+"-DIMT_SIZE=64",
+"-DART_BASE_ADDRESS=0x60000000",
+"-DART_DEFAULT_INSTRUCTION_SET_FEATURES=default",
+"-DART_ENABLE_CODEGEN_arm",
+"-DART_ENABLE_CODEGEN_arm64",
+"-DVIXL_INCLUDE_TARGET_A64",
+"-DVIXL_INCLUDE_TARGET_T32",
+"-DVIXL_CODE_BUFFER_MMAP",
+"-DART_BASE_ADDRESS_MIN_DELTA=-0x1000000",
+"-DART_BASE_ADDRESS_MAX_DELTA=0x1000000",
+"-fPIC"
+],
+[
+"-I",
+"external/wolfssljni/native",
+"-I",
+"external/wolfssl",
+"-I",
+"external/wolfssljni",
+"-I",
+"out/host/linux-x86/obj/SHARED_LIBRARIES/libwolfssljni_intermediates",
+"-I",
+"out/host/linux-x86/gen/SHARED_LIBRARIES/libwolfssljni_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-D__ANDROID__",
+"-DHAVE_FFDHE_2048",
+"-DWOLFSSL_TLS13",
+"-DHAVE_TLS_EXTENSIONS",
+"-DHAVE_SUPPORTED_CURVES",
+"-DTFM_TIMING_RESISTANT",
+"-DECC_TIMING_RESISTANT",
+"-DWC_RSA_BLINDING",
+"-DHAVE_AESGCM",
+"-DWOLFSSL_SHA512",
+"-DWOLFSSL_SHA384",
+"-DHAVE_HKDF",
+"-DNO_DSA",
+"-DHAVE_ECC",
+"-DTFM_ECC256",
+"-DECC_SHAMIR",
+"-DWC_RSA_PSS",
+"-DWOLFSSL_BASE64_ENCODE",
+"-DNO_RC4",
+"-DWOLFSSL_SHA224",
+"-DWOLFSSL_SHA3",
+"-DHAVE_POLY1305",
+"-DHAVE_ONE_TIME_AUTH",
+"-DHAVE_CHACHA",
+"-DHAVE_HASHDRBG",
+"-DHAVE_TLS_EXTENSIONS",
+"-DHAVE_SUPPORTED_CURVES",
+"-DHAVE_EXTENDED_MASTER",
+"-DHAVE_SNI",
+"-DHAVE_ALPN",
+"-DWOLFSSL_JNI",
+"-DWOLFSSL_DTLS",
+"-DOPENSSL_EXTRA",
+"-DOPENSSL_ALL",
+"-DHAVE_EX_DATA",
+"-DHAVE_CRL",
+"-DHAVE_OCSP",
+"-DHAVE_CRL_MONITOR",
+"-DPERSIST_SESSION_CACHE",
+"-DPERSIST_CERT_CACHE",
+"-DATOMIC_USER",
+"-DHAVE_PK_CALLBACKS",
+"-DWOLFSSL_CERT_EXT",
+"-DWOLFSSL_CERT_GEN",
+"-DHAVE_ENCRYPT_THEN_MAC",
+"-DNO_MD4",
+"-DWOLFSSL_ENCRYPTED_KEYS",
+"-DNO_DES3",
+"-DKEEP_PEER_CERT",
+"-DSESSION_CERTS",
+"-DHAVE_SESSION_TICKET",
+"-DSIZEOF_LONG=4",
+"-DSIZEOF_LONG_LONG=8",
+"-Os",
+"-fomit-frame-pointer",
+"-fPIC"
+],
+[
+"-I",
+"libandroidfw/include",
+"-I",
+"libandroidfw",
+"-I",
+"out/host/linux-x86/obj/SHARED_LIBRARIES/libandroidfw_intermediates",
+"-I",
+"out/host/linux-x86/gen/SHARED_LIBRARIES/libandroidfw_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-I",
+"libbase/include",
+"-I",
+"system/core/libutils/include",
+"-I",
+"libziparchive/include",
+"-I",
+"incfs/util/include",
+"-I",
+"libandroidfw/include_pathutils",
+"-I",
+"incfs/util/include",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-Wsign-promo",
+"-fpermissive",
+"-std=gnu++23",
+"-DNDEBUG",
+"-UDEBUG",
+"-Wunreachable-code",
+"-fPIC"
+],
+[
+"-I",
+"incfs/util/include",
+"-I",
+"incfs",
+"-I",
+"out/host/linux-x86/obj/STATIC_LIBRARIES/libincfs-utils_intermediates",
+"-I",
+"out/host/linux-x86/gen/STATIC_LIBRARIES/libincfs-utils_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-I",
+"libbase/include",
+"-I",
+"system/core/libutils/include",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-Wsign-promo",
+"-fpermissive",
+"-std=gnu++23",
+"-DNDEBUG",
+"-UDEBUG",
+"-Wall",
+"-Wextra",
+"-Wno-deprecated-enum-enum-conversion",
+"-D_FILE_OFFSET_BITS=64",
+"-fPIC"
+],
+[
+"-I",
+"libandroidfw/include",
+"-I",
+"libandroidfw/include_pathutils",
+"-I",
+"libandroidfw",
+"-I",
+"out/host/linux-x86/obj/STATIC_LIBRARIES/libandroidfw_pathutils_intermediates",
+"-I",
+"out/host/linux-x86/gen/STATIC_LIBRARIES/libandroidfw_pathutils_intermediates",
+"-I",
+"libnativehelper/include/nativehelper",
+"-I",
+"system/core/libutils/include",
+"-I",
+"incfs/util/include",
+"-isystem",
+"system/core/include",
+"-isystem",
+"system/media/audio/include",
+"-isystem",
+"hardware/libhardware/include",
+"-isystem",
+"hardware/libhardware_legacy/include",
+"-isystem",
+"hardware/ril/include",
+"-isystem",
+"libnativehelper/include",
+"-isystem",
+"frameworks/native/include",
+"-isystem",
+"frameworks/native/opengl/include",
+"-isystem",
+"frameworks/av/include",
+"-isystem",
+"frameworks/base/include",
+"-isystem",
+"tools/include",
+"-isystem",
+"out/host/linux-x86/obj/include",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-Wsign-promo",
+"-fpermissive",
+"-std=gnu++23",
+"-DNDEBUG",
+"-UDEBUG",
+"-Wunreachable-code",
+"-fPIC"
+]
+],
+"generated": [
+{
+"args": [
+"art/libartbase",
+"art/libartbase/arch/instruction_set.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libartbase_intermediates/arch/instruction_set.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/libartbase",
+"art/libartbase/base/allocator.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libartbase_intermediates/base/allocator.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/libartbase",
+"art/libartbase/base/unix_file/fd_file.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libartbase_intermediates/base/unix_file/fd_file.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/libdexfile",
+"art/libdexfile/dex/dex_file.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libdexfile_intermediates/dex/dex_file.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/libdexfile",
+"art/libdexfile/dex/dex_file_layout.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libdexfile_intermediates/dex/dex_file_layout.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/libdexfile",
+"art/libdexfile/dex/dex_instruction.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libdexfile_intermediates/dex/dex_instruction.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/libdexfile",
+"art/libdexfile/dex/dex_instruction_utils.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libdexfile_intermediates/dex/dex_instruction_utils.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/libdexfile",
+"art/libdexfile/dex/invoke_type.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libdexfile_intermediates/dex/invoke_type.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/libdexfile",
+"art/libdexfile/dex/method_reference.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libdexfile_intermediates/dex/method_reference.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-Wsign-promo",
+"-fpermissive",
+"-std=gnu++23",
+"-DNDEBUG",
+"-UDEBUG",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-fno-rtti",
+"-std=gnu++17",
+"-ggdb3",
+"-Wall",
+"-Wextra",
+"-Wstrict-aliasing",
+"-fstrict-aliasing",
+"-Wunreachable-code",
+"-Wredundant-decls",
+"-Wunused",
+"-Wno-invalid-offsetof",
+"-Wno-deprecated-declarations",
+"-Wno-comment",
+"-Wno-attributes",
+"-fvisibility=protected",
+"-DART_DEFAULT_GC_TYPE_IS_CMS",
+"-DBUILDING_LIBART=1",
+"-DART_STACK_OVERFLOW_GAP_arm=8192",
+"-DART_STACK_OVERFLOW_GAP_arm64=8192",
+"-DART_STACK_OVERFLOW_GAP_mips=16384",
+"-DART_STACK_OVERFLOW_GAP_mips64=16384",
+"-DART_STACK_OVERFLOW_GAP_x86=8192",
+"-DART_STACK_OVERFLOW_GAP_x86_64=8192",
+"-DART_FRAME_SIZE_LIMIT=1736",
+"-DART_DEFAULT_COMPACT_DEX_LEVEL=none",
+"-I/usr/local/include/vixl",
+"-I/usr/include/vixl",
+"-DIMT_SIZE=64",
+"-DART_BASE_ADDRESS=0x60000000",
+"-DART_DEFAULT_INSTRUCTION_SET_FEATURES=default",
+"-DART_ENABLE_CODEGEN_arm",
+"-DART_ENABLE_CODEGEN_arm64",
+"-DVIXL_INCLUDE_TARGET_A64",
+"-DVIXL_INCLUDE_TARGET_T32",
+"-DVIXL_CODE_BUFFER_MMAP",
+"-DART_BASE_ADDRESS_MIN_DELTA=-0x1000000",
+"-DART_BASE_ADDRESS_MAX_DELTA=0x1000000",
+"-I",
+"external/vixl/src",
+"-I",
+"art/libelffile",
+"-I",
+"art/libartbase",
+"-I",
+"art/libdexfile",
+"-I",
+"art/libartpalette/include",
+"-I",
+"art/cmdline",
+"-I",
+"art/disassembler",
+"-I",
+"art/runtime",
+"-I",
+"art/compiler",
+"-I",
+"art/tools/cpp-define-generator",
+"-I",
+"bionic/libc/private",
+"-I",
+"libbase/include",
+"-I",
+"libnativehelper/include/nativehelper"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart-compiler_intermediates/asm_defines.S",
+"src": "art/tools/cpp-define-generator/asm_defines.cc",
+"tool": "compile-S"
+},
+{
+"args": [
+"out/host/linux-x86/gen/SHARED_LIBRARIES/libart-compiler_intermediates/asm_defines.S"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart-compiler_intermediates/asm_defines.h",
+"tool": "art/tools/cpp-define-generator/make_header.py"
+},
+{
+"args": [
+"art/compiler",
+"art/compiler/driver/compiler_options.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart-compiler_intermediates/driver/compiler_options.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/compiler",
+"art/compiler/linker/linker_patch.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart-compiler_intermediates/linker/linker_patch.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/compiler",
+"art/compiler/optimizing/locations.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart-compiler_intermediates/optimizing/locations.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/compiler",
+"art/compiler/optimizing/optimizing_compiler_stats.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart-compiler_intermediates/optimizing/optimizing_compiler_stats.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/compiler",
+"art/compiler/utils/arm/constants_arm.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart-compiler_intermediates/utils/arm/constants_arm.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/compiler",
+"art/compiler/utils/mips/assembler_mips.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart-compiler_intermediates/utils/mips/assembler_mips.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/compiler",
+"art/compiler/utils/mips64/assembler_mips64.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart-compiler_intermediates/utils/mips64/assembler_mips64.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-Wsign-promo",
+"-fpermissive",
+"-std=gnu++23",
+"-DNDEBUG",
+"-UDEBUG",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-fno-rtti",
+"-std=gnu++17",
+"-ggdb3",
+"-Wall",
+"-Wextra",
+"-Wstrict-aliasing",
+"-fstrict-aliasing",
+"-Wunreachable-code",
+"-Wredundant-decls",
+"-Wunused",
+"-Wno-invalid-offsetof",
+"-Wno-deprecated-declarations",
+"-Wno-comment",
+"-Wno-attributes",
+"-fvisibility=protected",
+"-DART_DEFAULT_GC_TYPE_IS_CMS",
+"-DBUILDING_LIBART=1",
+"-DART_STACK_OVERFLOW_GAP_arm=8192",
+"-DART_STACK_OVERFLOW_GAP_arm64=8192",
+"-DART_STACK_OVERFLOW_GAP_mips=16384",
+"-DART_STACK_OVERFLOW_GAP_mips64=16384",
+"-DART_STACK_OVERFLOW_GAP_x86=8192",
+"-DART_STACK_OVERFLOW_GAP_x86_64=8192",
+"-DART_FRAME_SIZE_LIMIT=1736",
+"-DART_DEFAULT_COMPACT_DEX_LEVEL=none",
+"-I/usr/local/include/vixl",
+"-I/usr/include/vixl",
+"-DIMT_SIZE=64",
+"-DART_BASE_ADDRESS=0x60000000",
+"-DART_DEFAULT_INSTRUCTION_SET_FEATURES=default",
+"-DART_ENABLE_CODEGEN_arm",
+"-DART_ENABLE_CODEGEN_arm64",
+"-DVIXL_INCLUDE_TARGET_A64",
+"-DVIXL_INCLUDE_TARGET_T32",
+"-DVIXL_CODE_BUFFER_MMAP",
+"-DART_BASE_ADDRESS_MIN_DELTA=-0x1000000",
+"-DART_BASE_ADDRESS_MAX_DELTA=0x1000000",
+"-I",
+"external/vixl/src",
+"-I",
+"art/libelffile",
+"-I",
+"art/libartbase",
+"-I",
+"art/libdexfile",
+"-I",
+"art/libartpalette/include",
+"-I",
+"art/cmdline",
+"-I",
+"art/disassembler",
+"-I",
+"art/runtime",
+"-I",
+"art/compiler",
+"-I",
+"art/tools/cpp-define-generator",
+"-I",
+"bionic/libc/private",
+"-I",
+"libbase/include",
+"-I",
+"libnativehelper/include/nativehelper"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/asm_defines.S",
+"src": "art/tools/cpp-define-generator/asm_defines.cc",
+"tool": "compile-S"
+},
+{
+"args": [
+"out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/asm_defines.S"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/asm_defines.h",
+"tool": "art/tools/cpp-define-generator/make_header.py"
+},
+{
+"args": [
+"art/runtime/interpreter/mterp/arm64/*.S"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/mterp_arm64.S",
+"tool": "art/runtime/interpreter/mterp/gen_mterp.py"
+},
+{
+"args": [
+"art/runtime",
+"art/runtime/base/callee_save_type.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/base/callee_save_type.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/runtime",
+"art/runtime/base/locks.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/base/locks.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/runtime",
+"art/runtime/class_loader_context.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/class_loader_context.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/runtime",
+"art/runtime/class_status.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/class_status.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/runtime",
+"art/runtime/debugger.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/debugger.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/runtime",
+"art/runtime/gc_root.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/gc_root.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/runtime",
+"art/runtime/gc/allocator_type.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/gc/allocator_type.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/runtime",
+"art/runtime/gc/allocator/rosalloc.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/gc/allocator/rosalloc.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/runtime",
+"art/runtime/gc/collector_type.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/gc/collector_type.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/runtime",
+"art/runtime/gc/collector/gc_type.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/gc/collector/gc_type.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/runtime",
+"art/runtime/gc/heap.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/gc/heap.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/runtime",
+"art/runtime/gc/space/region_space.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/gc/space/region_space.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/runtime",
+"art/runtime/gc/space/space.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/gc/space/space.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/runtime",
+"art/runtime/gc/weak_root_state.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/gc/weak_root_state.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/runtime",
+"art/runtime/image.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/image.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/runtime",
+"art/runtime/instrumentation.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/instrumentation.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/runtime",
+"art/runtime/indirect_reference_table.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/indirect_reference_table.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/runtime",
+"art/runtime/jdwp_provider.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/jdwp_provider.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/runtime",
+"art/runtime/jdwp/jdwp.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/jdwp/jdwp.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/runtime",
+"art/runtime/jdwp/jdwp_constants.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/jdwp/jdwp_constants.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/runtime",
+"art/runtime/lock_word.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/lock_word.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/runtime",
+"art/runtime/oat.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/oat.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/runtime",
+"art/runtime/object_callbacks.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/object_callbacks.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/runtime",
+"art/runtime/process_state.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/process_state.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/runtime",
+"art/runtime/stack.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/stack.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/runtime",
+"art/runtime/suspend_reason.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/suspend_reason.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/runtime",
+"art/runtime/thread.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/thread.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/runtime",
+"art/runtime/thread_state.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/thread_state.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/runtime",
+"art/runtime/ti/agent.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/ti/agent.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/runtime",
+"art/runtime/trace.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/trace.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/runtime",
+"art/runtime/verifier/verifier_enums.h"
+],
+"out": "out/host/linux-x86/gen/SHARED_LIBRARIES/libart_intermediates/verifier/verifier_enums.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-Wsign-promo",
+"-fpermissive",
+"-std=gnu++23",
+"-DNDEBUG",
+"-UDEBUG",
+"-fno-exceptions",
+"-Wno-multichar",
+"-Wa,--noexecstack",
+"-I/usr/include/valgrind/",
+"-fPIC",
+"-no-canonical-prefixes",
+"-include",
+"build/core/combo/include/arch/linux-any/AndroidConfig.h",
+"-U_FORTIFY_SOURCE",
+"-D_FORTIFY_SOURCE=0",
+"-fstack-protector",
+"-D__STDC_FORMAT_MACROS",
+"-D__STDC_CONSTANT_MACROS",
+"-DANDROID",
+"-fmessage-length=0",
+"-W",
+"-Wall",
+"-Wno-unused",
+"-Winit-self",
+"-Wpointer-arith",
+"-Wno-implicit-function-declaration",
+"-O2",
+"-g",
+"-fno-strict-aliasing",
+"-DNDEBUG",
+"-UDEBUG",
+"-fno-rtti",
+"-std=gnu++17",
+"-ggdb3",
+"-Wall",
+"-Wextra",
+"-Wstrict-aliasing",
+"-fstrict-aliasing",
+"-Wunreachable-code",
+"-Wredundant-decls",
+"-Wunused",
+"-Wno-invalid-offsetof",
+"-Wno-deprecated-declarations",
+"-Wno-comment",
+"-Wno-attributes",
+"-fvisibility=protected",
+"-DART_DEFAULT_GC_TYPE_IS_CMS",
+"-DBUILDING_LIBART=1",
+"-DART_STACK_OVERFLOW_GAP_arm=8192",
+"-DART_STACK_OVERFLOW_GAP_arm64=8192",
+"-DART_STACK_OVERFLOW_GAP_mips=16384",
+"-DART_STACK_OVERFLOW_GAP_mips64=16384",
+"-DART_STACK_OVERFLOW_GAP_x86=8192",
+"-DART_STACK_OVERFLOW_GAP_x86_64=8192",
+"-DART_FRAME_SIZE_LIMIT=1736",
+"-DART_DEFAULT_COMPACT_DEX_LEVEL=none",
+"-I/usr/local/include/vixl",
+"-I/usr/include/vixl",
+"-DIMT_SIZE=64",
+"-DART_BASE_ADDRESS=0x60000000",
+"-DART_DEFAULT_INSTRUCTION_SET_FEATURES=default",
+"-DART_ENABLE_CODEGEN_arm",
+"-DART_ENABLE_CODEGEN_arm64",
+"-DVIXL_INCLUDE_TARGET_A64",
+"-DVIXL_INCLUDE_TARGET_T32",
+"-DVIXL_CODE_BUFFER_MMAP",
+"-DART_BASE_ADDRESS_MIN_DELTA=-0x1000000",
+"-DART_BASE_ADDRESS_MAX_DELTA=0x1000000",
+"-I",
+"external/vixl/src",
+"-I",
+"art/libelffile",
+"-I",
+"art/libartbase",
+"-I",
+"art/libdexfile",
+"-I",
+"art/libartpalette/include",
+"-I",
+"art/cmdline",
+"-I",
+"art/disassembler",
+"-I",
+"art/runtime",
+"-I",
+"art/compiler",
+"-I",
+"art/tools/cpp-define-generator",
+"-I",
+"bionic/libc/private",
+"-I",
+"libbase/include",
+"-I",
+"libnativehelper/include/nativehelper"
+],
+"out": "out/host/linux-x86/gen/STATIC_LIBRARIES/libart-dex2oat_intermediates/asm_defines.S",
+"src": "art/tools/cpp-define-generator/asm_defines.cc",
+"tool": "compile-S"
+},
+{
+"args": [
+"out/host/linux-x86/gen/STATIC_LIBRARIES/libart-dex2oat_intermediates/asm_defines.S"
+],
+"out": "out/host/linux-x86/gen/STATIC_LIBRARIES/libart-dex2oat_intermediates/asm_defines.h",
+"tool": "art/tools/cpp-define-generator/make_header.py"
+},
+{
+"args": [
+"art/dex2oat",
+"art/dex2oat/dex/dex_to_dex_compiler.h"
+],
+"out": "out/host/linux-x86/gen/STATIC_LIBRARIES/libart-dex2oat_intermediates/dex/dex_to_dex_compiler.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/dex2oat",
+"art/dex2oat/driver/compiler_driver.h"
+],
+"out": "out/host/linux-x86/gen/STATIC_LIBRARIES/libart-dex2oat_intermediates/driver/compiler_driver.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+},
+{
+"args": [
+"art/dex2oat",
+"art/dex2oat/linker/image_writer.h"
+],
+"out": "out/host/linux-x86/gen/STATIC_LIBRARIES/libart-dex2oat_intermediates/linker/image_writer.h_operator_out.cc",
+"tool": "art/tools/generate_operator_out.py"
+}
+],
+"modules": {
+"acp": {
+"kind": "exe",
+"link": {
+"libs": [],
+"static": [
+"libhost.a"
+],
+"system": [],
+"whole_static": []
+},
+"objects": [
+{
+"flags": 4,
+"lang": "c",
+"src": "build/tools/acp/acp.c"
+}
+]
+},
+"dalvikvm": {
+"kind": "exe",
+"link": {
+"libs": [
+"libnativehelper"
+],
+"static": [],
+"system": [],
+"whole_static": [
+"libsigchain.a"
+]
+},
+"objects": [
+{
+"flags": 0,
+"lang": "c++",
+"src": "art/dalvikvm/dalvikvm.cc"
+}
+]
+},
+"dex2oat": {
+"kind": "exe",
+"link": {
+"libs": [
+"libprofile",
+"libart-compiler",
+"libart-dexlayout",
+"libart",
+"libdexfile",
+"libartbase",
+"libartpalette",
+"libbase",
+"libsigchain"
+],
+"static": [
+"libart-dex2oat.a"
+],
+"system": [
+"atomic",
+"crypto",
+"lz4",
+"z"
+],
+"whole_static": []
+},
+"objects": [
+{
+"flags": 6,
+"lang": "c++",
+"src": "art/dex2oat/dex2oat_options.cc"
+},
+{
+"flags": 6,
+"lang": "c++",
+"src": "art/dex2oat/dex2oat.cc"
+}
+]
+},
+"libandroidfw": {
+"kind": "shared",
+"link": {
+"libs": [
+"libbase",
+"libcutils",
+"liblog",
+"libutils",
+"libziparchive"
+],
+"static": [
+"libincfs-utils.a"
+],
+"system": [
+"z"
+],
+"whole_static": [
+"libandroidfw_pathutils.a",
+"libincfs-utils.a"
+]
+},
+"objects": [
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/ApkAssets.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/ApkParsing.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/Asset.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/AssetDir.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/AssetManager.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/AssetManager2.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/AssetsProvider.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/AttributeResolution.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/BigBuffer.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/BigBufferStream.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/ChunkIterator.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/ConfigDescription.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/FileStream.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/Idmap.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/LoadedArsc.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/Locale.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/LocaleData.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/LocaleDataLookup.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/NinePatch.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/ObbFile.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/Png.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/PngChunkFilter.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/PngCrunch.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/PosixUtils.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/ResourceTimer.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/ResourceTypes.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/ResourceUtils.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/StreamingZipInflater.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/StringPool.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/TypeWrappers.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/Util.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/ZipFileRO.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/ZipUtils.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/androidfw_c_api.cpp"
+},
+{
+"flags": 34,
+"lang": "c++",
+"src": "libandroidfw/misc.cpp"
+}
+]
+},
+"libandroidfw_pathutils.a": {
+"kind": "static",
+"link": {
+"libs": [],
+"static": [],
+"system": [],
+"whole_static": []
+},
+"objects": [
+{
+"flags": 36,
+"lang": "c++",
+"src": "libandroidfw/PathUtils.cpp"
+}
+]
+},
+"libart": {
+"kind": "shared",
+"link": {
+"libs": [
+"libartbase",
+"libdexfile",
+"libprofile",
+"libartpalette",
+"libnativebridge",
+"libbacktrace",
+"liblog",
+"libbase",
+"libsigchain"
+],
+"static": [
+"libelffile.a"
+],
+"system": [
+"atomic",
+"dl_bio",
+"lz4",
+"z"
+],
+"whole_static": []
+},
+"objects": [
+{
+"flags": 16,
+"lang": "asm",
+"src": "art/runtime/arch/arm64/jni_entrypoints_arm64.S"
+},
+{
+"flags": 16,
+"lang": "asm",
+"src": "art/runtime/arch/arm64/memcmp16_arm64.S"
+},
+{
+"flags": 16,
+"lang": "asm",
+"src": "art/runtime/arch/arm64/quick_entrypoints_arm64.S"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/interpreter/mterp/mterp.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/arch/arm64/context_arm64.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/arch/arm64/entrypoints_init_arm64.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/arch/arm64/thread_arm64.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/monitor_pool.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/arch/arm64/fault_handler_arm64.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/monitor_linux.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/runtime_linux.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/thread_linux.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/aot_class_linker.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/art_field.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/art_method.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/backtrace_helper.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/barrier.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/base/locks.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/base/mem_map_arena_pool.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/base/mutex.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/base/quasi_atomic.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/base/timing_logger.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/cha.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/class_linker.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/class_loader_context.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/class_root.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/class_table.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/common_throws.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/compiler_filter.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/debug_print.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/debugger.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/dex/dex_file_annotations.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/dex_register_location.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/dex_to_dex_decompiler.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/elf_file.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/exec_utils.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/fault_handler.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/allocation_record.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/allocator/dlmalloc.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/allocator/rosalloc.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/accounting/bitmap.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/accounting/card_table.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/accounting/heap_bitmap.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/accounting/mod_union_table.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/accounting/remembered_set.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/accounting/space_bitmap.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/collector/concurrent_copying.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/collector/garbage_collector.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/collector/immune_region.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/collector/immune_spaces.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/collector/mark_sweep.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/collector/partial_mark_sweep.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/collector/semi_space.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/collector/sticky_mark_sweep.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/gc_cause.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/heap.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/reference_processor.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/reference_queue.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/scoped_gc_critical_section.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/space/bump_pointer_space.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/space/dlmalloc_space.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/space/image_space.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/space/large_object_space.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/space/malloc_space.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/space/region_space.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/space/rosalloc_space.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/space/space.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/space/zygote_space.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/task_processor.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/gc/verification.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/hidden_api.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/hprof/hprof.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/image.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/index_bss_mapping.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/indirect_reference_table.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/instrumentation.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/intern_table.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/interpreter/interpreter.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/interpreter/interpreter_cache.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/interpreter/interpreter_common.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/interpreter/interpreter_intrinsics.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/interpreter/interpreter_switch_impl0.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/interpreter/interpreter_switch_impl1.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/interpreter/interpreter_switch_impl2.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/interpreter/interpreter_switch_impl3.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/interpreter/lock_count_data.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/interpreter/shadow_frame.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/interpreter/unstarted_runtime.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/java_frame_root_info.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/jdwp/jdwp_event.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/jdwp/jdwp_expand_buf.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/jdwp/jdwp_handler.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/jdwp/jdwp_main.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/jdwp/jdwp_request.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/jdwp/jdwp_socket.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/jdwp/object_registry.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/jit/debugger_interface.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/jit/jit.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/jit/jit_code_cache.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/jit/profiling_info.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/jit/profile_saver.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/jni/check_jni.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/jni/java_vm_ext.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/jni/jni_env_ext.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/jni/jni_internal.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/linear_alloc.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/managed_stack.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/method_handles.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/mirror/array.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/mirror/class.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/mirror/class_ext.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/mirror/dex_cache.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/mirror/emulated_stack_frame.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/mirror/executable.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/mirror/field.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/mirror/method.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/mirror/method_handle_impl.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/mirror/method_handles_lookup.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/mirror/method_type.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/mirror/object.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/mirror/stack_trace_element.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/mirror/string.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/mirror/throwable.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/mirror/var_handle.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/monitor.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/monitor_objects_stack_visitor.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/native_bridge_art_interface.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/native_stack_dump.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/native/dalvik_system_DexFile.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/native/dalvik_system_VMDebug.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/native/dalvik_system_VMRuntime.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/native/dalvik_system_VMStack.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/native/dalvik_system_ZygoteHooks.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/native/java_lang_Class.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/native/java_lang_Object.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/native/java_lang_String.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/native/java_lang_StringFactory.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/native/java_lang_System.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/native/java_lang_Thread.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/native/java_lang_Throwable.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/native/java_lang_VMClassLoader.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/native/java_lang_invoke_MethodHandleImpl.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/native/java_lang_ref_FinalizerReference.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/native/java_lang_ref_Reference.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/native/java_lang_reflect_Array.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/native/java_lang_reflect_Constructor.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/native/java_lang_reflect_Executable.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/native/java_lang_reflect_Field.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/native/java_lang_reflect_Method.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/native/java_lang_reflect_Parameter.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/native/java_lang_reflect_Proxy.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/native/java_util_concurrent_atomic_AtomicLong.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/native/libcore_util_CharsetUtils.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/native/org_apache_harmony_dalvik_ddmc_DdmServer.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/native/org_apache_harmony_dalvik_ddmc_DdmVmInternal.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/native/sun_misc_Unsafe.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/non_debuggable_classes.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/oat.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/oat_file.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/oat_file_assistant.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/oat_file_manager.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/oat_quick_method_header.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/object_lock.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/offsets.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/parsed_options.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/plugin.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/quick_exception_handler.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/read_barrier.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/reference_table.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/reflection.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/runtime.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/runtime_callbacks.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/runtime_common.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/runtime_intrinsics.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/runtime_options.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/scoped_thread_state_change.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/signal_catcher.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/stack.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/stack_map.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/thread.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/thread_list.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/thread_pool.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/ti/agent.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/trace.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/transaction.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/var_handles.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/vdex_file.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/verifier/class_verifier.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/verifier/instruction_flags.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/verifier/method_verifier.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/verifier/reg_type.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/verifier/reg_type_cache.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/verifier/register_line.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/verifier/verifier_deps.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/verify_object.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/well_known_classes.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/arch/context.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/arch/instruction_set_features.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/arch/memcmp16.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/arch/arm/instruction_set_features_arm.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/arch/arm/registers_arm.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/arch/arm64/instruction_set_features_arm64.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/arch/arm64/registers_arm64.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/arch/mips/instruction_set_features_mips.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/arch/mips/registers_mips.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/arch/mips64/instruction_set_features_mips64.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/arch/mips64/registers_mips64.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/arch/x86/instruction_set_features_x86.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/arch/x86/registers_x86.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/arch/x86_64/registers_x86_64.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/entrypoints/entrypoint_utils.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/entrypoints/jni/jni_entrypoints.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/entrypoints/math_entrypoints.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/entrypoints/quick/quick_alloc_entrypoints.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/entrypoints/quick/quick_cast_entrypoints.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/entrypoints/quick/quick_deoptimization_entrypoints.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/entrypoints/quick/quick_dexcache_entrypoints.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/entrypoints/quick/quick_entrypoints_enum.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/entrypoints/quick/quick_field_entrypoints.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/entrypoints/quick/quick_fillarray_entrypoints.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/entrypoints/quick/quick_jni_entrypoints.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/entrypoints/quick/quick_lock_entrypoints.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/entrypoints/quick/quick_math_entrypoints.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/entrypoints/quick/quick_thread_entrypoints.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/entrypoints/quick/quick_throw_entrypoints.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "art/runtime/entrypoints/quick/quick_trampoline_entrypoints.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/base/callee_save_type.h_operator_out.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/base/locks.h_operator_out.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/class_loader_context.h_operator_out.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/class_status.h_operator_out.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/debugger.h_operator_out.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/gc_root.h_operator_out.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/gc/allocator_type.h_operator_out.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/gc/allocator/rosalloc.h_operator_out.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/gc/collector_type.h_operator_out.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/gc/collector/gc_type.h_operator_out.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/gc/heap.h_operator_out.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/gc/space/region_space.h_operator_out.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/gc/space/space.h_operator_out.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/gc/weak_root_state.h_operator_out.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/image.h_operator_out.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/instrumentation.h_operator_out.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/indirect_reference_table.h_operator_out.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/jdwp_provider.h_operator_out.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/jdwp/jdwp.h_operator_out.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/jdwp/jdwp_constants.h_operator_out.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/lock_word.h_operator_out.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/oat.h_operator_out.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/object_callbacks.h_operator_out.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/process_state.h_operator_out.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/stack.h_operator_out.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/suspend_reason.h_operator_out.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/thread.h_operator_out.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/thread_state.h_operator_out.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/ti/agent.h_operator_out.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/trace.h_operator_out.cc"
+},
+{
+"flags": 17,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/verifier/verifier_enums.h_operator_out.cc"
+},
+{
+"flags": 16,
+"lang": "asm",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart_intermediates/mterp_arm64.S"
+}
+]
+},
+"libart-compiler": {
+"kind": "shared",
+"link": {
+"libs": [
+"libart",
+"libartbase",
+"libartpalette",
+"libprofile",
+"libdexfile",
+"libbase"
+],
+"static": [],
+"system": [
+"lzma",
+"vixl"
+],
+"whole_static": [
+"libelffile.a"
+]
+},
+"objects": [
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/jni/quick/arm64/calling_convention_arm64.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/code_generator_arm64.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/code_generator_vector_arm64.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/scheduler_arm64.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/instruction_simplifier_arm64.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/intrinsics_arm64.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/utils/arm64/assembler_arm64.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/utils/arm64/jni_macro_assembler_arm64.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/utils/arm64/managed_register_arm64.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/jni/quick/arm/calling_convention_arm.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/code_generator_arm_vixl.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/code_generator_vector_arm_vixl.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/instruction_simplifier_arm.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/instruction_simplifier_shared.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/intrinsics_arm_vixl.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/nodes_shared.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/scheduler_arm.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/utils/arm/assembler_arm_vixl.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/utils/arm/constants_arm.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/utils/arm/jni_macro_assembler_arm_vixl.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/utils/arm/managed_register_arm.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/compiled_method.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/debug/elf_debug_writer.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/dex/inline_method_analyser.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/dex/verified_method.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/dex/verification_results.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/driver/compiled_method_storage.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/driver/compiler_options.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/driver/dex_compilation_unit.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/jit/jit_compiler.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/jit/jit_logger.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/jni/quick/calling_convention.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/jni/quick/jni_compiler.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/block_builder.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/bounds_check_elimination.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/builder.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/cha_guard_optimization.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/code_generator.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/code_generator_utils.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/code_sinking.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/constant_folding.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/constructor_fence_redundancy_elimination.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/data_type.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/dead_code_elimination.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/escape.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/graph_checker.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/graph_visualizer.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/gvn.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/induction_var_analysis.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/induction_var_range.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/inliner.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/instruction_builder.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/instruction_simplifier.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/intrinsic_objects.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/intrinsics.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/licm.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/linear_order.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/load_store_analysis.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/load_store_elimination.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/locations.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/loop_analysis.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/loop_optimization.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/nodes.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/optimization.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/optimizing_compiler.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/parallel_move_resolver.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/prepare_for_register_allocation.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/reference_type_propagation.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/register_allocation_resolver.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/register_allocator.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/register_allocator_graph_color.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/register_allocator_linear_scan.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/select_generator.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/scheduler.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/sharpening.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/side_effects_analysis.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/ssa_builder.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/ssa_liveness_analysis.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/ssa_phi_elimination.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/stack_map_stream.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/optimizing/superblock_cloner.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/trampolines/trampoline_compiler.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/utils/assembler.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/utils/jni_macro_assembler.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/utils/swap_space.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "art/compiler/compiler.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart-compiler_intermediates/driver/compiler_options.h_operator_out.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart-compiler_intermediates/linker/linker_patch.h_operator_out.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart-compiler_intermediates/optimizing/locations.h_operator_out.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart-compiler_intermediates/optimizing/optimizing_compiler_stats.h_operator_out.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart-compiler_intermediates/utils/arm/constants_arm.h_operator_out.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart-compiler_intermediates/utils/mips/assembler_mips.h_operator_out.cc"
+},
+{
+"flags": 15,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libart-compiler_intermediates/utils/mips64/assembler_mips64.h_operator_out.cc"
+}
+]
+},
+"libart-dex2oat.a": {
+"kind": "static",
+"link": {
+"libs": [],
+"static": [],
+"system": [],
+"whole_static": []
+},
+"objects": [
+{
+"flags": 26,
+"lang": "c++",
+"src": "art/dex2oat/linker/arm64/relative_patcher_arm64.cc"
+},
+{
+"flags": 26,
+"lang": "c++",
+"src": "art/dex2oat/linker/arm/relative_patcher_arm_base.cc"
+},
+{
+"flags": 26,
+"lang": "c++",
+"src": "art/dex2oat/linker/arm/relative_patcher_thumb2.cc"
+},
+{
+"flags": 26,
+"lang": "c++",
+"src": "art/dex2oat/dex/dex_to_dex_compiler.cc"
+},
+{
+"flags": 26,
+"lang": "c++",
+"src": "art/dex2oat/dex/quick_compiler_callbacks.cc"
+},
+{
+"flags": 26,
+"lang": "c++",
+"src": "art/dex2oat/driver/compiler_driver.cc"
+},
+{
+"flags": 26,
+"lang": "c++",
+"src": "art/dex2oat/linker/elf_writer.cc"
+},
+{
+"flags": 26,
+"lang": "c++",
+"src": "art/dex2oat/linker/elf_writer_quick.cc"
+},
+{
+"flags": 26,
+"lang": "c++",
+"src": "art/dex2oat/linker/image_writer.cc"
+},
+{
+"flags": 26,
+"lang": "c++",
+"src": "art/dex2oat/linker/multi_oat_relative_patcher.cc"
+},
+{
+"flags": 26,
+"lang": "c++",
+"src": "art/dex2oat/linker/oat_writer.cc"
+},
+{
+"flags": 26,
+"lang": "c++",
+"src": "art/dex2oat/linker/relative_patcher.cc"
+},
+{
+"flags": 26,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/STATIC_LIBRARIES/libart-dex2oat_intermediates/dex/dex_to_dex_compiler.h_operator_out.cc"
+},
+{
+"flags": 26,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/STATIC_LIBRARIES/libart-dex2oat_intermediates/driver/compiler_driver.h_operator_out.cc"
+},
+{
+"flags": 26,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/STATIC_LIBRARIES/libart-dex2oat_intermediates/linker/image_writer.h_operator_out.cc"
+}
+]
+},
+"libart-dexlayout": {
+"kind": "shared",
+"link": {
+"libs": [
+"libartbase",
+"libartpalette",
+"libdexfile",
+"libprofile",
+"libbase"
+],
+"static": [],
+"system": [
+"z"
+],
+"whole_static": []
+},
+"objects": [
+{
+"flags": 25,
+"lang": "c++",
+"src": "art/dexlayout/compact_dex_writer.cc"
+},
+{
+"flags": 25,
+"lang": "c++",
+"src": "art/dexlayout/dexlayout.cc"
+},
+{
+"flags": 25,
+"lang": "c++",
+"src": "art/dexlayout/dex_ir.cc"
+},
+{
+"flags": 25,
+"lang": "c++",
+"src": "art/dexlayout/dex_ir_builder.cc"
+},
+{
+"flags": 25,
+"lang": "c++",
+"src": "art/dexlayout/dex_verify.cc"
+},
+{
+"flags": 25,
+"lang": "c++",
+"src": "art/dexlayout/dex_visualize.cc"
+},
+{
+"flags": 25,
+"lang": "c++",
+"src": "art/dexlayout/dex_writer.cc"
+}
+]
+},
+"libartbase": {
+"kind": "shared",
+"link": {
+"libs": [
+"libutils",
+"libziparchive",
+"liblog",
+"libartpalette",
+"libbase"
+],
+"static": [],
+"system": [
+"lz4",
+"lzma",
+"z"
+],
+"whole_static": []
+},
+"objects": [
+{
+"flags": 10,
+"lang": "c++",
+"src": "art/libartbase/base/mem_map_unix.cc"
+},
+{
+"flags": 10,
+"lang": "c++",
+"src": "art/libartbase/arch/instruction_set.cc"
+},
+{
+"flags": 10,
+"lang": "c++",
+"src": "art/libartbase/base/allocator.cc"
+},
+{
+"flags": 10,
+"lang": "c++",
+"src": "art/libartbase/base/arena_allocator.cc"
+},
+{
+"flags": 10,
+"lang": "c++",
+"src": "art/libartbase/base/arena_bit_vector.cc"
+},
+{
+"flags": 10,
+"lang": "c++",
+"src": "art/libartbase/base/bit_vector.cc"
+},
+{
+"flags": 10,
+"lang": "c++",
+"src": "art/libartbase/base/enums.cc"
+},
+{
+"flags": 10,
+"lang": "c++",
+"src": "art/libartbase/base/file_magic.cc"
+},
+{
+"flags": 10,
+"lang": "c++",
+"src": "art/libartbase/base/file_utils.cc"
+},
+{
+"flags": 10,
+"lang": "c++",
+"src": "art/libartbase/base/hex_dump.cc"
+},
+{
+"flags": 10,
+"lang": "c++",
+"src": "art/libartbase/base/hiddenapi_flags.cc"
+},
+{
+"flags": 10,
+"lang": "c++",
+"src": "art/libartbase/base/logging.cc"
+},
+{
+"flags": 10,
+"lang": "c++",
+"src": "art/libartbase/base/malloc_arena_pool.cc"
+},
+{
+"flags": 10,
+"lang": "c++",
+"src": "art/libartbase/base/membarrier.cc"
+},
+{
+"flags": 10,
+"lang": "c++",
+"src": "art/libartbase/base/memfd.cc"
+},
+{
+"flags": 10,
+"lang": "c++",
+"src": "art/libartbase/base/memory_region.cc"
+},
+{
+"flags": 10,
+"lang": "c++",
+"src": "art/libartbase/base/mem_map.cc"
+},
+{
+"flags": 10,
+"lang": "c++",
+"src": "art/libartbase/base/os_linux.cc"
+},
+{
+"flags": 10,
+"lang": "c++",
+"src": "art/libartbase/base/runtime_debug.cc"
+},
+{
+"flags": 10,
+"lang": "c++",
+"src": "art/libartbase/base/safe_copy.cc"
+},
+{
+"flags": 10,
+"lang": "c++",
+"src": "art/libartbase/base/scoped_arena_allocator.cc"
+},
+{
+"flags": 10,
+"lang": "c++",
+"src": "art/libartbase/base/scoped_flock.cc"
+},
+{
+"flags": 10,
+"lang": "c++",
+"src": "art/libartbase/base/socket_peer_is_trusted.cc"
+},
+{
+"flags": 10,
+"lang": "c++",
+"src": "art/libartbase/base/time_utils.cc"
+},
+{
+"flags": 10,
+"lang": "c++",
+"src": "art/libartbase/base/unix_file/fd_file.cc"
+},
+{
+"flags": 10,
+"lang": "c++",
+"src": "art/libartbase/base/unix_file/random_access_file_utils.cc"
+},
+{
+"flags": 10,
+"lang": "c++",
+"src": "art/libartbase/base/utils.cc"
+},
+{
+"flags": 10,
+"lang": "c++",
+"src": "art/libartbase/base/zip_archive.cc"
+},
+{
+"flags": 10,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libartbase_intermediates/arch/instruction_set.h_operator_out.cc"
+},
+{
+"flags": 10,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libartbase_intermediates/base/allocator.h_operator_out.cc"
+},
+{
+"flags": 10,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libartbase_intermediates/base/unix_file/fd_file.h_operator_out.cc"
+}
+]
+},
+"libartpalette": {
+"kind": "shared",
+"link": {
+"libs": [
+"libbase",
+"liblog"
+],
+"static": [],
+"system": [],
+"whole_static": []
+},
+"objects": [
+{
+"flags": 13,
+"lang": "c++",
+"src": "art/libartpalette/system/palette_fake.cc"
+}
+]
+},
+"libbacktrace": {
+"kind": "shared",
+"link": {
+"libs": [
+"libbase",
+"libunwind",
+"liblog",
+"libcutils"
+],
+"static": [],
+"system": [
+"pthread",
+"rt"
+],
+"whole_static": []
+},
+"objects": [
+{
+"flags": 19,
+"lang": "c++",
+"src": "system/core/libbacktrace/Backtrace.cpp"
+},
+{
+"flags": 19,
+"lang": "c++",
+"src": "system/core/libbacktrace/BacktraceCurrent.cpp"
+},
+{
+"flags": 19,
+"lang": "c++",
+"src": "system/core/libbacktrace/BacktraceMap.cpp"
+},
+{
+"flags": 19,
+"lang": "c++",
+"src": "system/core/libbacktrace/BacktracePtrace.cpp"
+},
+{
+"flags": 19,
+"lang": "c++",
+"src": "system/core/libbacktrace/ThreadEntry.cpp"
+},
+{
+"flags": 19,
+"lang": "c++",
+"src": "system/core/libbacktrace/UnwindCurrent.cpp"
+},
+{
+"flags": 19,
+"lang": "c++",
+"src": "system/core/libbacktrace/UnwindMap.cpp"
+},
+{
+"flags": 19,
+"lang": "c++",
+"src": "system/core/libbacktrace/UnwindPtrace.cpp"
+},
+{
+"flags": 20,
+"lang": "c",
+"src": "system/core/libbacktrace/thread_utils.c"
+}
+]
+},
+"libbase": {
+"kind": "shared",
+"link": {
+"libs": [
+"liblog"
+],
+"static": [],
+"system": [
+"bsd"
+],
+"whole_static": []
+},
+"objects": [
+{
+"flags": 8,
+"lang": "c++",
+"src": "libbase/abi_compatibility.cpp"
+},
+{
+"flags": 8,
+"lang": "c++",
+"src": "libbase/chrono_utils.cpp"
+},
+{
+"flags": 8,
+"lang": "c++",
+"src": "libbase/cmsg.cpp"
+},
+{
+"flags": 8,
+"lang": "c++",
+"src": "libbase/errors_unix.cpp"
+},
+{
+"flags": 8,
+"lang": "c++",
+"src": "libbase/file.cpp"
+},
+{
+"flags": 8,
+"lang": "c++",
+"src": "libbase/hex.cpp"
+},
+{
+"flags": 8,
+"lang": "c++",
+"src": "libbase/logging.cpp"
+},
+{
+"flags": 8,
+"lang": "c++",
+"src": "libbase/mapped_file.cpp"
+},
+{
+"flags": 8,
+"lang": "c++",
+"src": "libbase/parsebool.cpp"
+},
+{
+"flags": 8,
+"lang": "c++",
+"src": "libbase/parsenetaddress.cpp"
+},
+{
+"flags": 8,
+"lang": "c++",
+"src": "libbase/posix_strerror_r.cpp"
+},
+{
+"flags": 8,
+"lang": "c++",
+"src": "libbase/process.cpp"
+},
+{
+"flags": 8,
+"lang": "c++",
+"src": "libbase/stringprintf.cpp"
+},
+{
+"flags": 8,
+"lang": "c++",
+"src": "libbase/strings.cpp"
+},
+{
+"flags": 8,
+"lang": "c++",
+"src": "libbase/test_utils.cpp"
+},
+{
+"flags": 8,
+"lang": "c++",
+"src": "libbase/threads.cpp"
+}
+]
+},
+"libcutils": {
+"kind": "shared",
+"link": {
+"libs": [
+"libutils",
+"liblog"
+],
+"static": [],
+"system": [],
+"whole_static": []
+},
+"objects": [
+{
+"flags": 22,
+"lang": "c",
+"src": "system/core/libcutils/atomic.c"
+},
+{
+"flags": 22,
+"lang": "c",
+"src": "system/core/libcutils/hashmap.c"
+},
+{
+"flags": 22,
+"lang": "c",
+"src": "system/core/libcutils/native_handle.c"
+},
+{
+"flags": 22,
+"lang": "c",
+"src": "system/core/libcutils/config_utils.c"
+},
+{
+"flags": 22,
+"lang": "c",
+"src": "system/core/libcutils/load_file.c"
+},
+{
+"flags": 22,
+"lang": "c",
+"src": "system/core/libcutils/strlcpy.c"
+},
+{
+"flags": 22,
+"lang": "c",
+"src": "system/core/libcutils/open_memstream.c"
+},
+{
+"flags": 22,
+"lang": "c",
+"src": "system/core/libcutils/strdup16to8.c"
+},
+{
+"flags": 22,
+"lang": "c",
+"src": "system/core/libcutils/strdup8to16.c"
+},
+{
+"flags": 22,
+"lang": "c",
+"src": "system/core/libcutils/record_stream.c"
+},
+{
+"flags": 22,
+"lang": "c",
+"src": "system/core/libcutils/process_name.c"
+},
+{
+"flags": 22,
+"lang": "c",
+"src": "system/core/libcutils/threads.c"
+},
+{
+"flags": 22,
+"lang": "c",
+"src": "system/core/libcutils/sched_policy.c"
+},
+{
+"flags": 22,
+"lang": "c",
+"src": "system/core/libcutils/iosched_policy.c"
+},
+{
+"flags": 22,
+"lang": "c",
+"src": "system/core/libcutils/str_parms.c"
+},
+{
+"flags": 22,
+"lang": "c",
+"src": "system/core/libcutils/fs_config.c"
+},
+{
+"flags": 22,
+"lang": "c",
+"src": "system/core/libcutils/fs.c"
+},
+{
+"flags": 22,
+"lang": "c",
+"src": "system/core/libcutils/multiuser.c"
+},
+{
+"flags": 22,
+"lang": "c",
+"src": "system/core/libcutils/socket_inaddr_any_server.c"
+},
+{
+"flags": 22,
+"lang": "c",
+"src": "system/core/libcutils/socket_local_client.c"
+},
+{
+"flags": 22,
+"lang": "c",
+"src": "system/core/libcutils/socket_local_server.c"
+},
+{
+"flags": 22,
+"lang": "c",
+"src": "system/core/libcutils/socket_loopback_client.c"
+},
+{
+"flags": 22,
+"lang": "c",
+"src": "system/core/libcutils/socket_loopback_server.c"
+},
+{
+"flags": 22,
+"lang": "c",
+"src": "system/core/libcutils/socket_network_client.c"
+},
+{
+"flags": 22,
+"lang": "c",
+"src": "system/core/libcutils/sockets.c"
+},
+{
+"flags": 22,
+"lang": "c",
+"src": "system/core/libcutils/ashmem-host.c"
+},
+{
+"flags": 22,
+"lang": "c",
+"src": "system/core/libcutils/trace-host.c"
+},
+{
+"flags": 22,
+"lang": "c",
+"src": "system/core/libcutils/dlmalloc_stubs.c"
+}
+]
+},
+"libdexfile": {
+"kind": "shared",
+"link": {
+"libs": [
+"libutils",
+"libziparchive",
+"libartbase",
+"libartpalette",
+"liblog",
+"libbase"
+],
+"static": [],
+"system": [
+"z"
+],
+"whole_static": []
+},
+"objects": [
+{
+"flags": 14,
+"lang": "c++",
+"src": "art/libdexfile/dex/art_dex_file_loader.cc"
+},
+{
+"flags": 14,
+"lang": "c++",
+"src": "art/libdexfile/dex/compact_dex_file.cc"
+},
+{
+"flags": 14,
+"lang": "c++",
+"src": "art/libdexfile/dex/compact_offset_table.cc"
+},
+{
+"flags": 14,
+"lang": "c++",
+"src": "art/libdexfile/dex/descriptors_names.cc"
+},
+{
+"flags": 14,
+"lang": "c++",
+"src": "art/libdexfile/dex/dex_file.cc"
+},
+{
+"flags": 14,
+"lang": "c++",
+"src": "art/libdexfile/dex/dex_file_exception_helpers.cc"
+},
+{
+"flags": 14,
+"lang": "c++",
+"src": "art/libdexfile/dex/dex_file_layout.cc"
+},
+{
+"flags": 14,
+"lang": "c++",
+"src": "art/libdexfile/dex/dex_file_loader.cc"
+},
+{
+"flags": 14,
+"lang": "c++",
+"src": "art/libdexfile/dex/dex_file_tracking_registrar.cc"
+},
+{
+"flags": 14,
+"lang": "c++",
+"src": "art/libdexfile/dex/dex_file_verifier.cc"
+},
+{
+"flags": 14,
+"lang": "c++",
+"src": "art/libdexfile/dex/dex_instruction.cc"
+},
+{
+"flags": 14,
+"lang": "c++",
+"src": "art/libdexfile/dex/modifiers.cc"
+},
+{
+"flags": 14,
+"lang": "c++",
+"src": "art/libdexfile/dex/primitive.cc"
+},
+{
+"flags": 14,
+"lang": "c++",
+"src": "art/libdexfile/dex/signature.cc"
+},
+{
+"flags": 14,
+"lang": "c++",
+"src": "art/libdexfile/dex/standard_dex_file.cc"
+},
+{
+"flags": 14,
+"lang": "c++",
+"src": "art/libdexfile/dex/type_lookup_table.cc"
+},
+{
+"flags": 14,
+"lang": "c++",
+"src": "art/libdexfile/dex/utf.cc"
+},
+{
+"flags": 14,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libdexfile_intermediates/dex/dex_file.h_operator_out.cc"
+},
+{
+"flags": 14,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libdexfile_intermediates/dex/dex_file_layout.h_operator_out.cc"
+},
+{
+"flags": 14,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libdexfile_intermediates/dex/dex_instruction.h_operator_out.cc"
+},
+{
+"flags": 14,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libdexfile_intermediates/dex/dex_instruction_utils.h_operator_out.cc"
+},
+{
+"flags": 14,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libdexfile_intermediates/dex/invoke_type.h_operator_out.cc"
+},
+{
+"flags": 14,
+"lang": "c++",
+"src": "out/host/linux-x86/obj/SHARED_LIBRARIES/libdexfile_intermediates/dex/method_reference.h_operator_out.cc"
+}
+]
+},
+"libelffile.a": {
+"kind": "static",
+"link": {
+"libs": [],
+"static": [],
+"system": [],
+"whole_static": []
+},
+"objects": [
+{
+"flags": 24,
+"lang": "c++",
+"src": "art/libelffile/elf/xz_utils.cc"
+},
+{
+"flags": 24,
+"lang": "c++",
+"src": "art/libelffile/stream/buffered_output_stream.cc"
+},
+{
+"flags": 24,
+"lang": "c++",
+"src": "art/libelffile/stream/file_output_stream.cc"
+},
+{
+"flags": 24,
+"lang": "c++",
+"src": "art/libelffile/stream/output_stream.cc"
+},
+{
+"flags": 24,
+"lang": "c++",
+"src": "art/libelffile/stream/vector_output_stream.cc"
+}
+]
+},
+"libfdlibm.a": {
+"kind": "static",
+"link": {
+"libs": [],
+"static": [],
+"system": [],
+"whole_static": []
+},
+"objects": [
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/k_standard.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/k_rem_pio2.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/k_cos.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/k_sin.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/k_tan.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/e_acos.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/e_acosh.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/e_asin.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/e_atan2.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/e_atanh.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/e_cosh.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/e_exp.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/e_fmod.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/e_gamma.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/e_gamma_r.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/e_hypot.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/e_j0.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/e_j1.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/e_jn.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/e_lgamma.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/e_lgamma_r.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/e_log.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/e_log10.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/e_pow.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/e_rem_pio2.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/e_remainder.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/e_scalb.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/e_sinh.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/e_sqrt.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/w_acos.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/w_acosh.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/w_asin.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/w_atan2.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/w_atanh.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/w_cosh.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/w_exp.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/w_fmod.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/w_gamma.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/w_gamma_r.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/w_hypot.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/w_j0.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/w_j1.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/w_jn.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/w_lgamma.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/w_lgamma_r.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/w_log.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/w_log10.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/w_pow.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/w_remainder.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/w_scalb.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/w_sinh.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/w_sqrt.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/s_asinh.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/s_atan.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/s_cbrt.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/s_ceil.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/s_copysign.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/s_cos.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/s_erf.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/s_expm1.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/s_fabs.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/s_finite.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/s_floor.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/s_frexp.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/s_ilogb.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/s_isnan.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/s_ldexp.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/s_lib_version.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/s_log1p.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/s_logb.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/s_matherr.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/s_modf.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/s_nextafter.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/s_rint.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/s_scalbn.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/s_signgam.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/s_significand.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/s_sin.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/s_tan.c"
+},
+{
+"flags": 31,
+"lang": "c",
+"src": "external/fdlibm/s_tanh.c"
+}
+]
+},
+"libhost.a": {
+"kind": "static",
+"link": {
+"libs": [],
+"static": [],
+"system": [],
+"whole_static": []
+},
+"objects": [
+{
+"flags": 5,
+"lang": "c",
+"src": "build/libs/host/CopyFile.c"
+}
+]
+},
+"libincfs-utils.a": {
+"kind": "static",
+"link": {
+"libs": [],
+"static": [],
+"system": [],
+"whole_static": []
+},
+"objects": [
+{
+"flags": 35,
+"lang": "c++",
+"src": "incfs/util/map_ptr.cpp"
+}
+]
+},
+"libjavacore": {
+"kind": "shared",
+"link": {
+"libs": [
+"liblog",
+"libnativehelper",
+"libbase",
+"libziparchive"
+],
+"static": [],
+"system": [
+"dl",
+"expat",
+"icui18n",
+"icuuc",
+"pthread",
+"rt",
+"z"
+],
+"whole_static": []
+},
+"objects": [
+{
+"flags": 27,
+"lang": "c++",
+"src": "libcore/dalvik/src/main/native/org_apache_harmony_dalvik_NativeTestTarget.cpp"
+},
+{
+"flags": 27,
+"lang": "c++",
+"src": "libcore/luni/src/main/native/ExecStrings.cpp"
+},
+{
+"flags": 27,
+"lang": "c++",
+"src": "libcore/luni/src/main/native/IcuUtilities.cpp"
+},
+{
+"flags": 27,
+"lang": "c++",
+"src": "libcore/luni/src/main/native/JniException.cpp"
+},
+{
+"flags": 27,
+"lang": "c++",
+"src": "libcore/luni/src/main/native/NetworkUtilities.cpp"
+},
+{
+"flags": 27,
+"lang": "c++",
+"src": "libcore/luni/src/main/native/Register.cpp"
+},
+{
+"flags": 27,
+"lang": "c++",
+"src": "libcore/luni/src/main/native/ZipUtilities.cpp"
+},
+{
+"flags": 27,
+"lang": "c++",
+"src": "libcore/luni/src/main/native/android_system_OsConstants.cpp"
+},
+{
+"flags": 27,
+"lang": "c++",
+"src": "libcore/luni/src/main/native/cbigint.cpp"
+},
+{
+"flags": 27,
+"lang": "c++",
+"src": "libcore/luni/src/main/native/java_lang_StringToReal.cpp"
+},
+{
+"flags": 27,
+"lang": "c++",
+"src": "libcore/luni/src/main/native/java_lang_invoke_MethodHandle.cpp"
+},
+{
+"flags": 27,
+"lang": "c++",
+"src": "libcore/luni/src/main/native/java_util_regex_Matcher.cpp"
+},
+{
+"flags": 27,
+"lang": "c++",
+"src": "libcore/luni/src/main/native/java_util_regex_Pattern.cpp"
+},
+{
+"flags": 27,
+"lang": "c++",
+"src": "libcore/luni/src/main/native/libcore_icu_ICU.cpp"
+},
+{
+"flags": 27,
+"lang": "c++",
+"src": "libcore/luni/src/main/native/libcore_icu_NativeConverter.cpp"
+},
+{
+"flags": 27,
+"lang": "c++",
+"src": "libcore/luni/src/main/native/libcore_icu_TimeZoneNames.cpp"
+},
+{
+"flags": 27,
+"lang": "c++",
+"src": "libcore/luni/src/main/native/libcore_io_AsynchronousCloseMonitor.cpp"
+},
+{
+"flags": 27,
+"lang": "c++",
+"src": "libcore/luni/src/main/native/libcore_io_Linux.cpp"
+},
+{
+"flags": 27,
+"lang": "c++",
+"src": "libcore/luni/src/main/native/libcore_io_Memory.cpp"
+},
+{
+"flags": 27,
+"lang": "c++",
+"src": "libcore/luni/src/main/native/libcore_util_NativeAllocationRegistry.cpp"
+},
+{
+"flags": 27,
+"lang": "c++",
+"src": "libcore/luni/src/main/native/org_apache_harmony_xml_ExpatParser.cpp"
+},
+{
+"flags": 27,
+"lang": "c++",
+"src": "libcore/luni/src/main/native/sun_misc_Unsafe.cpp"
+},
+{
+"flags": 27,
+"lang": "c++",
+"src": "libcore/luni/src/main/native/valueOf.cpp"
+}
+]
+},
+"liblog": {
+"kind": "shared",
+"link": {
+"libs": [],
+"static": [],
+"system": [
+"pthread"
+],
+"whole_static": []
+},
+"objects": [
+{
+"flags": 2,
+"lang": "c",
+"src": "system/core/liblog/logd_write.c"
+},
+{
+"flags": 2,
+"lang": "c",
+"src": "system/core/liblog/logprint.c"
+},
+{
+"flags": 2,
+"lang": "c",
+"src": "system/core/liblog/event_tag_map.c"
+},
+{
+"flags": 2,
+"lang": "c",
+"src": "system/core/liblog/fake_log_device.c"
+}
+]
+},
+"libnativebridge": {
+"kind": "shared",
+"link": {
+"libs": [
+"liblog"
+],
+"static": [],
+"system": [
+"dl"
+],
+"whole_static": []
+},
+"objects": [
+{
+"flags": 18,
+"lang": "c++",
+"src": "system/core/libnativebridge/native_bridge.cc"
+}
+]
+},
+"libnativehelper": {
+"kind": "shared",
+"link": {
+"libs": [
+"liblog"
+],
+"static": [],
+"system": [
+"dl"
+],
+"whole_static": []
+},
+"objects": [
+{
+"flags": 1,
+"lang": "c++",
+"src": "libnativehelper/JNIHelp.cpp"
+},
+{
+"flags": 1,
+"lang": "c++",
+"src": "libnativehelper/JniConstants.cpp"
+},
+{
+"flags": 1,
+"lang": "c++",
+"src": "libnativehelper/toStringArray.cpp"
+},
+{
+"flags": 1,
+"lang": "c++",
+"src": "libnativehelper/JniInvocation.cpp"
+},
+{
+"flags": 1,
+"lang": "c++",
+"src": "libnativehelper/AsynchronousCloseMonitor.cpp"
+}
+]
+},
+"libopenjdk": {
+"kind": "shared",
+"link": {
+"libs": [
+"liblog",
+"libnativehelper",
+"libbase",
+"libopenjdkjvm"
+],
+"static": [
+"libfdlibm.a"
+],
+"system": [
+"crypto",
+"dl",
+"icuuc",
+"pthread",
+"rt",
+"z"
+],
+"whole_static": []
+},
+"objects": [
+{
+"flags": 28,
+"lang": "c++",
+"src": "libcore/ojluni/src/main/native/linux_close.cpp"
+},
+{
+"flags": 28,
+"lang": "c++",
+"src": "libcore/ojluni/src/main/native/Character.cpp"
+},
+{
+"flags": 28,
+"lang": "c++",
+"src": "libcore/ojluni/src/main/native/Register.cpp"
+},
+{
+"flags": 28,
+"lang": "c++",
+"src": "libcore/ojluni/src/main/native/socket_tagger_util.cpp"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/java_util_zip_ZipFile.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/java_util_zip_Inflater.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/java_util_zip_Deflater.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/java_util_zip_CRC32.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/Adler32.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/zip_util.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/jni_util.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/jni_util_md.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/io_util.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/canonicalize_md.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/FileDescriptor_md.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/DatagramChannelImpl.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/DatagramDispatcher.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/Console_md.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/IOUtil.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/PollArrayWrapper.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/SocketChannelImpl.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/FileChannelImpl.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/FileDispatcherImpl.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/FileOutputStream_md.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/FileInputStream.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/FileSystemPreferences.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/EPoll.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/EPollPort.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/UnixAsynchronousServerSocketChannelImpl.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/UnixAsynchronousSocketChannelImpl.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/io_util_md.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/NativeThread.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/FileKey.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/UnixFileSystem_md.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/ObjectStreamClass.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/ObjectOutputStream.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/ObjectInputStream.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/LinuxNativeDispatcher.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/LinuxWatchService.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/UnixCopyFile.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/UnixNativeDispatcher.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/InetAddress.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/net_util.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/net_util_md.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/Net.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/MappedByteBuffer.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/Inet6Address.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/Inet4Address.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/ServerSocketChannelImpl.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/SocketInputStream.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/SocketOutputStream.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/Float.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/Double.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/StrictMath.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/Math.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/ProcessEnvironment_md.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/System.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/Runtime.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/UNIXProcess_md.c"
+},
+{
+"flags": 29,
+"lang": "c",
+"src": "libcore/ojluni/src/main/native/Bits.c"
+}
+]
+},
+"libopenjdkjvm": {
+"kind": "shared",
+"link": {
+"libs": [
+"libart",
+"libartbase",
+"libbase"
+],
+"static": [],
+"system": [],
+"whole_static": []
+},
+"objects": [
+{
+"flags": 30,
+"lang": "c++",
+"src": "art/openjdkjvm/OpenjdkJvm.cc"
+}
+]
+},
+"libopenjdkjvm.a": {
+"kind": "static",
+"link": {
+"libs": [],
+"static": [],
+"system": [],
+"whole_static": []
+},
+"objects": [
+{
+"flags": 32,
+"lang": "c++",
+"src": "art/openjdkjvm/OpenjdkJvm.cc"
+}
+]
+},
+"libprofile": {
+"kind": "shared",
+"link": {
+"libs": [
+"libbase",
+"libziparchive",
+"libartbase",
+"libartpalette",
+"libdexfile"
+],
+"static": [],
+"system": [
+"z"
+],
+"whole_static": []
+},
+"objects": [
+{
+"flags": 7,
+"lang": "c++",
+"src": "art/libprofile/profile/profile_compilation_info.cc"
+}
+]
+},
+"libsigchain": {
+"kind": "shared",
+"link": {
+"libs": [],
+"static": [],
+"system": [],
+"whole_static": []
+},
+"objects": [
+{
+"flags": 23,
+"lang": "c++",
+"src": "art/sigchainlib/sigchain.cc"
+}
+]
+},
+"libsigchain.a": {
+"kind": "static",
+"link": {
+"libs": [],
+"static": [],
+"system": [],
+"whole_static": []
+},
+"objects": [
+{
+"flags": 3,
+"lang": "c++",
+"src": "art/sigchainlib/sigchain.cc"
+}
+]
+},
+"libunwind": {
+"kind": "shared",
+"link": {
+"libs": [],
+"static": [],
+"system": [
+"c",
+"gcc",
+"pthread"
+],
+"whole_static": []
+},
+"objects": [
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/init.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/flush_cache.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/mempool.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/strerror.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/backtrace.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/dyn-cancel.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/dyn-info-list.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/dyn-register.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/map.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/Lmap.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/Ldyn-extract.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/Lfind_dynamic_proc_info.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/Lget_proc_info_by_ip.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/Lget_proc_name.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/Lput_dynamic_unwind_info.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/Ldestroy_addr_space.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/Lget_reg.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/Lset_reg.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/Lget_fpreg.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/Lset_fpreg.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/Lset_caching_policy.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/Gdyn-extract.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/Gdyn-remote.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/Gfind_dynamic_proc_info.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/Gget_accessors.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/Gget_proc_info_by_ip.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/Gget_proc_name.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/Gput_dynamic_unwind_info.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/Gdestroy_addr_space.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/Gget_reg.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/Gset_reg.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/Gget_fpreg.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/Gset_fpreg.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/mi/Gset_caching_policy.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/dwarf/Lexpr.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/dwarf/Lfde.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/dwarf/Lparser.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/dwarf/Lpe.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/dwarf/Lstep_dwarf.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/dwarf/Lfind_proc_info-lsb.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/dwarf/Lfind_unwind_table.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/dwarf/Gexpr.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/dwarf/Gfde.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/dwarf/Gfind_proc_info-lsb.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/dwarf/Gfind_unwind_table.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/dwarf/Gparser.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/dwarf/Gpe.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/dwarf/Gstep_dwarf.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/dwarf/global.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/os-common.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/os-linux.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/Los-common.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/ptrace/_UPT_accessors.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/ptrace/_UPT_access_fpreg.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/ptrace/_UPT_access_mem.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/ptrace/_UPT_access_reg.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/ptrace/_UPT_create.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/ptrace/_UPT_destroy.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/ptrace/_UPT_find_proc_info.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/ptrace/_UPT_get_dyn_info_list_addr.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/ptrace/_UPT_put_unwind_info.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/ptrace/_UPT_get_proc_name.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/ptrace/_UPT_reg_offset.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/ptrace/_UPT_resume.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/aarch64/is_fpreg.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/aarch64/regname.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/aarch64/Gcreate_addr_space.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/aarch64/Gget_proc_info.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/aarch64/Gget_save_loc.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/aarch64/Gglobal.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/aarch64/Ginit.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/aarch64/Ginit_local.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/aarch64/Ginit_remote.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/aarch64/Gregs.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/aarch64/Gresume.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/aarch64/Gstep.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/aarch64/Lcreate_addr_space.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/aarch64/Lget_proc_info.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/aarch64/Lget_save_loc.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/aarch64/Lglobal.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/aarch64/Linit.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/aarch64/Linit_local.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/aarch64/Linit_remote.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/aarch64/Lregs.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/aarch64/Lresume.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/aarch64/Lstep.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/aarch64/Gis_signal_frame.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/aarch64/Lis_signal_frame.c"
+},
+{
+"flags": 21,
+"lang": "c",
+"src": "external/libunwind/src/elf64.c"
+}
+]
+},
+"libutils": {
+"kind": "shared",
+"link": {
+"libs": [
+"libbase"
+],
+"static": [],
+"system": [],
+"whole_static": [
+"libutils_binder.a"
+]
+},
+"objects": [
+{
+"flags": 11,
+"lang": "c++",
+"src": "system/core/libutils/FileMap.cpp"
+},
+{
+"flags": 11,
+"lang": "c++",
+"src": "system/core/libutils/JenkinsHash.cpp"
+},
+{
+"flags": 11,
+"lang": "c++",
+"src": "system/core/libutils/LightRefBase.cpp"
+},
+{
+"flags": 11,
+"lang": "c++",
+"src": "system/core/libutils/Looper.cpp"
+},
+{
+"flags": 11,
+"lang": "c++",
+"src": "system/core/libutils/NativeHandle.cpp"
+},
+{
+"flags": 11,
+"lang": "c++",
+"src": "system/core/libutils/Printer.cpp"
+},
+{
+"flags": 11,
+"lang": "c++",
+"src": "system/core/libutils/StopWatch.cpp"
+},
+{
+"flags": 11,
+"lang": "c++",
+"src": "system/core/libutils/SystemClock.cpp"
+},
+{
+"flags": 11,
+"lang": "c++",
+"src": "system/core/libutils/Threads.cpp"
+},
+{
+"flags": 11,
+"lang": "c++",
+"src": "system/core/libutils/Timers.cpp"
+},
+{
+"flags": 11,
+"lang": "c++",
+"src": "system/core/libutils/Tokenizer.cpp"
+},
+{
+"flags": 11,
+"lang": "c++",
+"src": "system/core/libutils/misc.cpp"
+}
+]
+},
+"libutils_binder.a": {
+"kind": "static",
+"link": {
+"libs": [],
+"static": [],
+"system": [],
+"whole_static": []
+},
+"objects": [
+{
+"flags": 12,
+"lang": "c++",
+"src": "system/core/libutils/binder/Errors.cpp"
+},
+{
+"flags": 12,
+"lang": "c++",
+"src": "system/core/libutils/binder/RefBase.cpp"
+},
+{
+"flags": 12,
+"lang": "c++",
+"src": "system/core/libutils/binder/SharedBuffer.cpp"
+},
+{
+"flags": 12,
+"lang": "c++",
+"src": "system/core/libutils/binder/String16.cpp"
+},
+{
+"flags": 12,
+"lang": "c++",
+"src": "system/core/libutils/binder/String8.cpp"
+},
+{
+"flags": 12,
+"lang": "c++",
+"src": "system/core/libutils/binder/StrongPointer.cpp"
+},
+{
+"flags": 12,
+"lang": "c++",
+"src": "system/core/libutils/binder/Unicode.cpp"
+},
+{
+"flags": 12,
+"lang": "c++",
+"src": "system/core/libutils/binder/VectorImpl.cpp"
+}
+]
+},
+"libwolfssljni": {
+"kind": "shared",
+"link": {
+"libs": [],
+"static": [],
+"system": [
+"wolfssl"
+],
+"whole_static": []
+},
+"objects": [
+{
+"flags": 33,
+"lang": "c",
+"src": "external/wolfssljni/native/com_wolfssl_wolfcrypt_ECC.c"
+},
+{
+"flags": 33,
+"lang": "c",
+"src": "external/wolfssljni/native/com_wolfssl_wolfcrypt_EccKey.c"
+},
+{
+"flags": 33,
+"lang": "c",
+"src": "external/wolfssljni/native/com_wolfssl_wolfcrypt_RSA.c"
+},
+{
+"flags": 33,
+"lang": "c",
+"src": "external/wolfssljni/native/com_wolfssl_WolfSSL.c"
+},
+{
+"flags": 33,
+"lang": "c",
+"src": "external/wolfssljni/native/com_wolfssl_WolfSSLCertificate.c"
+},
+{
+"flags": 33,
+"lang": "c",
+"src": "external/wolfssljni/native/com_wolfssl_WolfSSLCertManager.c"
+},
+{
+"flags": 33,
+"lang": "c",
+"src": "external/wolfssljni/native/com_wolfssl_WolfSSLContext.c"
+},
+{
+"flags": 33,
+"lang": "c",
+"src": "external/wolfssljni/native/com_wolfssl_WolfSSLSession.c"
+},
+{
+"flags": 33,
+"lang": "c",
+"src": "external/wolfssljni/native/com_wolfssl_WolfSSLX509StoreCtx.c"
+}
+]
+},
+"libziparchive": {
+"kind": "shared",
+"link": {
+"libs": [
+"liblog",
+"libbase"
+],
+"static": [],
+"system": [
+"z"
+],
+"whole_static": []
+},
+"objects": [
+{
+"flags": 9,
+"lang": "c++",
+"src": "libziparchive/zip_archive.cc"
+},
+{
+"flags": 9,
+"lang": "c++",
+"src": "libziparchive/zip_archive_stream_entry.cc"
+},
+{
+"flags": 9,
+"lang": "c++",
+"src": "libziparchive/zip_cd_entry_map.cc"
+},
+{
+"flags": 9,
+"lang": "c++",
+"src": "libziparchive/zip_error.cc"
+},
+{
+"flags": 9,
+"lang": "c++",
+"src": "libziparchive/zip_writer.cc"
+}
+]
+}
+}
+}
