@@ -1564,7 +1564,7 @@ index 3bc718b0..30747cf9 100644
          new_frame->SetVReg(vreg, value);
        }
 diff --git a/art/runtime/runtime.cc b/art/runtime/runtime.cc
-index a1c757ae..def99655 100644
+index a1c757ae..66a73849 100644
 --- a/art/runtime/runtime.cc
 +++ b/art/runtime/runtime.cc
 @@ -607,6 +607,14 @@ struct AbortState {
@@ -1582,6 +1582,39 @@ index a1c757ae..def99655 100644
  
    // Only set the first abort message.
    if (old_value == 0) {
+@@ -1835,6 +1843,23 @@ void Runtime::InitNativeMethods() {
+   // Then set up libjavacore / libopenjdk, which are just a regular JNI libraries with
+   // a regular JNI_OnLoad. Most JNI libraries can just use System.loadLibrary, but
+   // libcore can't because it's the library that implements System.loadLibrary!
++#ifdef __APPLE__
++  // On Apple's systems the class library's natives are dylibs beside libart (in an app, its
++  // Frameworks): loaded from there by path.
++  {
++    Dl_info libart_info;
++    dladdr(reinterpret_cast<void*>(art_sigsegv_fault), &libart_info);
++    std::string dir = libart_info.dli_fname != nullptr ? libart_info.dli_fname : "";
++    dir.resize(dir.rfind('/') + 1);
++    for (const char* lib : {"libjavacore.dylib", "libopenjdk.dylib"}) {
++      std::string error_msg;
++      if (!java_vm_->LoadNativeLibrary(
++              env, dir + lib, nullptr, WellKnownClasses::java_lang_Object, &error_msg)) {
++        LOG(FATAL) << "LoadNativeLibrary failed for " << dir << lib << ": " << error_msg;
++      }
++    }
++  }
++#else
+   {
+     std::string error_msg;
+     std::string error_msg2;
+@@ -1891,6 +1916,8 @@ void Runtime::InitNativeMethods() {
+     }
+   }
+ 
++#endif
++
+   // Initialize well known classes that may invoke runtime native methods.
+   WellKnownClasses::LateInit(env);
+ 
 diff --git a/art/runtime/signal_catcher.cc b/art/runtime/signal_catcher.cc
 index 8da5feee..b1ce8a52 100644
 --- a/art/runtime/signal_catcher.cc

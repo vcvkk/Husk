@@ -11,8 +11,9 @@ dex2oat are left out.
   gen-ninja.py --src ART_TREE --out BUILD_DIR [--target macos|ios] [--sysroot SDK]
                [--include DIR]... [--lib DIR]... modules.json
 
-Libraries keep their Linux names (libart.so, ...): dlopen does not care about the
-extension, and the runtime has the names written into it.
+Shared libraries are named as Darwin names them (libart.dylib, ...): app signing
+covers dylibs, and the runtime loads the class library's natives by those names
+beside libart (patch 0008).
 """
 import argparse
 import json
@@ -39,6 +40,8 @@ NOT_LIBS = {"libcutils": ["libutils"]}
 LOOKUP = {"libopenjdk": ["_art_sigsegv_fault"]}
 # OpenJDK's macOS code converts file names with CoreFoundation
 FRAMEWORKS = {"libopenjdk": ["CoreFoundation"]}
+
+SO = ".dylib"
 
 DROP = {"-Wa,--noexecstack", "-fpermissive", "-ffloat-store", "-Werror", "-no-canonical-prefixes",
         "-DLINUX", "-D__GLIBC__", "-m64", "-fstack-protector", "-g", "-ggdb3"}
@@ -219,7 +222,7 @@ rule gen
                 deps.append(products[s])
         for l in link["libs"] + EXTRA_LIBS.get(name, []):
             if l in want and l not in NOT_LIBS.get(name, []):
-                p = os.path.join(out, "lib", l + ".so")
+                p = os.path.join(out, "lib", l + SO)
                 ld.append(p)
                 deps.append(p)
         system = SYSTEM_IOS if o.target == "ios" else SYSTEM
@@ -231,12 +234,12 @@ rule gen
         for f in FRAMEWORKS.get(name, []):
             ld += ["-framework", f]
         if m["kind"] == "shared":
-            p = os.path.join(out, "lib", name + ".so")
-            w.write(f"build {p}: so {' '.join(objs)} | {' '.join(deps)}\n  soname = {name}.so\n  ldflags = {q(ld)}\n")
+            p = os.path.join(out, "lib", name + SO)
+            w.write(f"build {p}: so {' '.join(objs)} | {' '.join(deps)}\n  soname = {name}{SO}\n  ldflags = {q(ld)}\n")
         else:
             p = os.path.join(out, "bin", name)
             w.write(f"build {p}: exe {' '.join(objs)} | {' '.join(deps)}\n  ldflags = {q(ld)}\n")
-    w.write(f"default {' '.join(os.path.join(out, 'bin', n) if modules[n]['kind'] == 'exe' else os.path.join(out, 'lib', n + '.so') for n in RUNTIME if n in want)}\n")
+    w.write(f"default {' '.join(os.path.join(out, 'bin', n) if modules[n]['kind'] == 'exe' else os.path.join(out, 'lib', n + SO) for n in RUNTIME if n in want)}\n")
     w.close()
     print(f"{len(want)} modules: {' '.join(sorted(want))}")
 
