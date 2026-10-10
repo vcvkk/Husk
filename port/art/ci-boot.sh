@@ -39,5 +39,7 @@ for f in build/boot-ios/arm64/*.oat; do build/boot/oat2macho --ios "$f" "$f.dyli
 cp $H/classes.dex build/boot-ios/hello/
 compile classes.dex build/boot-ios/hello/oat/arm64/classes.odex
 build/boot/oat2macho --ios build/boot-ios/hello/oat/arm64/classes.odex build/boot-ios/hello/oat/arm64/classes.odex.dylib
+# each piece once: the code only in the dylibs, the oat data only in the ELF files
+python3 tools/oat-strip-code.py build/boot-ios/arm64/*.oat build/boot-ios/hello/oat/arm64/classes.odex
 tar -czf build/boot-ios.tgz -C build boot-ios
 ls -la build/boot.tgz build/boot-ios.tgz

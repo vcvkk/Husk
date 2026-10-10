@@ -11,7 +11,7 @@ name: ART runtime on Darwin
 on:
   push:
     branches: [husk-port]
-    paths: ['port/art/**', 'port/ios/**', 'port/framework/**', 'tests/compose-hello/**', 'tools/oat2macho.c',
+    paths: ['port/art/**', 'port/ios/**', 'port/framework/**', 'tests/compose-hello/**', 'tools/oat2macho.c', 'tools/oat-strip-code.py',
             '.github/workflows/darwin-art.yml']
   workflow_dispatch:
 
@@ -207,7 +207,7 @@ jobs:
           path: |
             build/boot.tgz
             build/boot-ios.tgz
-          key: boot-out-${{ hashFiles('port/art/patches/**', 'port/art/build.sh', 'port/art/dx-via-d8', 'port/art/boot-image.sh', 'port/art/ci-boot.sh', 'tools/oat2macho.c', 'tests/dvm/Hello.java') }}
+          key: boot-out-${{ hashFiles('port/art/patches/**', 'port/art/build.sh', 'port/art/dx-via-d8', 'port/art/boot-image.sh', 'port/art/ci-boot.sh', 'tools/oat2macho.c', 'tools/oat-strip-code.py', 'tests/dvm/Hello.java') }}
       - name: Packages
         if: steps.out.outputs.cache-hit != 'true'
         run: |
@@ -500,7 +500,7 @@ jobs:
           path: |
             build/app/macos.tgz
             build/app/ios.tgz
-          key: app-out-${{ hashFiles('port/art/patches/**', 'port/art/build.sh', 'port/art/dx-via-d8', 'port/art/vixl-meson.patch', 'port/art/boot-image.sh', 'port/framework/ci-app.sh', 'port/framework/build.sh', 'port/framework/src/**', 'port/framework/gen-src/**', 'port/framework/stubs/**', 'port/framework/gen/**', 'port/framework/strip-framework-res.py', 'tools/oat2macho.c', 'tests/compose-hello/**') }}
+          key: app-out-${{ hashFiles('port/art/patches/**', 'port/art/build.sh', 'port/art/dx-via-d8', 'port/art/vixl-meson.patch', 'port/art/boot-image.sh', 'port/framework/ci-app.sh', 'port/framework/build.sh', 'port/framework/src/**', 'port/framework/gen-src/**', 'port/framework/stubs/**', 'port/framework/gen/**', 'port/framework/strip-framework-res.py', 'tools/oat2macho.c', 'tools/oat-strip-code.py', 'tests/compose-hello/**') }}
       - uses: actions/download-artifact@v4
         if: steps.out.outputs.cache-hit != 'true'
         with:

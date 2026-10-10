@@ -39,5 +39,7 @@ rm -rf "$OUT/ios"; mkdir -p "$OUT/ios"
 cp -R "$OUT/macos/boot" "$OUT/macos/app" "$OUT/ios/"
 rm -rf "$OUT/ios/boot/android-data"
 for f in "$OUT"/ios/boot/arm64/*.oat "$OUT/ios/app/oat/arm64/base.odex"; do "$B/oat2macho" --ios "$f" "$f.dylib"; done
+# each piece once: the code only in the dylibs, the oat data only in the ELF files
+python3 "$ROOT/tools/oat-strip-code.py" "$OUT"/ios/boot/arm64/*.oat "$OUT/ios/app/oat/arm64/base.odex"
 tar -czf "$OUT/ios.tgz" -C "$OUT/ios" boot/jars boot/arm64 boot/boot.classpath app
 ls -la "$OUT"/*.tgz
