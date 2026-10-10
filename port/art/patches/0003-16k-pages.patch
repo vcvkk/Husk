@@ -200,8 +200,29 @@ index 1785a778..f226fe85 100644
    rss_histogram_.AddValue(rss / KB);
  #endif
    return rss;
+diff --git a/art/runtime/monitor_pool.h b/art/runtime/monitor_pool.h
+index 4521a22c..c38dba9c 100644
+--- a/art/runtime/monitor_pool.h
++++ b/art/runtime/monitor_pool.h
+@@ -189,12 +189,13 @@ class MonitorPool {
+   // Size of a monitor, rounded up to a multiple of alignment.
+   static constexpr size_t kAlignedMonitorSize = (sizeof(Monitor) + kMonitorAlignment - 1) &
+                                                 -kMonitorAlignment;
+-  // As close to a page as we can get seems a good start.
+-  static constexpr size_t kChunkCapacity = kPageSize / kAlignedMonitorSize;
+   // Chunk size that is referenced in the id. We can collapse this to the actually used storage
+   // in a chunk, i.e., kChunkCapacity * kAlignedMonitorSize, but this will mean proper divisions.
+-  static constexpr size_t kChunkSize = kPageSize;
++  // 4 KiB, not a page: chunks come from the allocator, and with 16 KiB pages the ids of
++  // page-sized chunks would not fit in a lock word.
++  static constexpr size_t kChunkSize = 4 * KB;
+   static_assert(IsPowerOfTwo(kChunkSize), "kChunkSize must be power of 2");
++  static constexpr size_t kChunkCapacity = kChunkSize / kAlignedMonitorSize;
+   // The number of chunks of storage that can be referenced by the initial chunk list.
+   // The total number of usable monitor chunks is typically 255 times this number, so it
+   // should be large enough that we don't run out. We run out of address bits if it's > 512.
 diff --git a/art/runtime/thread.cc b/art/runtime/thread.cc
-index b0b29bc6..22378460 100644
+index b0b29bc6..ff090dd4 100644
 --- a/art/runtime/thread.cc
 +++ b/art/runtime/thread.cc
 @@ -138,7 +138,7 @@ static constexpr bool kVerifyImageObjectsMarked = kIsDebugBuild;
@@ -213,3 +234,20 @@ index b0b29bc6..22378460 100644
  
  static const char* kThreadNameDuringStartup = "<native thread without managed peer>";
  
+@@ -777,11 +777,14 @@ void Thread::InstallImplicitProtection() {
+ #else
+           1u;
+ #endif
+-      volatile char space[kPageSize - (kAsanMultiplier * 256)];
++      // Frames of the smallest page, not of kPageSize: the system's pages can be smaller,
++      // and each of them down to the target must be touched.
++      constexpr size_t kStep = 4 * KB;
++      volatile char space[kStep - (kAsanMultiplier * 256)];
+       char sink ATTRIBUTE_UNUSED = space[zero];  // NOLINT
+       // Remove tag from the pointer. Nop in non-hwasan builds.
+       uintptr_t addr = reinterpret_cast<uintptr_t>(__hwasan_tag_pointer(space, 0));
+-      if (addr >= target + kPageSize) {
++      if (addr >= target + kStep) {
+         Touch(target);
+       }
+       zero *= 2;  // Try to avoid tail recursion.

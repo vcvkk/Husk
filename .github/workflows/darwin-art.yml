@@ -14,7 +14,7 @@ on:
 jobs:
   build:
     runs-on: macos-14
-    timeout-minutes: 120
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -111,8 +111,10 @@ jobs:
           javac --release 8 -d build/hello/cls tests/dvm/Hello.java
           java -cp build/r8.jar com.android.tools.r8.D8 --min-api 26 --output build/hello build/hello/cls/*.class
           export ANDROID_DATA="$PWD/build/android-data"
+          # a runtime that aborts can loop in its abort: stop it after a while (macOS has no timeout(1))
+          limit() { perl -e 'alarm shift; exec @ARGV' "$@"; }
           set +e
-          (cd build/hello && ../darwin/bin/dalvikvm -Xusejit:false -Xnoimage-dex2oat -Xss8m -cp classes.dex Hello) \
+          (cd build/hello && limit 300 ../darwin/bin/dalvikvm -Xusejit:false -Xnoimage-dex2oat -Xss8m -cp classes.dex Hello) \
             > build/darwin/hello.out 2> build/darwin/hello.err
           status=$?
           echo "dalvikvm exit $status"
@@ -120,7 +122,7 @@ jobs:
           tail -60 build/darwin/hello.err
           if [ $status -gt 128 ]; then
             # killed by a signal: where, from lldb
-            (cd build/hello && lldb --batch -o run -k 'thread backtrace all' -k 'register read' -k quit -- \
+            (cd build/hello && limit 300 lldb --batch -o run -k 'thread backtrace all' -k 'register read' -k quit -- \
               ../darwin/bin/dalvikvm -Xusejit:false -Xnoimage-dex2oat -Xss8m -cp classes.dex Hello) \
               > build/darwin/hello.lldb 2>&1
             tail -150 build/darwin/hello.lldb
