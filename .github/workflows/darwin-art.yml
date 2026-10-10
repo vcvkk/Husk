@@ -368,7 +368,7 @@ jobs:
         run: |
           mkdir -p build/ios-runtime/include
           cp -R build/ios/lib build/ios-runtime/
-          cp -R build/art_standalone/libnativehelper/include_jni build/ios-runtime/include/
+          cp -R build/art_standalone/libnativehelper/include/nativehelper build/ios-runtime/include/
           tar -czf build/ios-runtime.tgz -C build ios-runtime
       - uses: actions/upload-artifact@v4
         with:
@@ -402,8 +402,8 @@ jobs:
         run: |
           tar -xzf build/ios-runtime.tgz -C build
           tar -xzf build/boot-ios.tgz -C build
-          mkdir -p build/art-src/libnativehelper
-          cp -R build/ios-runtime/include/include_jni build/art-src/libnativehelper/
+          mkdir -p build/art-src/libnativehelper/include
+          cp -R build/ios-runtime/include/nativehelper build/art-src/libnativehelper/include/
           port/ios/pack-ipa.sh --runtime build/ios-runtime --boot build/boot-ios --app build/boot-ios/hello \
             --main Hello --id dev.huskport.hello --name HuskHello --art-src build/art-src --out build/HuskHello.ipa
           unzip -l build/HuskHello.ipa | tail -40
