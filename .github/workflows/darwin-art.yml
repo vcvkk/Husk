@@ -27,7 +27,7 @@ jobs:
           git -C build/art_standalone remote add origin https://gitlab.com/android_translation_layer/art_standalone.git
           git -C build/art_standalone fetch -q --depth 1 origin "$rev"
           git -C build/art_standalone checkout -q FETCH_HEAD
-          for p in port/art/patches/*.patch; do git -C build/art_standalone apply "$p"; done
+          for p in "$PWD"/port/art/patches/*.patch; do git -C build/art_standalone apply "$p"; done
 
       - name: Generate build.ninja
         run: |
