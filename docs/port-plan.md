@@ -107,3 +107,26 @@ widgets (iOS widgets are a separate SwiftUI extension), FCM/UnifiedPush (iOS
 needs APNs), background services beyond what iOS allows.
 
 Nothing should be described as working until it has been seen working.
+
+## Taken from Husk's main line, later
+
+Husk's main branch (Leviidev/Husk, at 5ab4f00) went another way: its own Dalvik
+interpreter in C, and native code run from the executable memory StikDebug grants.
+Not the runtime here, but parts of it fit husk-port once the tool works:
+
+- **The Android framework in Java** (`src/java-framework`): views, widgets,
+  resources, a Canvas over CoreGraphics and CoreText, WebView on WKWebView, GLES
+  through ANGLE, SQLite, audio, sensors; Jetpack Compose runs on it. A candidate for
+  the UIKit half of stage 2 instead of ATL's GTK one. Its ~1000 natives use the
+  interpreter's own object API (`jobj*`, `husk-tl-dvm-*.c`); on ART they become
+  JNI, mechanically.
+- **What apps ask of the system**, learnt app by app there: Play services
+  presence, AccountManager with no accounts, signing info per package,
+  X509TrustManagerExtensions, MediaRouter, the full SDK stub list
+  (`tools/compat/genstubs.py`) and the sweep over Play apps
+  (`tools/compat/playsweep.py`).
+
+**Add-ons when packing an APK.** The tool packs a bare APK by default; later,
+options put more beside it: a keyboard (the input method an app expects), Play
+services (stubs that answer "present", or microG), and whatever else apps
+commonly need. Each is compiled ahead of time like the app.
