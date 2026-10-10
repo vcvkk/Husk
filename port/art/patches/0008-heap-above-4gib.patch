@@ -1,5 +1,5 @@
 diff --git a/art/compiler/optimizing/code_generator_arm64.cc b/art/compiler/optimizing/code_generator_arm64.cc
-index 43acce56..ec69a3ff 100644
+index 43acce56..6bd6a68a 100644
 --- a/art/compiler/optimizing/code_generator_arm64.cc
 +++ b/art/compiler/optimizing/code_generator_arm64.cc
 @@ -1056,7 +1056,11 @@ void ParallelMoveResolverARM64::FreeScratchLocation(Location loc) {
@@ -103,6 +103,15 @@ index 43acce56..ec69a3ff 100644
    __ Ldr(lr, MemOperand(tr, GetThreadOffset<kArm64PointerSize>(entrypoint).Int32Value()));
    {
      // Ensure the pc position is recorded immediately after the `blr` instruction.
+@@ -1718,7 +1781,7 @@ void InstructionCodeGeneratorARM64::GenerateClassInitializationCheck(SlowPathCod
+ 
+   // Even if the initialized flag is set, we need to ensure consistent memory ordering.
+   // TODO(vixl): Let the MacroAssembler handle MemOperand.
+-  __ Add(temp, class_reg, status_byte_offset);
++  __ Add(temp.X(), class_reg.X(), status_byte_offset);  // 64-bit: heap above 4 GiB
+   __ Ldarb(temp, HeapOperand(temp));
+   __ Cmp(temp, shifted_initialized_value);
+   __ B(lo, slow_path->GetEntryLabel());
 @@ -2436,7 +2499,7 @@ void InstructionCodeGeneratorARM64::VisitArrayGet(HArrayGet* instruction) {
          }
          temp = obj;
@@ -157,6 +166,15 @@ index 43acce56..ec69a3ff 100644
    } else {
      __ Csel(OutputRegister(select),
              InputOperandAt(select, 1),
+@@ -3900,7 +3974,7 @@ void InstructionCodeGeneratorARM64::VisitCheckCast(HCheckCast* instruction) {
+       __ Ldr(WRegisterFrom(maybe_temp3_loc), HeapOperand(temp.W(), object_array_data_offset));
+       GetAssembler()->MaybeUnpoisonHeapReference(WRegisterFrom(maybe_temp3_loc));
+       // Go to next interface.
+-      __ Add(temp, temp, 2 * kHeapReferenceSize);
++      __ Add(temp.X(), temp.X(), 2 * kHeapReferenceSize);  // 64-bit: heap above 4 GiB
+       __ Sub(WRegisterFrom(maybe_temp2_loc), WRegisterFrom(maybe_temp2_loc), 2);
+       // Compare the classes and continue the loop if they do not match.
+       __ Cmp(cls, WRegisterFrom(maybe_temp3_loc));
 @@ -4098,8 +4172,10 @@ void CodeGeneratorARM64::GenerateStaticOrDirectCall(
        EmitAdrpPlaceholder(adrp_label, XRegisterFrom(temp));
        // Add LDR with its PC-relative .data.bimg.rel.ro patch.
