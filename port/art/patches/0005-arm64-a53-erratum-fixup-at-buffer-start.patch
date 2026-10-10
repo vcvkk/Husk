@@ -1,0 +1,17 @@
+diff --git a/art/compiler/optimizing/code_generator_arm64.cc b/art/compiler/optimizing/code_generator_arm64.cc
+index 444252cc..43acce56 100644
+--- a/art/compiler/optimizing/code_generator_arm64.cc
++++ b/art/compiler/optimizing/code_generator_arm64.cc
+@@ -2275,9 +2275,11 @@ void InstructionCodeGeneratorARM64::VisitMultiplyAccumulate(HMultiplyAccumulate*
+   if (instr->GetType() == DataType::Type::kInt64 &&
+       codegen_->GetInstructionSetFeatures().NeedFixCortexA53_835769()) {
+     MacroAssembler* masm = down_cast<CodeGeneratorARM64*>(codegen_)->GetVIXLAssembler();
++    // There is no previous instruction when this is the method's first: reading one
++    // would read before the code buffer, which faults when VIXL maps the buffer itself.
+     vixl::aarch64::Instruction* prev =
+         masm->GetCursorAddress<vixl::aarch64::Instruction*>() - kInstructionSize;
+-    if (prev->IsLoadOrStore()) {
++    if (masm->GetCursorOffset() >= static_cast<ptrdiff_t>(kInstructionSize) && prev->IsLoadOrStore()) {
+       // Make sure we emit only exactly one nop.
+       ExactAssemblyScope scope(masm, kInstructionSize, CodeBufferCheckScope::kExactSize);
+       __ nop();

@@ -43,6 +43,22 @@ CI, and iOS is then a small step (UIKit instead of a window, the IPA's
 bundle). Linux x86_64 is used for what does not depend on the target:
 building `dex2oat`, compiling APKs, converting oat files.
 
+## Where it stands
+
+- **Toolchain: working.** `port/art/build.sh` builds ART (dex2oat, dalvikvm,
+  libcore) with five patches (`port/art/patches`): oat files laid out on
+  16 KiB pages, an arm64 back end in dex2oat on x86_64 hosts, and three fixes.
+  `port/compile-apk.sh` compiles an APK, libcore and the framework to arm64
+  and converts every oat file to an iOS dylib with `tools/oat2macho`.
+  For `com.depcalc.mobile` that takes about 30 s and gives 94 MB of arm64 code
+  (filter `speed`; a profile would cut it down).
+- **The app on Linux: its first screens work.** On ATL (ART + `api-impl` with
+  its GTK half) under Xvfb, the app starts, draws its Compose UI and goes
+  through its onboarding on clicks. Found on the way: libcore must be desugared
+  (d8 without `--no-desugaring`; ART 10 cannot link lambda call sites), and
+  wolfSSL must be built with JNI.
+- **Not started: ART on Darwin, the framework's native half on UIKit/Metal.**
+
 ## Stages
 
 1. **Toolchain**: `dex2oat` built with the arm64 back end (VIXL), compiling

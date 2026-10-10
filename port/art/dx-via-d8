@@ -1,6 +1,14 @@
 #!/bin/sh
 # dx's command line, d8's dexer: AOSP's old dx fails on today's class files
-# ("trouble writing output: excess write of 8"). R8_JAR names the d8 jar.
+# ("trouble writing output: excess write of 8"). R8_JAR names the d8 jar; once
+# installed as $PREFIX/bin/dx, the jar is the dx.jar art_standalone installs beside it.
+# d8 desugars as AOSP's build does before dx: ART 10 cannot link the invokedynamic
+# call sites javac makes for lambdas ("Bootstrap method returned null").
+if [ -z "${R8_JAR:-}" ]; then
+  for j in "$(dirname "$0")"/../lib/*/java/dx.jar "$(dirname "$0")"/../lib/java/dx.jar; do
+    [ -f "$j" ] && R8_JAR="$j" && break
+  done
+fi
 out=; api=27; jar=
 for a in "$@"; do
   case "$a" in
@@ -10,4 +18,4 @@ for a in "$@"; do
     *.jar) jar="$a";;
   esac
 done
-exec java -Xmx3g -cp "${R8_JAR:?set R8_JAR}" com.android.tools.r8.D8 --min-api "$api" --no-desugaring --output "$out" "$jar"
+exec java -Xmx3g -cp "${R8_JAR:?set R8_JAR, or install dx.jar beside this script}" com.android.tools.r8.D8 --min-api "$api" --output "$out" "$jar"

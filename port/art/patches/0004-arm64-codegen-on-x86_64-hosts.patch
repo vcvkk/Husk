@@ -1,0 +1,45 @@
+diff --git a/art/build/Android.common_build.mk b/art/build/Android.common_build.mk
+index 3cb74029..d3158fc7 100644
+--- a/art/build/Android.common_build.mk
++++ b/art/build/Android.common_build.mk
+@@ -213,7 +213,8 @@ ART_HOST_CODEGEN_ARCHS := $(sort $(ART_HOST_CODEGEN_ARCHS))
+ 
+ # Base set of cflags used by host build only
+ art_host_cflags := \
+-  $(foreach host_arch,$(strip $(ART_HOST_CODEGEN_ARCHS)), -DART_ENABLE_CODEGEN_$(host_arch))
++  $(foreach host_arch,$(strip $(ART_HOST_CODEGEN_ARCHS)), -DART_ENABLE_CODEGEN_$(host_arch)) \
++  $(if $(filter arm arm64,$(ART_HOST_CODEGEN_ARCHS)),-DVIXL_INCLUDE_TARGET_A64 -DVIXL_INCLUDE_TARGET_T32 -DVIXL_CODE_BUFFER_MMAP)
+ 
+ # Base set of asflags used by all things ART.
+ art_asflags :=
+diff --git a/art/compiler/Android.mk b/art/compiler/Android.mk
+index 89e77bb5..8631b8c6 100644
+--- a/art/compiler/Android.mk
++++ b/art/compiler/Android.mk
+@@ -94,6 +94,11 @@ $$(GENERATED_SRC_DIR)/asm_defines.h : $$(GENERATED_SRC_DIR)/asm_defines.S
+ LOCAL_GENERATED_SOURCES += $$(GENERATED_SRC_DIR)/asm_defines.h
+ LOCAL_ADDITIONAL_DEPENDENCIES += $$(GENERATED_SRC_DIR)/asm_defines.h
+ endef
++# husk-port: an x86_64 host can compile for arm64 too (ART_HOST_CODEGEN_ARCHS
++# naming arm64), which is how oat files for Apple devices are made on Linux.
++libart-compiler-defaults_x86_64_CODEGEN_SRCS += \
++        $(if $(filter arm64,$(ART_HOST_CODEGEN_ARCHS)),$(libart-compiler-defaults_arm64_CODEGEN_SRCS))
++libart-compiler-defaults_x86_64_CODEGEN_HOST_LDLIBS = $(if $(filter arm64,$(ART_HOST_CODEGEN_ARCHS)),-lvixl)
+ libart-compiler-defaults_LDLIBS   =  \
+         $(libart-compiler-defaults_$(HOST_ARCH)_CODEGEN_HOST_LDLIBS) \
+         -llzma
+diff --git a/art/dex2oat/Android.mk b/art/dex2oat/Android.mk
+index 89139dd0..368d1dbc 100644
+--- a/art/dex2oat/Android.mk
++++ b/art/dex2oat/Android.mk
+@@ -42,6 +42,10 @@ $$(GENERATED_SRC_DIR)/asm_defines.h : $$(GENERATED_SRC_DIR)/asm_defines.S
+ LOCAL_GENERATED_SOURCES += $$(GENERATED_SRC_DIR)/asm_defines.h
+ LOCAL_ADDITIONAL_DEPENDENCIES += $$(GENERATED_SRC_DIR)/asm_defines.h
+ endef
++# husk-port: an x86_64 host can compile for arm64 too (see art/compiler/Android.mk)
++libart-dex2oat-defaults_x86_64_CODEGEN_SRCS += \
++        $(if $(filter arm64,$(ART_HOST_CODEGEN_ARCHS)),$(libart-dex2oat-defaults_arm64_CODEGEN_SRCS))
++libart-dex2oat-defaults_x86_64_CODEGEN_HOST_LDLIBS = $(if $(filter arm64,$(ART_HOST_CODEGEN_ARCHS)),-lvixl)
+ libart-dex2oat-defaults_LDLIBS   =  \
+         $(libart-dex2oat-defaults_$(HOST_ARCH)_CODEGEN_HOST_LDLIBS) \
+         -lz \
