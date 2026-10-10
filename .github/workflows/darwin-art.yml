@@ -111,22 +111,33 @@ jobs:
           javac --release 8 -d build/hello/cls tests/dvm/Hello.java
           java -cp build/r8.jar com.android.tools.r8.D8 --min-api 26 --output build/hello build/hello/cls/*.class
           export ANDROID_DATA="$PWD/build/android-data"
-          # a runtime that aborts can loop in its abort: stop it after a while (macOS has no timeout(1))
-          limit() { perl -e 'alarm shift; exec @ARGV' "$@"; }
+          limit() { perl -e 'alarm shift; exec @ARGV' "$@"; }   # macOS has no timeout(1)
+          args=(-Xint -Xnoimage-dex2oat -Xss8m -cp classes.dex Hello)
+          cd build/hello
           set +e
-          (cd build/hello && limit 300 ../darwin/bin/dalvikvm -Xint -Xnoimage-dex2oat -Xss8m -cp classes.dex Hello) \
-            > build/darwin/hello.out 2> build/darwin/hello.err
-          status=$?
+          ../darwin/bin/dalvikvm "${args[@]}" > ../darwin/hello.out 2> ../darwin/hello.err &
+          pid=$!
+          # Hello takes well under a second: one still running after 60 s is stuck. Its threads'
+          # stacks, from lldb attached to it, say where.
+          for i in $(seq 60); do kill -0 $pid 2>/dev/null || break; sleep 1; done
+          if kill -0 $pid 2>/dev/null; then
+            echo "dalvikvm still running after 60 s"
+            limit 120 lldb -p $pid --batch -o 'thread backtrace all' > ../darwin/hello.lldb 2>&1
+            kill -9 $pid
+            status=124
+          else
+            wait $pid
+            status=$?
+          fi
           echo "dalvikvm exit $status"
-          cat build/darwin/hello.out
-          tail -60 build/darwin/hello.err
+          cat ../darwin/hello.out
+          tail -60 ../darwin/hello.err
           if [ $status -gt 128 ]; then
             # killed by a signal: where, from lldb
-            (cd build/hello && limit 300 lldb --batch -o run -k 'thread backtrace all' -k 'register read' -k quit -- \
-              ../darwin/bin/dalvikvm -Xint -Xnoimage-dex2oat -Xss8m -cp classes.dex Hello) \
-              > build/darwin/hello.lldb 2>&1
-            tail -150 build/darwin/hello.lldb
+            limit 120 lldb --batch -o run -k 'thread backtrace all' -k 'register read' -k quit -- \
+              ../darwin/bin/dalvikvm "${args[@]}" > ../darwin/hello.lldb 2>&1
           fi
+          [ -f ../darwin/hello.lldb ] && tail -200 ../darwin/hello.lldb
           exit $status
 
       - uses: actions/upload-artifact@v4

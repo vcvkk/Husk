@@ -588,6 +588,31 @@ index c5b111f8..78c3fbe1 100644
        VLOG(jdwp) << "get " << tag << " object local " << vreg << " = " << o;
        if (!Runtime::Current()->GetHeap()->IsValidObjectAddress(o)) {
          LOG(FATAL) << StringPrintf("Found invalid object %#" PRIxPTR " in register v%u",
+diff --git a/art/runtime/entrypoints/quick/quick_alloc_entrypoints.cc b/art/runtime/entrypoints/quick/quick_alloc_entrypoints.cc
+index ecf6f670..5e4cb5db 100644
+--- a/art/runtime/entrypoints/quick/quick_alloc_entrypoints.cc
++++ b/art/runtime/entrypoints/quick/quick_alloc_entrypoints.cc
+@@ -213,7 +213,8 @@ void SetQuickAllocEntryPointsInstrumented(bool instrumented) {
+ }
+ 
+ void ResetQuickAllocEntryPoints(QuickEntryPoints* qpoints, bool is_marking) {
+-#if !defined(__APPLE__) || !defined(__LP64__)
++  // (AOSP left this out on 64-bit macOS, an x86_64 host without compiled code; arm64 Darwin
++  // has the entrypoints.)
+   switch (entry_points_allocator) {
+     case gc::kAllocatorTypeDlMalloc: {
+       SetQuickAllocEntryPoints_dlmalloc(qpoints, entry_points_instrumented);
+@@ -251,10 +252,6 @@ void ResetQuickAllocEntryPoints(QuickEntryPoints* qpoints, bool is_marking) {
+     default:
+       break;
+   }
+-#else
+-  UNUSED(qpoints);
+-  UNUSED(is_marking);
+-#endif
+   UNIMPLEMENTED(FATAL);
+   UNREACHABLE();
+ }
 diff --git a/art/runtime/fault_handler.h b/art/runtime/fault_handler.h
 index f6cf2d77..efd0b4bc 100644
 --- a/art/runtime/fault_handler.h
