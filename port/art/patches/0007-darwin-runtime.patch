@@ -287,9 +287,18 @@ index 1f893611..6995dc7c 100644
        if(libart_so_dl_info.dli_fname) {
          // it's simpler if we can modify the string, so strdup it
 diff --git a/art/runtime/runtime.cc b/art/runtime/runtime.cc
-index 1ea93dc1..0138965d 100644
+index 1ea93dc1..a1c757ae 100644
 --- a/art/runtime/runtime.cc
 +++ b/art/runtime/runtime.cc
+@@ -1141,7 +1141,7 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
+   using Opt = RuntimeArgumentMap;
+   Opt runtime_options(std::move(runtime_options_in));
+   ScopedTrace trace(__FUNCTION__);
+-  CHECK_EQ(sysconf(_SC_PAGE_SIZE), kPageSize);
++  CHECK_EQ(kPageSize % sysconf(_SC_PAGE_SIZE), 0) << "system page " << sysconf(_SC_PAGE_SIZE);
+ 
+   // Early override for logging output.
+   if (runtime_options.Exists(Opt::UseStderrLogger)) {
 @@ -1843,7 +1843,7 @@ void Runtime::InitNativeMethods() {
        // if the above didn't work, try loading from the install path
        Dl_info libart_so_dl_info;

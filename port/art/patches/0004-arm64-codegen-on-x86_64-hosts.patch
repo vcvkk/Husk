@@ -1,7 +1,16 @@
 diff --git a/art/build/Android.common_build.mk b/art/build/Android.common_build.mk
-index 3cb74029..d3158fc7 100644
+index 3cb74029..2210dc5f 100644
 --- a/art/build/Android.common_build.mk
 +++ b/art/build/Android.common_build.mk
+@@ -186,7 +186,7 @@ art_cflags := \
+   -fvisibility=protected \
+   $(art_default_gc_type_cflags) \
+   -DBUILDING_LIBART=1 \
+-  -DART_STACK_OVERFLOW_GAP_arm=8192 -DART_STACK_OVERFLOW_GAP_arm64=8192 -DART_STACK_OVERFLOW_GAP_mips=16384 -DART_STACK_OVERFLOW_GAP_mips64=16384 -DART_STACK_OVERFLOW_GAP_x86=8192 -DART_STACK_OVERFLOW_GAP_x86_64=8192 \
++  -DART_STACK_OVERFLOW_GAP_arm=16384 -DART_STACK_OVERFLOW_GAP_arm64=16384 -DART_STACK_OVERFLOW_GAP_mips=16384 -DART_STACK_OVERFLOW_GAP_mips64=16384 -DART_STACK_OVERFLOW_GAP_x86=16384 -DART_STACK_OVERFLOW_GAP_x86_64=16384 \
+   -DART_FRAME_SIZE_LIMIT=1736 \
+   -DART_DEFAULT_COMPACT_DEX_LEVEL=$(ART_DEFAULT_COMPACT_DEX_LEVEL) \
+   -I/usr/local/include/vixl \
 @@ -213,7 +213,8 @@ ART_HOST_CODEGEN_ARCHS := $(sort $(ART_HOST_CODEGEN_ARCHS))
  
  # Base set of cflags used by host build only
