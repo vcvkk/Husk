@@ -559,6 +559,58 @@ index 93355c42..39bc61f6 100644
      ubfx x15, xIP1, #0, #METHOD_DEX_CACHE_HASH_BITS  // Calculate DexCache method slot index.
      ldr xIP0, [xIP0, #MIRROR_DEX_CACHE_RESOLVED_METHODS_OFFSET]  // Load the resolved methods.
      add xIP0, xIP0, x15, lsl #(POINTER_SIZE_SHIFT + 1)  // Load DexCache method slot address.
+diff --git a/art/runtime/base/mutex-inl.h b/art/runtime/base/mutex-inl.h
+index 3b56536a..a7992155 100644
+--- a/art/runtime/base/mutex-inl.h
++++ b/art/runtime/base/mutex-inl.h
+@@ -56,6 +56,47 @@ static inline int futex(volatile int *uaddr, int op, int val, const struct times
+ }
+ #endif  // ART_USE_FUTEXES
+ 
++#if !ART_USE_FUTEXES && defined(__APPLE__)
++// Darwin's futex is __ulock_wait/__ulock_wake (libsystem_kernel; what its pthread mutexes and
++// os_unfair_lock are built on). Enough of futex(2) for Thread::Park/Unpark: wait (until a
++// relative time, or an absolute realtime deadline) and wake.
++extern "C" int __ulock_wait(uint32_t operation, void* addr, uint64_t value, uint32_t timeout_us);
++extern "C" int __ulock_wake(uint32_t operation, void* addr, uint64_t wake_value);
++#define ART_DARWIN_FUTEX 1
++#define FUTEX_WAIT_PRIVATE 128
++#define FUTEX_WAKE_PRIVATE 129
++#define FUTEX_WAIT_BITSET_PRIVATE 137
++#define FUTEX_CLOCK_REALTIME 256
++#define FUTEX_BITSET_MATCH_ANY 0xffffffff
++static inline int futex(volatile int *uaddr, int op, int val, const struct timespec *timeout,
++                        volatile int *uaddr2 ATTRIBUTE_UNUSED, int val3 ATTRIBUTE_UNUSED) {
++  constexpr uint32_t kCompareAndWait = 1;  // UL_COMPARE_AND_WAIT
++  constexpr uint32_t kWakeAll = 0x100;     // ULF_WAKE_ALL
++  void* addr = const_cast<int*>(uaddr);
++  if (op == FUTEX_WAKE_PRIVATE) {
++    int r = __ulock_wake(kCompareAndWait | (val > 1 ? kWakeAll : 0u), addr, 0);
++    return (r == -1 && errno == ENOENT) ? 0 : r;  // no waiter is not an error
++  }
++  uint32_t timeout_us = 0;  // 0: no timeout
++  if (timeout != nullptr) {
++    int64_t ns = static_cast<int64_t>(timeout->tv_sec) * 1000000000 + timeout->tv_nsec;
++    if ((op & ~FUTEX_CLOCK_REALTIME) == FUTEX_WAIT_BITSET_PRIVATE) {  // an absolute deadline
++      timespec now;
++      clock_gettime(CLOCK_REALTIME, &now);
++      ns -= static_cast<int64_t>(now.tv_sec) * 1000000000 + now.tv_nsec;
++    }
++    if (ns <= 0) {
++      errno = ETIMEDOUT;
++      return -1;
++    }
++    int64_t us = (ns + 999) / 1000;
++    timeout_us = us > UINT32_MAX ? UINT32_MAX : static_cast<uint32_t>(us);
++  }
++  int r = __ulock_wait(kCompareAndWait, addr, static_cast<uint32_t>(val), timeout_us);
++  return r < 0 ? -1 : 0;
++}
++#endif  // !ART_USE_FUTEXES && __APPLE__
++
+ // The following isn't strictly necessary, but we want updates on Atomic<pid_t> to be lock-free.
+ // TODO: Use std::atomic::is_always_lock_free after switching to C++17 atomics.
+ static_assert(sizeof(pid_t) <= sizeof(int32_t), "pid_t should fit in 32 bits");
 diff --git a/art/runtime/common_throws.cc b/art/runtime/common_throws.cc
 index a1168afd..1f351910 100644
 --- a/art/runtime/common_throws.cc
@@ -866,6 +918,24 @@ index 3bc718b0..30747cf9 100644
        } else {
          new_frame->SetVReg(vreg, value);
        }
+diff --git a/art/runtime/signal_catcher.cc b/art/runtime/signal_catcher.cc
+index 8da5feee..b1ce8a52 100644
+--- a/art/runtime/signal_catcher.cc
++++ b/art/runtime/signal_catcher.cc
+@@ -89,7 +89,13 @@ SignalCatcher::~SignalCatcher() {
+   // to arrive, send it one.
+   SetHaltFlag(true);
+   CHECK_PTHREAD_CALL(pthread_kill, (pthread_, SIGQUIT), "signal catcher shutdown");
++#if defined(__APPLE__)
++  // Darwin does not wake the thread's sigwait() for the SIGQUIT sent to it, and the join would
++  // wait forever. The runtime is going away with the process: leave the thread waiting.
++  CHECK_PTHREAD_CALL(pthread_detach, (pthread_), "signal catcher shutdown");
++#else
+   CHECK_PTHREAD_CALL(pthread_join, (pthread_, nullptr), "signal catcher shutdown");
++#endif
+ }
+ 
+ void SignalCatcher::SetHaltFlag(bool new_value) {
 diff --git a/art/runtime/stack.cc b/art/runtime/stack.cc
 index 80a563b5..df5a2284 100644
 --- a/art/runtime/stack.cc
@@ -889,9 +959,27 @@ index 80a563b5..df5a2284 100644
      shadow_frame->SetVReg(vreg, new_value);
    }
 diff --git a/art/runtime/thread.cc b/art/runtime/thread.cc
-index ff090dd4..47bc4a1b 100644
+index ff090dd4..517f5665 100644
 --- a/art/runtime/thread.cc
 +++ b/art/runtime/thread.cc
+@@ -297,7 +297,7 @@ enum {
+ 
+ void Thread::Park(bool is_absolute, int64_t time) {
+   DCHECK(this == Thread::Current());
+-#if ART_USE_FUTEXES
++#if ART_USE_FUTEXES || defined(ART_DARWIN_FUTEX)
+   // Consume the permit, or mark as waiting. This cannot cause park_state to go
+   // outside of its valid range (0, 1, 2), because in all cases where 2 is
+   // assigned it is set back to 1 before returning, and this method cannot run
+@@ -395,7 +395,7 @@ void Thread::Park(bool is_absolute, int64_t time) {
+ }
+ 
+ void Thread::Unpark() {
+-#if ART_USE_FUTEXES
++#if ART_USE_FUTEXES || defined(ART_DARWIN_FUTEX)
+   // Set permit available; will be consumed either by fetch_add (when the thread
+   // tries to park) or store (when the parked thread is woken up)
+   if (tls32_.park_state_.exchange(kPermitAvailable, std::memory_order_relaxed)
 @@ -3818,8 +3818,16 @@ class ReferenceMapVisitor : public StackVisitor {
              LOG(FATAL) << "Found an unsaved callee-save register " << i << " (null GPRAddress) "
                         << "set in register_mask=" << register_mask << " at " << DescribeLocation();

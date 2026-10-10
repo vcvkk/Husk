@@ -26,6 +26,7 @@ for d in "$T"/*/; do
         printf '  FAIL  %-14s exit %d\n' "$t" $code; fail=$((fail + 1))
         { diff "$d/expected" "$d/art.cmp" || true; } | head -10 | sed 's/^/        /'
         { grep -a -m5 -e 'Fatal' -e 'Exception' -e 'error' "$d/art.err" || true; } | sed 's/^/        stderr: /'
+        [ $fail -le 2 ] && tail -15 "$d/art.err" | sed 's/^/        stderr| /'
     fi
 done
 cache="${XDG_CACHE_HOME:-$HOME/.cache}/art"
