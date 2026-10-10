@@ -28,12 +28,13 @@ SYSTEM = {"c": None, "gcc": None, "pthread": None, "rt": None, "dl": None, "atom
           "icuuc": "icuuc", "icui18n": "icui18n", "dl_bio": "dl_bio", "vixl": None}
 
 # Linux lets a shared library leave symbols for whatever loads it; Darwin's linker wants each
-# one found. Libraries the build does not name, and symbols of a cycle (libcutils links
-# libutils, whose NativeHandle calls libcutils; libopenjdk finds libart's directory through
-# one of its symbols, which libart has loaded by then), resolved at load time.
-EXTRA_LIBS = {"libutils": ["liblog"]}
-LOOKUP = {"libutils": ["_native_handle_close", "_native_handle_delete"],
-          "libopenjdk": ["_art_sigsegv_fault"]}
+# one found, and dyld binds them all at load. libutils' NativeHandle calls libcutils, which
+# the build has linking libutils instead (it uses nothing of it): the link turned around.
+# libopenjdk finds libart's directory through one of its symbols, which libart has loaded by
+# then: resolved at load time.
+EXTRA_LIBS = {"libutils": ["liblog", "libcutils"]}
+NOT_LIBS = {"libcutils": ["libutils"]}
+LOOKUP = {"libopenjdk": ["_art_sigsegv_fault"]}
 # OpenJDK's macOS code converts file names with CoreFoundation
 FRAMEWORKS = {"libopenjdk": ["CoreFoundation"]}
 
@@ -74,7 +75,7 @@ def needed(modules):
             continue
         seen.add(n)
         link = modules[n]["link"]
-        todo += link["libs"] + link["whole_static"] + link["static"]
+        todo += link["libs"] + EXTRA_LIBS.get(n, []) + link["whole_static"] + link["static"]
     return seen
 
 
@@ -214,7 +215,7 @@ rule gen
                 ld.append(products[s])
                 deps.append(products[s])
         for l in link["libs"] + EXTRA_LIBS.get(name, []):
-            if l in want:
+            if l in want and l not in NOT_LIBS.get(name, []):
                 p = os.path.join(out, "lib", l + ".so")
                 ld.append(p)
                 deps.append(p)
