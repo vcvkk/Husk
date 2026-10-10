@@ -11,7 +11,7 @@ name: ART runtime on Darwin
 on:
   push:
     branches: [husk-port]
-    paths: ['port/art/**', 'tools/oat2macho.c', '.github/workflows/darwin-art.yml']
+    paths: ['port/art/**', 'port/ios/**', 'tools/oat2macho.c', '.github/workflows/darwin-art.yml']
   workflow_dispatch:
 
 jobs:
