@@ -32,6 +32,7 @@ static void *app_main(void *unused)
     if (!husk_vm_start(g_art, g_data, extra, 0, &vm, &env)) exit(3);
     husk_app_run(env);
     fprintf(stderr, "mac-host: the app ended\n");
+    (*vm)->DetachCurrentThread(vm);
     return NULL;
 }
 

@@ -52,7 +52,7 @@ public final class AppRunner {
         ContextImpl base = ContextImpl.app();
         String appCls = applicationClass != null ? applicationClass : Manifest.applicationClass;
         Application app;
-        try { app = appCls != null ? (Application) Class.forName(appCls).newInstance() : new Application(); }
+        try { app = appCls != null ? (Application) Class.forName(appCls, true, classLoader()).newInstance() : new Application(); }
         catch (ClassNotFoundException e) { android.util.Log.w("Husk", "no application class " + appCls); app = new Application(); }
         sApp = app;
         Application.huskSet(app);
@@ -75,7 +75,7 @@ public final class AppRunner {
         for (Manifest.Component p : Manifest.providers) {
             if (!p.enabled) continue;
             try {
-                ContentProvider cp = (ContentProvider) Class.forName(p.name).newInstance();
+                ContentProvider cp = (ContentProvider) Class.forName(p.name, true, classLoader()).newInstance();
                 ProviderInfo info = new ProviderInfo();
                 info.name = p.name; info.authority = p.authorities; info.packageName = Native.packageName(); info.exported = p.exported; info.metaData = p.metaData; info.grantUriPermissions = p.grantUriPermissions;
                 info.applicationInfo = app.getApplicationInfo();
@@ -96,7 +96,7 @@ public final class AppRunner {
     }
     static Activity launch(String cls, Intent intent, Activity caller, int request, Manifest.Component info) throws Exception {
         Activity prev = top();
-        Activity a = (Activity) Class.forName(cls).newInstance();
+        Activity a = (Activity) Class.forName(cls, true, classLoader()).newInstance();
         ContextImpl base = ContextImpl.forActivity();
         a.huskAttach(base, sApp, intent, info, caller, request);
         if (prev != null && prev.isResumedHusk()) prev.huskPause();

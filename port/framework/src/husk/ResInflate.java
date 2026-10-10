@@ -286,12 +286,12 @@ public final class ResInflate {
             // <drawable class="..."> or a custom tag
             String cls = set.getAttributeValue(null, "class");
             skip(p);
-            if (cls != null) return (Drawable) Class.forName(cls).newInstance();
+            if (cls != null) return (Drawable) Class.forName(cls, true, husk.AppRunner.classLoader()).newInstance();
             return null;
         }
         default:
             if (name.indexOf('.') > 0) {
-                Drawable d = (Drawable) Class.forName(name).newInstance();
+                Drawable d = (Drawable) Class.forName(name, true, husk.AppRunner.classLoader()).newInstance();
                 d.inflate(r, p, set, t);
                 return d;
             }

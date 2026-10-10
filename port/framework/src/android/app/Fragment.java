@@ -26,7 +26,7 @@ public class Fragment implements android.content.ComponentCallbacks2, View.OnCre
     public Fragment() {}
     public static Fragment instantiate(Context c, String name) { return instantiate(c, name, null); }
     public static Fragment instantiate(Context c, String name, Bundle args) {
-        try { Fragment f = (Fragment) Class.forName(name).newInstance(); if (args != null) f.setArguments(args); return f; }
+        try { Fragment f = (Fragment) Class.forName(name, true, husk.AppRunner.classLoader()).newInstance(); if (args != null) f.setArguments(args); return f; }
         catch (Exception e) { throw new InstantiationException("Unable to instantiate fragment " + name, e); }
     }
     public final boolean equals(Object o) { return super.equals(o); }

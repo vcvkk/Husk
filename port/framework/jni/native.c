@@ -379,11 +379,22 @@ static const JNINativeMethod k_native[] = {
     { "uptimeNanos", "()J", (void *)N_uptimeNanos },
 };
 
+/* husk.Sensors: none yet (CoreMotion comes later) */
+static jboolean S_available(JNIEnv *env, jclass c, jint type) { (void)env; (void)c; (void)type; return JNI_FALSE; }
+static void S_start(JNIEnv *env, jclass c, jint type, jint us) { (void)env; (void)c; (void)type; (void)us; }
+static void S_stop(JNIEnv *env, jclass c, jint type) { (void)env; (void)c; (void)type; }
+static jlong S_read(JNIEnv *env, jclass c, jint type, jfloatArray v) { (void)env; (void)c; (void)type; (void)v; return 0; }
+static const JNINativeMethod k_sensors[] = {
+    { "available", "(I)Z", (void *)S_available }, { "start", "(II)V", (void *)S_start },
+    { "stop", "(I)V", (void *)S_stop }, { "read", "(I[F)J", (void *)S_read },
+};
+
 bool husk_register_gfx(JNIEnv *env);   /* gfx_jni.c, from gen-jni.py */
 
 bool husk_framework_register(JNIEnv *env)
 {
     bool ok = shim_register(env, "husk/Native", k_native, (int)(sizeof k_native / sizeof *k_native));
+    ok &= shim_register(env, "husk/Sensors", k_sensors, (int)(sizeof k_sensors / sizeof *k_sensors));
     return husk_register_gfx(env) && ok;
 }
 
