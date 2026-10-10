@@ -67,11 +67,17 @@ building `dex2oat`, compiling APKs, converting oat files.
   arm64 systems no process gets memory there (a 4 GiB `__PAGEZERO` the
   kernel insists on; `tools/low4g-probe.c`). Patch 0008 moves the heap to the
   4 GiB window from 32 GiB, on every system: a reference stays 32 bits, the
-  address is `0x800000000 | reference`, one `orr` in compiled code. Done: the
-  runtime, the interpreter, the arm64 compiler and entrypoints (tested on
-  Linux x86_64 with the interpreter; the compiled path awaits the arm64
-  Linux runner). Next: boot images in the window, with the boot oat files'
-  code mapped beside them (their code reaches image objects PC-relatively).
+  address is `0x800000000 | reference`, one `orr` in compiled code. Done and
+  tested on the arm64 Linux runner: tests/dvm passes both in the interpreter
+  and with a boot image and everything compiled ahead of time for arm64. What
+  the compiled path needed beyond the decode: 64-bit address arithmetic
+  (arrays, vector loops, the card table), null tests on a reference's W view
+  (its decoded X view is never 0), the thread's 64-bit peer and exception
+  pointers in full, and RosAlloc's fast path clearing the lock word (a free
+  slot's next pointer overlaps the header). `tools/arm64-w32base.py` scans
+  disassembled oat code for the first two kinds. Next: the same on Darwin,
+  with the boot oat files' code mapped beside the image (their code reaches
+  image objects PC-relatively).
 - **16 KiB pages everywhere** (patch 0003): what Linux's dex2oat lays out is
   what Darwin maps; the tests pass on Linux with it.
 - **Not started: the framework's native half on UIKit/Metal.**
