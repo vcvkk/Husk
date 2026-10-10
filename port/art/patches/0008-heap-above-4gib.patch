@@ -1553,6 +1553,29 @@ index 676bceb7..39216254 100644
          callback(o, callback_context);
          break;
        }
+diff --git a/art/runtime/native/java_lang_VMClassLoader.cc b/art/runtime/native/java_lang_VMClassLoader.cc
+index 11e02a2c..7d73d3ad 100644
+--- a/art/runtime/native/java_lang_VMClassLoader.cc
++++ b/art/runtime/native/java_lang_VMClassLoader.cc
+@@ -143,7 +143,17 @@ static jobjectArray VMClassLoader_getBootClassPathEntries(JNIEnv* env, jclass) {
+     const DexFile* dex_file = path[i];
+ 
+     // For multidex locations, e.g., x.jar!classes2.dex, we want to look into x.jar.
+-    const std::string location(DexFileLoader::GetBaseLocation(dex_file->GetLocation()));
++    std::string location(DexFileLoader::GetBaseLocation(dex_file->GetLocation()));
++    // A boot image made elsewhere names its jars as they were there (-Xbootclasspath-locations):
++    // the resources are read from the files they are here (-Xbootclasspath).
++    const std::vector<std::string>& locations = Runtime::Current()->GetBootClassPathLocations();
++    const std::vector<std::string>& files = Runtime::Current()->GetBootClassPath();
++    for (size_t k = 0; k < locations.size() && k < files.size(); ++k) {
++      if (locations[k] == location) {
++        location = files[k];
++        break;
++      }
++    }
+ 
+     ScopedLocalRef<jstring> javaPath(env, env->NewStringUTF(location.c_str()));
+     if (javaPath.get() == nullptr) {
 diff --git a/art/runtime/oat_file.cc b/art/runtime/oat_file.cc
 index 05015e37..183ddf81 100644
 --- a/art/runtime/oat_file.cc
