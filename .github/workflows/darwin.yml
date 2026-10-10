@@ -1,0 +1,34 @@
+name: oat2macho on Darwin
+
+# dyld is the judge of a Mach-O file. Convert the arm64 oat fixtures, sign them
+# as an app would, load them on Apple Silicon and check what ART relies on:
+# dlsym of the oat symbols, the oat magic, r-x code and rw- data pages.
+
+on:
+  push:
+    branches: [husk-port]
+    paths: ['tools/oat2macho.c', 'tools/oat-dlopen-test.c', 'tests/oat2macho/**', '.github/workflows/darwin.yml']
+  workflow_dispatch:
+
+jobs:
+  dlopen:
+    runs-on: macos-14
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the tools
+        run: |
+          mkdir -p build/dylibs
+          clang -std=c11 -O1 -Wall -Wextra tools/oat2macho.c -o build/oat2macho
+          clang -O1 -Wall tools/oat-dlopen-test.c -o build/oat-dlopen-test
+      - name: Convert and sign
+        run: |
+          for f in tests/oat2macho/*.oat; do
+            out="build/dylibs/$(basename "$f" .oat).dylib"
+            build/oat2macho --macos "$f" "$out"
+            codesign -s - -f "$out"
+          done
+          codesign -v --strict build/dylibs/*.dylib
+          otool -l build/dylibs/Hello.arm64.dylib | head -60
+      - name: dlopen
+        run: build/oat-dlopen-test build/dylibs/*.dylib

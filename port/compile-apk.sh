@@ -22,7 +22,7 @@ FILTER="${FILTER:-speed}"
 
 # the class library dalvikvm uses, where art_standalone installs it
 LIB="$(dirname "$(readlink -f "$(command -v "$DEX2OAT")")")/../lib"
-JARS="$(ls -d "$LIB"/*/java/dex/art 2>/dev/null | head -1)"
+JARS="$(realpath "$(ls -d "$LIB"/*/java/dex/art 2>/dev/null | head -1)")"
 [ -d "$JARS" ] || { echo "no installed class library under $LIB"; exit 1; }
 BCP=""
 for j in core-oj core-libart okhttp bouncycastle apache-xml wolfssljni; do
