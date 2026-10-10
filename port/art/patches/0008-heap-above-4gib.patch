@@ -254,6 +254,21 @@ index 0eab49f2..3524d795 100644
    }
  }
  
+diff --git a/art/dex2oat/dex2oat.cc b/art/dex2oat/dex2oat.cc
+index 9e3beaf1..1c7a5721 100644
+--- a/art/dex2oat/dex2oat.cc
++++ b/art/dex2oat/dex2oat.cc
+@@ -811,6 +811,10 @@ class Dex2Oat final {
+     if (end == option.c_str() || *end != '\0') {
+       Usage("Failed to parse hexadecimal value for option %s", option.data());
+     }
++    // The image goes in the heap window (libartbase/base/globals.h): --base is an offset in it.
++    if (image_base_ != 0u && image_base_ < kHeapWindowSize) {
++      image_base_ += kHeapBase;
++    }
+   }
+ 
+   bool VerifyProfileData() {
 diff --git a/art/libartbase/base/globals.h b/art/libartbase/base/globals.h
 index 618a7069..837c2d0b 100644
 --- a/art/libartbase/base/globals.h
@@ -697,6 +712,45 @@ index f6cf2d77..efd0b4bc 100644
    }
  
   private:
+diff --git a/art/runtime/gc/collector/concurrent_copying-inl.h b/art/runtime/gc/collector/concurrent_copying-inl.h
+index 2de79107..dc99d13c 100644
+--- a/art/runtime/gc/collector/concurrent_copying-inl.h
++++ b/art/runtime/gc/collector/concurrent_copying-inl.h
+@@ -228,7 +228,7 @@ inline mirror::Object* ConcurrentCopying::GetFwdPtr(mirror::Object* from_ref) {
+   DCHECK(region_space_->IsInFromSpace(from_ref));
+   LockWord lw = from_ref->GetLockWord(false);
+   if (lw.GetState() == LockWord::kForwardingAddress) {
+-    mirror::Object* fwd_ptr = reinterpret_cast<mirror::Object*>(lw.ForwardingAddress());
++    mirror::Object* fwd_ptr = mirror::ReferenceAsPointer(lw.ForwardingAddress());
+     DCHECK(fwd_ptr != nullptr);
+     return fwd_ptr;
+   } else {
+diff --git a/art/runtime/gc/collector/concurrent_copying.cc b/art/runtime/gc/collector/concurrent_copying.cc
+index 9a21ce8a..c95da772 100644
+--- a/art/runtime/gc/collector/concurrent_copying.cc
++++ b/art/runtime/gc/collector/concurrent_copying.cc
+@@ -3423,7 +3423,7 @@ mirror::Object* ConcurrentCopying::Copy(Thread* const self,
+ 
+       // Get the winner's forward ptr.
+       mirror::Object* lost_fwd_ptr = to_ref;
+-      to_ref = reinterpret_cast<mirror::Object*>(old_lock_word.ForwardingAddress());
++      to_ref = mirror::ReferenceAsPointer(old_lock_word.ForwardingAddress());
+       CHECK(to_ref != nullptr);
+       CHECK_NE(to_ref, lost_fwd_ptr);
+       CHECK(region_space_->IsInToSpace(to_ref) || heap_->non_moving_space_->HasAddress(to_ref))
+diff --git a/art/runtime/gc/collector/semi_space-inl.h b/art/runtime/gc/collector/semi_space-inl.h
+index 7db5d2ca..6aa74b39 100644
+--- a/art/runtime/gc/collector/semi_space-inl.h
++++ b/art/runtime/gc/collector/semi_space-inl.h
+@@ -32,7 +32,7 @@ inline mirror::Object* SemiSpace::GetForwardingAddressInFromSpace(mirror::Object
+   if (lock_word.GetState() != LockWord::kForwardingAddress) {
+     return nullptr;
+   }
+-  return reinterpret_cast<mirror::Object*>(lock_word.ForwardingAddress());
++  return mirror::ReferenceAsPointer(lock_word.ForwardingAddress());  // heap above 4 GiB
+ }
+ 
+ // Used to mark and copy objects. Any newly-marked objects who are in the from space Get moved to
 diff --git a/art/runtime/gc/heap.cc b/art/runtime/gc/heap.cc
 index ff53f789..60edd620 100644
 --- a/art/runtime/gc/heap.cc
@@ -739,6 +793,31 @@ index ff53f789..60edd620 100644
    CHECK(card_table_.get() != nullptr) << "Failed to create card table";
    if (foreground_collector_type_ == kCollectorTypeCC && kUseTableLookupReadBarrier) {
      rb_table_.reset(new accounting::ReadBarrierTable());
+diff --git a/art/runtime/gc/space/image_space.cc b/art/runtime/gc/space/image_space.cc
+index 49678373..de3346b6 100644
+--- a/art/runtime/gc/space/image_space.cc
++++ b/art/runtime/gc/space/image_space.cc
+@@ -1552,7 +1552,10 @@ class ImageSpace::BootImageLoader {
+     template <typename T>
+     ALWAYS_INLINE T* operator()(T* src) const {
+       DCHECK(src != nullptr);
+-      return reinterpret_cast32<T*>(reinterpret_cast32<uint32_t>(src) + diff_);
++      // The boot image, its native data and its oat file are in the heap window
++      // (libartbase/base/globals.h): move the low 32 bits, keep the window's.
++      return reinterpret_cast<T*>(ImageHeader::WindowAddress(
++          static_cast<uint32_t>(reinterpret_cast<uintptr_t>(src)) + diff_));
+     }
+ 
+    private:
+@@ -1875,7 +1878,7 @@ class ImageSpace::BootImageLoader {
+     uint32_t addr = relocate_ ? ART_BASE_ADDRESS + ChooseRelocationOffsetDelta() : image_start;
+     *image_reservation =
+         MemMap::MapAnonymous("Boot image reservation",
+-                             reinterpret_cast32<uint8_t*>(addr),
++                             ImageHeader::WindowAddress(addr),  // in the heap window
+                              total_size,
+                              PROT_NONE,
+                              /*low_4gb=*/ true,
 diff --git a/art/runtime/gc/space/space.cc b/art/runtime/gc/space/space.cc
 index e7961eb2..3a4cf28c 100644
 --- a/art/runtime/gc/space/space.cc
@@ -760,6 +839,77 @@ index e7961eb2..3a4cf28c 100644
                                                             capacity));
    CHECK(mark_bitmap_.get() != nullptr);
  }
+diff --git a/art/runtime/image-inl.h b/art/runtime/image-inl.h
+index 0404e99b..d992b89a 100644
+--- a/art/runtime/image-inl.h
++++ b/art/runtime/image-inl.h
+@@ -41,7 +41,7 @@ inline ObjPtr<mirror::ObjectArray<mirror::Object>> ImageHeader::GetImageRoots()
+   // rather than image_roots_ because it won't move (asserted below)
+   // and it's a const member.
+   mirror::ObjectArray<mirror::Object>* image_roots =
+-      reinterpret_cast<mirror::ObjectArray<mirror::Object>*>(image_roots_);
++      reinterpret_cast<mirror::ObjectArray<mirror::Object>*>(WindowAddress(image_roots_));
+   mirror::ObjectArray<mirror::Object>* result =
+       ReadBarrier::BarrierForRoot<mirror::ObjectArray<mirror::Object>, kReadBarrierOption>(
+           &image_roots);
+diff --git a/art/runtime/image.cc b/art/runtime/image.cc
+index b6bb0b15..7a5e87c2 100644
+--- a/art/runtime/image.cc
++++ b/art/runtime/image.cc
+@@ -126,7 +126,8 @@ const char* ImageHeader::GetMagic() const {
+ 
+ ArtMethod* ImageHeader::GetImageMethod(ImageMethod index) const {
+   CHECK_LT(static_cast<size_t>(index), kImageMethodsCount);
+-  return reinterpret_cast<ArtMethod*>(image_methods_[index]);
++  // Written as 32 bits (ImageWriter): an address in the heap window, with the image.
++  return reinterpret_cast<ArtMethod*>(WindowAddress(static_cast<uint32_t>(image_methods_[index])));
+ }
+ 
+ std::ostream& operator<<(std::ostream& os, const ImageSection& section) {
+diff --git a/art/runtime/image.h b/art/runtime/image.h
+index 88bba13e..8f57cd3a 100644
+--- a/art/runtime/image.h
++++ b/art/runtime/image.h
+@@ -150,8 +150,14 @@ class PACKED(8) ImageHeader {
+     return component_count_;
+   }
+ 
++  // An address the header holds as 32 bits: one in the heap window, where the image and its
++  // oat file are (libartbase/base/globals.h, kHeapBase).
++  static uint8_t* WindowAddress(uint32_t address) {
++    return address == 0u ? nullptr : reinterpret_cast<uint8_t*>(kHeapBase | address);
++  }
++
+   uint8_t* GetImageBegin() const {
+-    return reinterpret_cast<uint8_t*>(image_begin_);
++    return WindowAddress(image_begin_);
+   }
+ 
+   size_t GetImageSize() const {
+@@ -177,19 +183,19 @@ class PACKED(8) ImageHeader {
+   // The location that the oat file was expected to be when the image was created. The actual
+   // oat file may be at a different location for application images.
+   uint8_t* GetOatFileBegin() const {
+-    return reinterpret_cast<uint8_t*>(oat_file_begin_);
++    return WindowAddress(oat_file_begin_);
+   }
+ 
+   uint8_t* GetOatDataBegin() const {
+-    return reinterpret_cast<uint8_t*>(oat_data_begin_);
++    return WindowAddress(oat_data_begin_);
+   }
+ 
+   uint8_t* GetOatDataEnd() const {
+-    return reinterpret_cast<uint8_t*>(oat_data_end_);
++    return WindowAddress(oat_data_end_);
+   }
+ 
+   uint8_t* GetOatFileEnd() const {
+-    return reinterpret_cast<uint8_t*>(oat_file_end_);
++    return WindowAddress(oat_file_end_);
+   }
+ 
+   PointerSize GetPointerSize() const;
 diff --git a/art/runtime/interpreter/interpreter.cc b/art/runtime/interpreter/interpreter.cc
 index db116f5a..c7509b9b 100644
 --- a/art/runtime/interpreter/interpreter.cc
@@ -786,6 +936,23 @@ index db116f5a..c7509b9b 100644
  #if ART_USE_CXX_INTERPRETER
  static constexpr InterpreterImplKind kInterpreterImplKind = kSwitchImplKind;
  #else
+diff --git a/art/runtime/interpreter/interpreter_common.cc b/art/runtime/interpreter/interpreter_common.cc
+index 30c4b90e..e6042027 100644
+--- a/art/runtime/interpreter/interpreter_common.cc
++++ b/art/runtime/interpreter/interpreter_common.cc
+@@ -637,10 +637,10 @@ void SetStringInitValueToAllAliases(ShadowFrame* shadow_frame,
+   for (uint32_t i = 0, e = shadow_frame->NumberOfVRegs(); i < e; ++i) {
+     if (shadow_frame->GetVRegReference(i) == existing) {
+       DCHECK_EQ(shadow_frame->GetVRegReference(i),
+-                reinterpret_cast32<mirror::Object*>(shadow_frame->GetVReg(i)));
++                mirror::ReferenceAsPointer(shadow_frame->GetVReg(i)));
+       shadow_frame->SetVRegReference(i, result.GetL());
+       DCHECK_EQ(shadow_frame->GetVRegReference(i),
+-                reinterpret_cast32<mirror::Object*>(shadow_frame->GetVReg(i)));
++                mirror::ReferenceAsPointer(shadow_frame->GetVReg(i)));
+     }
+   }
+ }
 diff --git a/art/runtime/interpreter/mterp/mterp.cc b/art/runtime/interpreter/mterp/mterp.cc
 index 6a8f8649..fb0249ed 100644
 --- a/art/runtime/interpreter/mterp/mterp.cc
@@ -801,9 +968,27 @@ index 6a8f8649..fb0249ed 100644
        !runtime->IsAotCompiler() &&
        !Dbg::IsDebuggerActive() &&
 diff --git a/art/runtime/interpreter/unstarted_runtime.cc b/art/runtime/interpreter/unstarted_runtime.cc
-index 9b905eea..5c329ec9 100644
+index 9b905eea..b72a22f8 100644
 --- a/art/runtime/interpreter/unstarted_runtime.cc
 +++ b/art/runtime/interpreter/unstarted_runtime.cc
+@@ -1710,7 +1710,7 @@ void UnstartedRuntime::UnstartedJNIVMRuntimeNewUnpaddedArray(
+     JValue* result) {
+   int32_t length = args[1];
+   DCHECK_GE(length, 0);
+-  ObjPtr<mirror::Object> element_class = reinterpret_cast32<mirror::Object*>(args[0])->AsClass();
++  ObjPtr<mirror::Object> element_class = mirror::ReferenceAsPointer(args[0])->AsClass();
+   if (element_class == nullptr) {
+     AbortTransactionOrFail(self, "VMRuntime.newUnpaddedArray with null element_class.");
+     return;
+@@ -1813,7 +1813,7 @@ void UnstartedRuntime::UnstartedJNIStringCompareTo(Thread* self,
+                                                    mirror::Object* receiver,
+                                                    uint32_t* args,
+                                                    JValue* result) {
+-  ObjPtr<mirror::Object> rhs = reinterpret_cast32<mirror::Object*>(args[0]);
++  ObjPtr<mirror::Object> rhs = mirror::ReferenceAsPointer(args[0]);
+   if (rhs == nullptr) {
+     AbortTransactionOrFail(self, "String.compareTo with null object.");
+     return;
 @@ -1831,8 +1831,8 @@ void UnstartedRuntime::UnstartedJNIArrayCreateMultiArray(
      Thread* self, ArtMethod* method ATTRIBUTE_UNUSED, mirror::Object* receiver ATTRIBUTE_UNUSED,
      uint32_t* args, JValue* result) {
@@ -824,16 +1009,70 @@ index 9b905eea..5c329ec9 100644
    Runtime* runtime = Runtime::Current();
    ClassLinker* class_linker = runtime->GetClassLinker();
    ObjPtr<mirror::Class> array_class = class_linker->FindArrayClass(self, element_class);
+@@ -1881,7 +1881,7 @@ void UnstartedRuntime::UnstartedJNIUnsafeCompareAndSwapInt(
+     mirror::Object* receiver ATTRIBUTE_UNUSED,
+     uint32_t* args,
+     JValue* result) {
+-  ObjPtr<mirror::Object> obj = reinterpret_cast32<mirror::Object*>(args[0]);
++  ObjPtr<mirror::Object> obj = mirror::ReferenceAsPointer(args[0]);
+   if (obj == nullptr) {
+     AbortTransactionOrFail(self, "Unsafe.compareAndSwapInt with null object.");
+     return;
+@@ -1911,7 +1911,7 @@ void UnstartedRuntime::UnstartedJNIUnsafeGetIntVolatile(Thread* self,
+                                                         mirror::Object* receiver ATTRIBUTE_UNUSED,
+                                                         uint32_t* args,
+                                                         JValue* result) {
+-  ObjPtr<mirror::Object> obj = reinterpret_cast32<mirror::Object*>(args[0]);
++  ObjPtr<mirror::Object> obj = mirror::ReferenceAsPointer(args[0]);
+   if (obj == nullptr) {
+     AbortTransactionOrFail(self, "Unsafe.compareAndSwapIntVolatile with null object.");
+     return;
+@@ -1926,13 +1926,13 @@ void UnstartedRuntime::UnstartedJNIUnsafePutObject(Thread* self,
+                                                    mirror::Object* receiver ATTRIBUTE_UNUSED,
+                                                    uint32_t* args,
+                                                    JValue* result ATTRIBUTE_UNUSED) {
+-  ObjPtr<mirror::Object> obj = reinterpret_cast32<mirror::Object*>(args[0]);
++  ObjPtr<mirror::Object> obj = mirror::ReferenceAsPointer(args[0]);
+   if (obj == nullptr) {
+     AbortTransactionOrFail(self, "Unsafe.putObject with null object.");
+     return;
+   }
+   jlong offset = (static_cast<uint64_t>(args[2]) << 32) | args[1];
+-  ObjPtr<mirror::Object> newValue = reinterpret_cast32<mirror::Object*>(args[3]);
++  ObjPtr<mirror::Object> newValue = mirror::ReferenceAsPointer(args[3]);
+   if (Runtime::Current()->IsActiveTransaction()) {
+     obj->SetFieldObject<true>(MemberOffset(offset), newValue);
+   } else {
+@@ -1946,7 +1946,7 @@ void UnstartedRuntime::UnstartedJNIUnsafeGetArrayBaseOffsetForComponentType(
+     mirror::Object* receiver ATTRIBUTE_UNUSED,
+     uint32_t* args,
+     JValue* result) {
+-  ObjPtr<mirror::Object> component = reinterpret_cast32<mirror::Object*>(args[0]);
++  ObjPtr<mirror::Object> component = mirror::ReferenceAsPointer(args[0]);
+   if (component == nullptr) {
+     AbortTransactionOrFail(self, "Unsafe.getArrayBaseOffsetForComponentType with null component.");
+     return;
+@@ -1961,7 +1961,7 @@ void UnstartedRuntime::UnstartedJNIUnsafeGetArrayIndexScaleForComponentType(
+     mirror::Object* receiver ATTRIBUTE_UNUSED,
+     uint32_t* args,
+     JValue* result) {
+-  ObjPtr<mirror::Object> component = reinterpret_cast32<mirror::Object*>(args[0]);
++  ObjPtr<mirror::Object> component = mirror::ReferenceAsPointer(args[0]);
+   if (component == nullptr) {
+     AbortTransactionOrFail(self, "Unsafe.getArrayIndexScaleForComponentType with null component.");
+     return;
 diff --git a/art/runtime/lock_word-inl.h b/art/runtime/lock_word-inl.h
-index 4a2a2934..1d5a261f 100644
+index 4a2a2934..61175fb5 100644
 --- a/art/runtime/lock_word-inl.h
 +++ b/art/runtime/lock_word-inl.h
-@@ -43,7 +43,7 @@ inline Monitor* LockWord::FatLockMonitor() const {
+@@ -43,7 +43,9 @@ inline Monitor* LockWord::FatLockMonitor() const {
  
  inline size_t LockWord::ForwardingAddress() const {
    DCHECK_EQ(GetState(), kForwardingAddress);
 -  return value_ << kForwardingAddressShift;
-+  return kHeapBase | static_cast<uint32_t>(value_ << kForwardingAddressShift);
++  // An object's address in the heap window is kHeapBase | this (libartbase/base/globals.h);
++  // dex2oat's ImageWriter keeps offsets here instead.
++  return static_cast<uint32_t>(value_ << kForwardingAddressShift);
  }
  
  inline LockWord::LockWord() : value_(0) {

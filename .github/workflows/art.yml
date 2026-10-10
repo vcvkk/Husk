@@ -40,10 +40,8 @@ jobs:
       - name: Tests on ART, interpreter (heap above 4 GiB, patch 0008)
         run: OUT=build/art-tests-int DALVIKVM_FLAGS="-Xint -Xnoimage-dex2oat" port/art/test.sh
 
-      - name: Tests on ART, the programs compiled ahead of time for arm64
-        # no boot image yet (images with the heap above 4 GiB are next): the class library
-        # runs in the interpreter, the tests' own code is compiled
-        run: DALVIKVM_FLAGS="-Xnoimage-dex2oat" port/art/test.sh
+      - name: Tests on ART, a boot image and everything compiled ahead of time for arm64
+        run: port/art/test.sh
 
       - name: Every oat file converts for iOS
         run: |
