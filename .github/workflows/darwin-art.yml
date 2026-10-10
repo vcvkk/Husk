@@ -214,6 +214,26 @@ jobs:
           ls -la $H/oat/arm64
       - name: Pack the boot image
         run: tar -czf build/boot.tgz -C build boot/jars boot/arm64 boot/boot.classpath boot/hello
+      # the same for iOS: the code as iOS dylibs, Hello compiled with a relative dex location
+      # (ART resolves it against where the app is installed)
+      - name: Boot image and Hello for iOS
+        run: |
+          rm -rf build/boot-ios; mkdir -p build/boot-ios/hello/oat/arm64
+          cp -R build/boot/jars build/boot/arm64 build/boot/boot.classpath build/boot-ios/
+          for f in build/boot-ios/arm64/*.oat; do build/boot/oat2macho --ios "$f" "$f.dylib"; done
+          B="$PWD/build/boot"; H=build/boot-ios/hello
+          cp build/boot/hello/classes.dex $H/
+          bcp=$(tr ':' '\n' < "$B/boot.classpath" | sed "s|^/boot/|$B/jars/|" | paste -sd: -)
+          ANDROID_DATA="$B/android-data" dex2oat --runtime-arg -Xbootclasspath:"$bcp" \
+            --runtime-arg -Xbootclasspath-locations:"$(cat "$B/boot.classpath")" \
+            --boot-image="$B/boot.art" --instruction-set=arm64 --class-loader-context='PCL[]' \
+            --dex-file=$H/classes.dex --dex-location=classes.dex --oat-file=$H/oat/arm64/classes.odex
+          build/boot/oat2macho --ios $H/oat/arm64/classes.odex $H/oat/arm64/classes.odex.dylib
+          tar -czf build/boot-ios.tgz -C build boot-ios
+      - uses: actions/upload-artifact@v4
+        with:
+          name: boot-image-ios
+          path: build/boot-ios.tgz
       - uses: actions/upload-artifact@v4
         with:
           name: boot-image
@@ -338,6 +358,16 @@ jobs:
         with:
           path: ~/Library/Caches/ccache
           key: ccache-ios-${{ github.sha }}
+      - name: Pack the iOS runtime
+        run: |
+          mkdir -p build/ios-runtime/include
+          cp -R build/ios/lib build/ios-runtime/
+          cp -R build/art_standalone/libnativehelper/include_jni build/ios-runtime/include/
+          tar -czf build/ios-runtime.tgz -C build ios-runtime
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-runtime
+          path: build/ios-runtime.tgz
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -346,3 +376,32 @@ jobs:
             build/ios/ninja.log
             build/ios/errors.txt
           if-no-files-found: ignore
+
+  # Hello as an iOS app: unsigned for a sideloading tool to sign (Feather and the like)
+  ipa:
+    needs: [ios, boot]
+    runs-on: macos-14
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ios-runtime
+          path: build
+      - uses: actions/download-artifact@v4
+        with:
+          name: boot-image-ios
+          path: build
+      - name: Pack
+        run: |
+          tar -xzf build/ios-runtime.tgz -C build
+          tar -xzf build/boot-ios.tgz -C build
+          mkdir -p build/art-src/libnativehelper
+          cp -R build/ios-runtime/include/include_jni build/art-src/libnativehelper/
+          port/ios/pack-ipa.sh --runtime build/ios-runtime --boot build/boot-ios --app build/boot-ios/hello \
+            --main Hello --id dev.huskport.hello --name HuskHello --art-src build/art-src --out build/HuskHello.ipa
+          unzip -l build/HuskHello.ipa | tail -40
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HuskHello-ipa
+          path: build/HuskHello.ipa
