@@ -19,7 +19,16 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Packages
-        run: brew install ninja lz4 xz icu4c openssl@3 epoll-shim || true
+        run: brew install ninja lz4 xz icu4c openssl@3 epoll-shim ccache || true
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+
+      # compiled objects from earlier runs: a round changes a few files, not 540
+      - uses: actions/cache/restore@v4
+        with:
+          path: ~/Library/Caches/ccache
+          key: ccache-${{ github.sha }}
+          restore-keys: ccache-
 
       - name: ART sources with husk-port's patches
         run: |
@@ -39,25 +48,43 @@ jobs:
           p=$(brew --prefix epoll-shim); inc+=(--include "$p/include/libepoll-shim"); lib+=(--lib "$p/lib" --ldflag=-lepoll-shim)
           clang -target arm64-apple-macos11.0 -dynamiclib -install_name @rpath/libdl_bio.dylib \
             port/art/darwin/dl_bio.c -o build/darwin/lib/libdl_bio.dylib
-          python3 port/art/darwin/gen-ninja.py --src build/art_standalone --out build/darwin \
+          python3 port/art/darwin/gen-ninja.py --launcher ccache --src build/art_standalone --out build/darwin \
             "${inc[@]}" "${lib[@]}" --lib "$PWD/build/darwin/lib" \
             --extra-src libart:port/art/darwin/libart_darwin.cc port/art/darwin/modules.json
 
       - name: Build (keep going)
+        env:
+          CCACHE_SLOPPINESS: include_file_mtime,include_file_ctime,time_macros
         run: |
           set +e
+          export CCACHE_DIR=~/Library/Caches/ccache
           ninja -C build/darwin -k 0 > build/darwin/ninja.log 2>&1
           status=$?
           echo "ninja exit $status"
+          ccache -s | head -20
           python3 port/art/darwin/errors.py build/darwin/ninja.log | tee build/darwin/errors.txt
           exit $status
+
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: ~/Library/Caches/ccache
+          key: ccache-${{ github.sha }}
 
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
 
+      # the jars depend only on ART's sources and these scripts
+      - uses: actions/cache/restore@v4
+        id: jars
+        with:
+          path: build/darwin/java
+          key: jars-${{ hashFiles('port/art/build.sh', 'port/art/darwin/javalibs.sh', 'port/art/dx-via-d8', 'port/art/patches/*') }}
+
       - name: Class library (Java)
+        if: steps.jars.outputs.cache-hit != 'true'
         run: |
           v=$(sed -n 's/^R8_VERSION=//p' port/art/build.sh)
           export R8_JAR="$PWD/build/r8.jar" DX="$PWD/port/art/dx-via-d8"
@@ -70,9 +97,17 @@ jobs:
           ln -sfn ../../../lib build/darwin/java/dex/art/natives
           ls -la build/darwin/java/dex/art
 
+      - uses: actions/cache/save@v4
+        if: steps.jars.outputs.cache-hit != 'true'
+        with:
+          path: build/darwin/java
+          key: ${{ steps.jars.outputs.cache-primary-key }}
+
       - name: Hello on dalvikvm (interpreter, no boot image)
         run: |
           mkdir -p build/hello/cls build/android-data/dalvik-cache
+          v=$(sed -n 's/^R8_VERSION=//p' port/art/build.sh)
+          [ -f build/r8.jar ] || curl -fsSL -o build/r8.jar "https://dl.google.com/android/maven2/com/android/tools/r8/$v/r8-$v.jar"
           javac --release 8 -d build/hello/cls tests/dvm/Hello.java
           java -cp build/r8.jar com.android.tools.r8.D8 --min-api 26 --output build/hello build/hello/cls/*.class
           export ANDROID_DATA="$PWD/build/android-data"
@@ -83,6 +118,13 @@ jobs:
           echo "dalvikvm exit $status"
           cat build/darwin/hello.out
           tail -60 build/darwin/hello.err
+          if [ $status -gt 128 ]; then
+            # killed by a signal: where, from lldb
+            (cd build/hello && lldb --batch -o run -k 'thread backtrace all' -k 'register read' -k quit -- \
+              ../darwin/bin/dalvikvm -Xusejit:false -Xnoimage-dex2oat -Xss8m -cp classes.dex Hello) \
+              > build/darwin/hello.lldb 2>&1
+            tail -150 build/darwin/hello.lldb
+          fi
           exit $status
 
       - uses: actions/upload-artifact@v4
@@ -96,4 +138,5 @@ jobs:
             build/darwin/javalibs.log
             build/darwin/hello.out
             build/darwin/hello.err
+            build/darwin/hello.lldb
           if-no-files-found: ignore
