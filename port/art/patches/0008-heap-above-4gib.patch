@@ -1419,6 +1419,29 @@ index 9b905eea..b72a22f8 100644
    if (component == nullptr) {
      AbortTransactionOrFail(self, "Unsafe.getArrayIndexScaleForComponentType with null component.");
      return;
+diff --git a/art/runtime/jni/jni_internal.cc b/art/runtime/jni/jni_internal.cc
+index da98aa45..30983d00 100644
+--- a/art/runtime/jni/jni_internal.cc
++++ b/art/runtime/jni/jni_internal.cc
+@@ -366,10 +366,18 @@ class CodeRangeCache final {
+   bool libnativehelper_loaded_;
+   bool libopenjdk_loaded_;
+ 
++#ifdef __APPLE__
++  // Darwin's names for them (port/art/darwin/gen-ninja.py)
++  static constexpr std::string_view kLibjavacore = "libjavacore.dylib";
++  static constexpr std::string_view kLibnativehelper = "libnativehelper.dylib";
++  static constexpr std::string_view kLibopenjdk = art::kIsDebugBuild ? "libopenjdkd.dylib"
++                                                                     : "libopenjdk.dylib";
++#else
+   static constexpr std::string_view kLibjavacore = "libjavacore.so";
+   static constexpr std::string_view kLibnativehelper = "libnativehelper.so";
+   static constexpr std::string_view kLibopenjdk = art::kIsDebugBuild ? "libopenjdkd.so"
+                                                                      : "libopenjdk.so";
++#endif
+ 
+   DISALLOW_COPY_AND_ASSIGN(CodeRangeCache);
+ };
 diff --git a/art/runtime/lock_word-inl.h b/art/runtime/lock_word-inl.h
 index 4a2a2934..61175fb5 100644
 --- a/art/runtime/lock_word-inl.h
