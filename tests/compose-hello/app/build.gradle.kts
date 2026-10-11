@@ -30,6 +30,4 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
-    // a classic AlertDialog (AppCompat, Material Components), as DepCalc shows its update offer
-    implementation("com.google.android.material:material:1.12.0")
 }

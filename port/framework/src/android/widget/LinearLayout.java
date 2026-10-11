@@ -194,7 +194,7 @@ public class LinearLayout extends ViewGroup {
                     remainingWeightSum -= childWeight;
                     int childHeight;
                     if (mUseLargestChild && hm != MeasureSpec.EXACTLY) childHeight = largestChildHeight;
-                    else if (lp.height == 0 && hm == MeasureSpec.EXACTLY) childHeight = share;
+                    else if (lp.height == 0) childHeight = share;   // its own height is in the share already (consumedExcessSpace), as AOSP's
                     else childHeight = child.getMeasuredHeight() + share;
                     int chs = MeasureSpec.makeMeasureSpec(Math.max(0, childHeight), MeasureSpec.EXACTLY);
                     int cws = getChildMeasureSpec(ws, getPaddingLeft() + getPaddingRight() + lp.leftMargin + lp.rightMargin, lp.width);
@@ -331,7 +331,7 @@ public class LinearLayout extends ViewGroup {
                     remainingWeightSum -= childWeight;
                     int childWidth;
                     if (mUseLargestChild && wm != MeasureSpec.EXACTLY) childWidth = largestChildWidth;
-                    else if (lp.width == 0 && wm == MeasureSpec.EXACTLY) childWidth = share;
+                    else if (lp.width == 0) childWidth = share;   // as the vertical pass
                     else childWidth = child.getMeasuredWidth() + share;
                     int cws = MeasureSpec.makeMeasureSpec(Math.max(0, childWidth), MeasureSpec.EXACTLY);
                     int chs = getChildMeasureSpec(hs, getPaddingTop() + getPaddingBottom() + lp.topMargin + lp.bottomMargin, lp.height);
