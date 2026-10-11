@@ -391,6 +391,11 @@ typedef struct gcanvas {
     CGAffineTransform base;         /* the flip: Android's identity */
     int depth;                      /* Android's save count - 1 */
     uint64_t layer_bits[4];         /* which save levels are layers (end a transparency layer on restore) */
+    /* for blend_fill: whether the clip may be other than rectangles (a path, a difference, a rotated rect), as it was at each
+     * save level, and how many transparency layers are open (drawing then goes to CoreGraphics' layer, not the bitmap) */
+    bool complex;
+    uint64_t complex_bits[4];
+    int layers;
 } gcanvas;
 
 static gcanvas *cv_new(gbitmap *b)
@@ -424,7 +429,9 @@ static int cv_save_mode(gcanvas *v, bool layer, float alpha, CGRect bounds, int 
     CGContextSaveGState(v->c);
     if (v->depth < 256) {
         uint64_t bit = 1ull << (v->depth & 63);
+        if (v->complex) v->complex_bits[v->depth >> 6] |= bit; else v->complex_bits[v->depth >> 6] &= ~bit;
         if (layer) {
+            v->layers++;
             v->layer_bits[v->depth >> 6] |= bit;
             CGContextSetAlpha(v->c, alpha);
             CGContextSetBlendMode(v->c, blend_of(mode));
@@ -440,8 +447,85 @@ static void cv_restore(gcanvas *v)
 {
     if (v->depth <= 0) return;
     v->depth--;
-    if (v->depth < 256 && (v->layer_bits[v->depth >> 6] & (1ull << (v->depth & 63)))) CGContextEndTransparencyLayer(v->c);
+    if (v->depth < 256) {
+        uint64_t bit = 1ull << (v->depth & 63);
+        if (v->layer_bits[v->depth >> 6] & bit) { CGContextEndTransparencyLayer(v->c); v->layers--; }
+        v->complex = (v->complex_bits[v->depth >> 6] & bit) != 0;
+    }
     CGContextRestoreGState(v->c);
+}
+
+/* ---- blend_fill: a colour over a rectangle of the bitmap itself. CoreGraphics blends a translucent fill a pixel at a time
+ * (a screen's worth takes it some 10 ms, against 0.2 ms opaque); Compose draws its translucent backgrounds, scrims and
+ * state layers so, and a frame took tens of ms. Only where the result is the same as CoreGraphics': no transparency layer
+ * open, the clip rectangles, the transform a scale and a move. */
+static bool blend_ok(gcanvas *v, CGAffineTransform *m)
+{
+    if (v->layers || v->complex || v->depth >= 256) return false;
+    *m = CGContextGetCTM(v->c);
+    return fabs(m->b) < 1e-6 && fabs(m->c) < 1e-6;
+}
+/* source over: d = s + d * (255 - sa) / 255, s premultiplied in the bitmap's byte order (R G B A) */
+static inline void blend_run(uint32_t *p, int n, uint32_t s, uint32_t inv)
+{
+    for (int k = 0; k < n; k++) {
+        uint32_t d = p[k];
+        uint32_t rb = (d & 0x00FF00FFu) * inv + 0x00800080u, ag = ((d >> 8) & 0x00FF00FFu) * inv + 0x00800080u;
+        rb = ((rb + ((rb >> 8) & 0x00FF00FFu)) >> 8) & 0x00FF00FFu;
+        ag = (ag + ((ag >> 8) & 0x00FF00FFu)) & 0xFF00FF00u;
+        p[k] = (rb | ag) + s;
+    }
+}
+static inline uint32_t premul(uint32_t argb, float cover, uint32_t *inv)
+{
+    uint32_t a = (uint32_t)lrintf((float)(argb >> 24) * cover);
+    uint32_t r = ((argb >> 16) & 255) * a, g = ((argb >> 8) & 255) * a, b = (argb & 255) * a;
+    r = (r + 127) / 255; g = (g + 127) / 255; b = (b + 127) / 255;
+    *inv = 255 - a;
+    return r | g << 8 | b << 16 | a << 24;
+}
+/* the user-space rectangle r, cut to the clip, filled with argb (unpremultiplied); false where blend_ok says no */
+static bool blend_fill(gcanvas *v, CGRect r, uint32_t argb, bool aa)
+{
+    CGAffineTransform m;
+    if (!blend_ok(v, &m)) return false;
+    gbitmap *b = v->bm;
+    CGRect d = CGRectStandardize(CGRectApplyAffineTransform(CGRectStandardize(r), m));
+    CGRect clip = CGContextGetClipBoundingBox(v->c);
+    if (CGRectIsNull(clip)) return true;
+    d = CGRectIntersection(d, CGRectStandardize(CGRectApplyAffineTransform(clip, m)));
+    d = CGRectIntersection(d, CGRectMake(0, 0, b->w, b->h));
+    if (CGRectIsNull(d) || d.size.width <= 0 || d.size.height <= 0 || !(argb >> 24)) return true;
+    /* rows from the top, as the bitmap's memory has them (CoreGraphics' device space has y up) */
+    double x0 = d.origin.x, x1 = x0 + d.size.width, y0 = b->h - (d.origin.y + d.size.height), y1 = b->h - d.origin.y;
+    if (!aa) { x0 = ceil(x0 - 0.5); x1 = ceil(x1 - 0.5); y0 = ceil(y0 - 0.5); y1 = ceil(y1 - 0.5); }
+    int ix0 = (int)floor(x0), ix1 = (int)ceil(x1), iy0 = (int)floor(y0), iy1 = (int)ceil(y1);
+    if (ix0 < 0) ix0 = 0;
+    if (iy0 < 0) iy0 = 0;
+    if (ix1 > b->w) ix1 = b->w;
+    if (iy1 > b->h) iy1 = b->h;
+    if (ix0 >= ix1 || iy0 >= iy1) return true;
+    /* the edges' coverage: a partly covered first or last column or row blends with its share of the alpha */
+    float cl = (float)(fmin(ix0 + 1, x1) - fmax(ix0, x0)), cr = (float)(fmin(ix1, x1) - fmax(ix1 - 1, x0));
+    int fx0 = ix0, fx1 = ix1;               /* the fully covered columns */
+    bool le = false, re = false;            /* a partly covered first, last column */
+    if (ix1 - ix0 == 1) { if (cl < 0.999f) { le = true; fx0 = fx1 = ix0; } }
+    else {
+        if (cl < 0.999f) { le = true; fx0++; }
+        if (cr < 0.999f) { re = true; fx1--; }
+    }
+    uint32_t inv_full, s_full = premul(argb, 1, &inv_full);
+    for (int j = iy0; j < iy1; j++) {
+        float cy = (float)(fmin(j + 1, y1) - fmax(j, y0));
+        if (cy <= 0) continue;
+        uint32_t *row = (uint32_t *)(b->px + (size_t)j * b->stride);
+        uint32_t inv, sv;
+        if (cy >= 0.999f) { sv = s_full; inv = inv_full; } else sv = premul(argb, cy, &inv);
+        if (fx1 > fx0) blend_run(row + fx0, fx1 - fx0, sv, inv);
+        if (le) { uint32_t i2, s2 = premul(argb, cy * cl, &i2); blend_run(row + ix0, 1, s2, i2); }
+        if (re) { uint32_t i2, s2 = premul(argb, cy * cr, &i2); blend_run(row + ix1 - 1, 1, s2, i2); }
+    }
+    return true;
 }
 
 static CGBlendMode blend_of(int mode)
@@ -964,6 +1048,8 @@ NAT(G_cvClipRect)
     *ret = Ii(1);
     if (!v) return true;
     CGRect r = CGRectMake(a[1].f, a[2].f, a[3].f - a[1].f, a[4].f - a[2].f);
+    CGAffineTransform m = CGContextGetCTM(v->c);
+    if (a[5].i == 0 || fabs(m.b) > 1e-6 || fabs(m.c) > 1e-6) v->complex = true;
     if (a[5].i == 0) {
         CGRect all = CGContextGetClipBoundingBox(v->c);
         CGContextAddRect(v->c, CGRectInset(all, -1, -1));
@@ -981,6 +1067,7 @@ NAT(G_cvClipPath)
     *ret = Ii(1);
     if (!v || !f) return true;
     CGPathRef p = build_path(f, a[2].i);
+    v->complex = true;
     if (a[4].i == 0) {
         CGRect all = CGContextGetClipBoundingBox(v->c);
         CGContextAddRect(v->c, CGRectInset(all, -1, -1));
@@ -1014,9 +1101,10 @@ NAT(G_cvDrawColor)
     gcanvas *v = H(gcanvas, 0);
     if (!v) return true;
     CGContextRef c = v->c;
+    int mode = a[2].i;
+    if (mode == 3 && ((uint32_t)a[1].i >> 24) < 255 && blend_fill(v, CGContextGetClipBoundingBox(c), (uint32_t)a[1].i, false)) return true;
     CGContextSaveGState(c);
     CGRect all = CGContextGetClipBoundingBox(c);
-    int mode = a[2].i;
     if (mode == 0) CGContextClearRect(c, all);
     else {
         CGColorRef col = color_of((uint32_t)a[1].i, 1);
@@ -1041,6 +1129,7 @@ NAT(G_cvDrawRect)
     CGRect r = CGRectMake(a[1].f, a[2].f, a[3].f - a[1].f, a[4].f - a[2].f);
     const int32_t *p = paint_of(a[5].l);
     if (!a[6].j && p[P_STYLE] == 0 && p[P_CFMODE] < 0 && pf(p, P_SHRAD) <= 0 && p[P_XFER] == 3) {
+        if (((uint32_t)p[P_COLOR] >> 24) < 255 && blend_fill(v, r, (uint32_t)p[P_COLOR], (p[P_FLAGS] & PF_AA) != 0)) return true;
         /* the common case, without a path */
         CGContextSaveGState(v->c);
         CGColorRef cc = color_of((uint32_t)p[P_COLOR], 1);
