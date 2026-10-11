@@ -918,13 +918,13 @@ static bool blend_fill(gcanvas *v, CGRect r, uint32_t argb, bool aa)
  * (quick: an opaque fill of one channel), and Husk blends the colour through it (CoreGraphics' translucent blending is a
  * pixel at a time: Compose's shapes, Material's expressive polygons, ovals and strokes). Where blend_ok allows. */
 static uint8_t *g_mask; static size_t g_mask_cap;
-static void mask_blend(gcanvas *v, int dx0, int dy1, int W, int H, uint32_t argb);
-/* g_mask zeroed for W x H; false without memory */
+static void mask_blend(gcanvas *v, const uint8_t *mask, int dx0, int dy1, int W, int H, uint32_t argb);
+/* mask zeroed for W x H; false without memory */
 static bool mask_room(int W, int H)
 {
     size_t need = (size_t)W * H;
-    if (need > g_mask_cap) { free(g_mask); g_mask_cap = need + need / 4; g_mask = malloc(g_mask_cap); if (!g_mask) { g_mask_cap = 0; return false; } }
-    memset(g_mask, 0, need);
+    if (need > mask_cap) { free(mask); mask_cap = need + need / 4; mask = malloc(mask_cap); if (!mask) { mask_cap = 0; return false; } }
+    memset(mask, 0, need);
     return true;
 }
 static bool mask_draw(gcanvas *v, CGPathRef path, const int32_t *p, bool even_odd)
@@ -964,13 +964,55 @@ static bool mask_draw(gcanvas *v, CGPathRef path, const int32_t *p, bool even_od
     CGContextAddPath(mc, path);
     CGContextDrawPath(mc, style == 1 ? kCGPathStroke : style == 2 ? (even_odd ? kCGPathEOFillStroke : kCGPathFillStroke) : (even_odd ? kCGPathEOFill : kCGPathFill));
     CGContextRelease(mc);
-    mask_blend(v, dx0, dy1, W, H, argb);
+    mask_blend(v, g_mask, dx0, dy1, W, H, argb);
     return true;
 }
 /* argb blended through g_mask, W x H, over the bitmap from column dx0 and (device space) row dy1 down; and the clip's mask */
-static void mask_blend(gcanvas *v, int dx0, int dy1, int W, int H, uint32_t argb)
+static void mask_blend(gcanvas *v, const uint8_t *mask, int dx0, int dy1, int W, int H, uint32_t argb)
 {
     gbitmap *b = v->bm;
+    /* the part inside the clip's bounds and the bitmap: a cached mask (text_cached) comes whole */
+    {
+        int top0 = b->h - dy1, x0 = dx0, y0 = top0, x1 = dx0 + W, y1 = top0 + H;
+        CGRect cl = clip_user(v);
+        if (CGRectIsNull(cl)) return;
+        CGRect cd = CGRectStandardize(CGRectApplyAffineTransform(cl, CGContextGetCTM(v->c)));
+        int cx0 = (int)floor(cd.origin.x), cx1 = (int)ceil(cd.origin.x + cd.size.width);
+        int cy0 = (int)floor(b->h - (cd.origin.y + cd.size.height)), cy1 = (int)ceil(b->h - cd.origin.y);
+        if (x0 < cx0) x0 = cx0;
+        if (y0 < cy0) y0 = cy0;
+        if (x1 > cx1) x1 = cx1;
+        if (y1 > cy1) y1 = cy1;
+        if (x0 < 0) x0 = 0;
+        if (y0 < 0) y0 = 0;
+        if (x1 > b->w) x1 = b->w;
+        if (y1 > b->h) y1 = b->h;
+        if (x0 >= x1 || y0 >= y1) return;
+        if (x0 != dx0 || y0 != top0 || x1 != dx0 + W || y1 != top0 + H) {
+            /* a sub-mask: the same rows, from (x0, y0), its stride still W */
+            mask += (size_t)(y0 - top0) * W + (x0 - dx0);
+            int nw = x1 - x0, nh = y1 - y0;
+            for (int r = 0; r < nh; r++) {
+                const uint8_t *mk = mask + (size_t)r * W;
+                int j = y0 + r;
+                uint32_t inv, s_full = premul(argb, 1, &inv);
+                uint32_t *d = (uint32_t *)(b->px + (size_t)j * b->stride) + x0;
+                int bx0 = x0, bx1 = x1, by0 = j, by1 = j + 1;
+                const uint8_t *ck = NULL;
+                if (clip_need(v, x0, x1, j, j + 1)) {
+                    if (!clip_box(v, &bx0, &bx1, &by0, &by1)) continue;
+                    ck = clip_at(v, bx0, j);
+                }
+                for (int i = bx0; i < bx1; i++) {
+                    uint32_t c = mk[i - x0];
+                    if (ck) c = (c * (uint32_t)ck[i - bx0] + 127) / 255;
+                    d[i - x0] = over(d[i - x0], scale_px(s_full, c));
+                }
+            }
+            (void)nw;
+            return;
+        }
+    }
     /* the mask's rows from the top, as the bitmap's: row r is the bitmap's row (h - dy1) + r */
     uint32_t inv, s_full = premul(argb, 1, &inv);
     int top = b->h - dy1;
@@ -1298,11 +1340,131 @@ static bool text_mask(gcanvas *v, CTLineRef line, float x, float y, float w, con
     CGContextSetTextPosition(mc, x, y);
     CTLineDraw(line, mc);
     CGContextRelease(mc);
-    mask_blend(v, dx0, dy1, W, H, argb);
+    mask_blend(v, g_mask, dx0, dy1, W, H, argb);
     return true;
 }
+/* ---- text_cached: a line of text's coverage, kept: an app draws the same labels every frame, and CoreText laid each out and
+ * filled its glyphs every time (30 to 50 lines a frame). Keyed by the characters, the font and paint, the transform's scale
+ * and where in its pixel the line starts (quarters); an entry a slot, the newest wins. Lines with colour glyphs are kept
+ * as such, for CoreGraphics. */
+typedef struct tcache {
+    uint64_t key;
+    uint16_t *chars; int n;
+    gface *face; int32_t size, lspace, sx, skew, flags; float ma, md; int phx, phy;
+    float w;                        /* the line's advance, for the paint's alignment */
+    bool color;                     /* colour glyphs: CoreGraphics draws it */
+    int ox, oy, W, H;               /* the mask's top left from the start's pixel, its size */
+    uint8_t *mask;
+} tcache;
+#define TCACHE_SLOTS 1024
+static tcache g_tc[TCACHE_SLOTS];
+static size_t g_tc_bytes;
+static void tc_free(tcache *e) { free(e->chars); if (e->mask) g_tc_bytes -= (size_t)e->W * e->H; free(e->mask); memset(e, 0, sizeof *e); }
+
+static bool text_cached(gcanvas *v, jobj *s, int start, int end, float x, float y, const int32_t *p, gface *g)
+{
+    if (p[P_CFMODE] >= 0 || pf(p, P_SHRAD) > 0 || p[P_XFER] != 3 || p[P_STYLE] != 0
+        || (p[P_FLAGS] & (PF_FAKEBOLD | PF_UNDERLINE | PF_STRIKE))) return false;
+    CGAffineTransform m;
+    if (!blend_ok(v, &m)) return false;
+    int32_t n = 0;
+    const uint16_t *u = s ? tl_dvm_string_chars(s, &n) : NULL;
+    if (!u) return false;
+    if (start < 0) start = 0;
+    if (end > n || end < 0) end = n;
+    if (end <= start) return true;
+    u += start; n = end - start;
+    uint32_t argb = (uint32_t)p[P_COLOR];
+    gbitmap *b = v->bm;
+    /* the key: the characters and everything the glyphs' shapes depend on, but not where they go */
+    int32_t sx = p[P_SCALEX], skew = p[P_SKEWX], size = p[P_TEXTSIZE], ls = p[P_LSPACE], flags = p[P_FLAGS] & PF_AA;
+    uint64_t k = 0xcbf29ce484222325ull;
+    for (int i = 0; i < n; i++) k = (k ^ u[i]) * 0x100000001b3ull;
+    uint64_t kp = (uint64_t)(uintptr_t)g ^ ((uint64_t)(uint32_t)size << 1) ^ ((uint64_t)(uint32_t)ls << 17) ^ ((uint64_t)(uint32_t)sx << 29)
+                ^ ((uint64_t)(uint32_t)skew << 7) ^ (uint64_t)flags;
+    k = (k ^ kp) * 0x100000001b3ull;
+    float ma = (float)m.a, md = (float)m.d;
+    k = (k ^ (uint64_t)(uint32_t)lrintf(ma * 1000) ^ ((uint64_t)(uint32_t)lrintf(md * 1000) << 32)) * 0x100000001b3ull;
+    tcache *e = NULL;
+    /* the alignment needs the advance, which the entry has: look for it at each quarter of a pixel the start may be in */
+    float w = -1;
+    for (int pass = 0; pass < 2; pass++) {
+        float ax = x;
+        if (w >= 0) { if (p[P_ALIGN] == 1) ax -= w / 2; else if (p[P_ALIGN] == 2) ax -= w; }
+        double X = m.a * ax + m.tx, Y = b->h - (m.d * y + m.ty);
+        int ix = (int)floor(X), iy = (int)floor(Y), phx = (int)floor((X - ix) * 4), phy = (int)floor((Y - iy) * 4);
+        uint64_t key = (k ^ (uint64_t)(phx | phy << 2)) * 0x100000001b3ull;
+        tcache *t = &g_tc[key % TCACHE_SLOTS];
+        bool hit = t->key == key && t->n == n && t->face == g && t->size == size && t->lspace == ls && t->sx == sx && t->skew == skew
+                && t->flags == flags && t->ma == ma && t->md == md && t->phx == phx && t->phy == phy && !memcmp(t->chars, u, (size_t)n * 2);
+        if (hit && (p[P_ALIGN] == 0 || pass == 1)) {
+            if (t->color) return false;
+            if (t->mask && (argb >> 24)) mask_blend(v, t->mask, ix + t->ox, b->h - (iy + t->oy), t->W, t->H, argb);
+            return true;
+        }
+        if (hit) { w = t->w; continue; }
+        if (p[P_ALIGN] != 0 && pass == 0) {
+            /* no entry at the unaligned start: lay the line out for its advance, then look again */
+            CFStringRef str = CFStringCreateWithCharacters(NULL, u, n);
+            CTLineRef line = make_line(str, p, g);
+            CFRelease(str);
+            w = line_width(line, p);
+            CFRelease(line);
+            continue;
+        }
+        /* not kept: lay it out and fill its coverage, unclipped, for this and the frames after */
+        e = t;
+        tc_free(e);
+        CFStringRef str = CFStringCreateWithCharacters(NULL, u, n);
+        CTLineRef line = make_line(str, p, g);
+        CFRelease(str);
+        e->key = key; e->n = n; e->face = g; e->size = size; e->lspace = ls; e->sx = sx; e->skew = skew; e->flags = flags;
+        e->ma = ma; e->md = md; e->phx = phx; e->phy = phy;
+        e->chars = malloc((size_t)n * 2);
+        if (!e->chars) { CFRelease(line); memset(e, 0, sizeof *e); return false; }
+        memcpy(e->chars, u, (size_t)n * 2);
+        e->w = line_width(line, p);
+        CFArrayRef runs = CTLineGetGlyphRuns(line);
+        for (CFIndex i = 0; i < CFArrayGetCount(runs); i++) {
+            CTFontRef f = CFDictionaryGetValue(CTRunGetAttributes(CFArrayGetValueAtIndex(runs, i)), kCTFontAttributeName);
+            if (f && (CTFontGetSymbolicTraits(f) & kCTFontTraitColorGlyphs)) e->color = true;
+        }
+        if (e->color) { CFRelease(line); return false; }
+        CGFloat asc = 0, desc = 0;
+        CTLineGetTypographicBounds(line, &asc, &desc, NULL);
+        float fsx = pf(p, P_SCALEX) > 0 ? pf(p, P_SCALEX) : 1, fskew = pf(p, P_SKEWX);
+        float pad = (float)(asc + desc) * 0.5f + 2;
+        CGRect area = CGRectMake(ax - pad, y - (float)asc - pad, e->w + 2 * pad + fabsf(fskew) * (float)(asc + desc), (float)(asc + desc) + 2 * pad);
+        CGRect box = CGRectStandardize(CGRectApplyAffineTransform(area, m));
+        int dx0 = (int)floor(box.origin.x), dy0 = (int)floor(box.origin.y);
+        int W = (int)ceil(box.origin.x + box.size.width) - dx0, H = (int)ceil(box.origin.y + box.size.height) - dy0;
+        if (W <= 0 || H <= 0 || (int64_t)W * H > 4 << 20) { CFRelease(line); tc_free(e); return false; }
+        e->mask = calloc((size_t)W * H, 1);
+        CGContextRef mc = e->mask ? CGBitmapContextCreate(e->mask, (size_t)W, (size_t)H, 8, (size_t)W, NULL, (CGBitmapInfo)kCGImageAlphaOnly) : NULL;
+        if (!mc) { CFRelease(line); tc_free(e); return false; }
+        g_tc_bytes += (size_t)W * H;
+        CGContextConcatCTM(mc, CGAffineTransformConcat(m, CGAffineTransformMakeTranslation(-dx0, -dy0)));
+        CGContextSetShouldAntialias(mc, (p[P_FLAGS] & PF_AA) != 0);
+        CGContextSetShouldSmoothFonts(mc, false);
+        CGContextSetGrayFillColor(mc, 0, 1);
+        CGContextSetTextMatrix(mc, CGAffineTransformMake(fsx, 0, -fskew, -1, 0, 0));
+        CGContextSetTextDrawingMode(mc, kCGTextFill);
+        CGContextSetTextPosition(mc, ax, y);
+        CTLineDraw(line, mc);
+        CGContextRelease(mc);
+        CFRelease(line);
+        e->W = W; e->H = H; e->ox = dx0 - ix; e->oy = (b->h - (dy0 + H)) - iy;
+        if (argb >> 24) mask_blend(v, e->mask, dx0, dy0 + H, W, H, argb);
+        /* a bound on what is kept: past 48 MB, the cache starts again */
+        if (g_tc_bytes > (48u << 20)) for (int i = 0; i < TCACHE_SLOTS; i++) if (&g_tc[i] != e) tc_free(&g_tc[i]);
+        return true;
+    }
+    return false;
+}
+
 static void draw_text(gcanvas *v, jobj *s, int start, int end, float x, float y, const int32_t *p, gface *g, gshader *sh)
 {
+    if (!sh && text_cached(v, s, start, end, x, y, p, g)) return;
     CFStringRef str = cfstr(s, start, end);
     CTLineRef line = make_line(str, p, g);
     CFRelease(str);
