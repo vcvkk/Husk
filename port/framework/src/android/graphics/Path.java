@@ -84,7 +84,16 @@ public class Path {
         husk.Gfx.pathBounds(ops, n, o);
         bounds.set(o[0], o[1], o[2], o[3]);
     }
-    public boolean op(Path p, Op op) { if (op == Op.UNION) { addPath(p); return true; } return false; }
+    /** The boolean operations (Compose draws borders of unevenly rounded shapes as outer DIFFERENCE inner, then fills it). */
+    public boolean op(Path p, Op op) {
+        boolean eo = fill == FillType.EVEN_ODD || fill == FillType.INVERSE_EVEN_ODD;
+        float[] r = husk.Gfx.pathOp(ops, n, p.ops, p.n, op.ordinal(), eo ? 1 : 0);
+        if (r != null) { ops = r.length > 0 ? r : new float[32]; n = r.length; any = n > 0; fill = FillType.EVEN_ODD; return true; }
+        // without them: a union is both paths, and the difference of a path inside this one (a border) is both, filled even-odd
+        if (op == Op.UNION) { addPath(p); return true; }
+        if (op == Op.DIFFERENCE) { addPath(p); fill = FillType.EVEN_ODD; return true; }
+        return false;
+    }
     public boolean op(Path a, Path b, Op op) { set(a); return op(b, op); }
     public float[] approximate(float acceptableError) { return new float[0]; }
     /** For Canvas and Region: the stream and its length. */

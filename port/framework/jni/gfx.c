@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /* From Husk's main line (Leviidev/Husk src/translation-layer-next/husk-tl-dvm-graphics.c at 2425372), as
- * it is but for its includes and txBreak's letter spacing (make_attributed): its natives run on JNI here (shim.h,
+ * it is but for its includes, txBreak's letter spacing (make_attributed) and pathOp: its natives run on JNI here (shim.h,
  * gen-jni.py writes their JNI methods from k_gfx). */
 /*
  * android.graphics for Java apps on Husk's Dalvik runtime: Bitmap, Canvas, Paint's text, Typeface and the shaders, drawn with
@@ -1379,6 +1379,54 @@ NAT(G_shFree)
 }
 
 /* ---- Path queries: (float[] path, int n, ...) */
+/* husk-port: (float[] a, int na, float[] b, int nb, int op, int evenOdd) -> float[] ops of a op b (Path.Op order: difference,
+ * intersect, union, xor, reverse difference), CoreGraphics' boolean operations, or null where they are not (before iOS 16) */
+static void put_op(float **o, int *n, int *cap, int op, int k, const CGPoint *pt)
+{
+    if (*n + 1 + 2 * k > *cap) { *cap = (*cap + 1 + 2 * k) * 2; *o = realloc(*o, (size_t)*cap * sizeof **o); }
+    (*o)[(*n)++] = (float)op;
+    for (int i = 0; i < k; i++) { (*o)[(*n)++] = (float)pt[i].x; (*o)[(*n)++] = (float)pt[i].y; }
+}
+typedef struct { float *o; int n, cap; } ops_out;
+static void path_to_ops(void *info, const CGPathElement *e)
+{
+    ops_out *w = info;
+    switch (e->type) {
+    case kCGPathElementMoveToPoint: put_op(&w->o, &w->n, &w->cap, 0, 1, e->points); break;
+    case kCGPathElementAddLineToPoint: put_op(&w->o, &w->n, &w->cap, 1, 1, e->points); break;
+    case kCGPathElementAddQuadCurveToPoint: put_op(&w->o, &w->n, &w->cap, 2, 2, e->points); break;
+    case kCGPathElementAddCurveToPoint: put_op(&w->o, &w->n, &w->cap, 3, 3, e->points); break;
+    case kCGPathElementCloseSubpath: put_op(&w->o, &w->n, &w->cap, 4, 0, NULL); break;
+    }
+}
+NAT(G_pathOp)
+{
+    (void)self;
+    *ret = Ll(NULL);
+    float *fa = arr_data(a[0].l), *fb = arr_data(a[2].l);
+    if (!fa || !fb) return true;
+    if (__builtin_available(macOS 13.0, iOS 16.0, *)) {
+        CGPathRef pa = build_path(fa, a[1].i), pb = build_path(fb, a[3].i), r = NULL;
+        bool eo = a[5].i != 0;
+        switch (a[4].i) {
+        case 0: r = CGPathCreateCopyBySubtractingPath(pa, pb, eo); break;
+        case 1: r = CGPathCreateCopyByIntersectingPath(pa, pb, eo); break;
+        case 2: r = CGPathCreateCopyByUnioningPath(pa, pb, eo); break;
+        case 3: r = CGPathCreateCopyBySymmetricDifferenceOfPath(pa, pb, eo); break;
+        case 4: r = CGPathCreateCopyBySubtractingPath(pb, pa, eo); break;
+        }
+        CGPathRelease(pa); CGPathRelease(pb);
+        if (!r) return true;
+        ops_out w = { NULL, 0, 0 };
+        CGPathApply(r, &w, path_to_ops);
+        CGPathRelease(r);
+        jobj *out = tl_jni_new_prim_array('F', (uint32_t)w.n);
+        if (w.n) memcpy(out->arr.data, w.o, (size_t)w.n * sizeof *w.o);
+        free(w.o);
+        *ret = Ll(out);
+    }
+    return true;
+}
 NAT(G_pathBounds)
 {
     (void)self; (void)ret;
@@ -1519,7 +1567,7 @@ static const struct { const char *name, *sig; dvm_native_fn fn; } k_gfx[] = {
     { "shBitmap", "(JI)J", G_shBitmap },
     { "shMatrix", "(J[F)V", G_shMatrix },
     { "shFree", "(J)V", G_shFree },
-    { "pathBounds", "([FI[F)V", G_pathBounds },
+    { "pathBounds", "([FI[F)V", G_pathBounds }, { "pathOp", "([FI[FIII)[F", G_pathOp },
     { "pathContains", "([FIIFF)Z", G_pathContains },
     { "pathLength", "([FI[F)F", G_pathLength },
     { "present", "(J)V", G_present },

@@ -10,6 +10,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
@@ -39,6 +42,13 @@ class MainActivity : ComponentActivity() {
                         // a text field: CI taps it and the host types into it, as the iOS keyboard does
                         var typed by remember { mutableStateOf("") }
                         OutlinedTextField(typed, { typed = it }, Modifier.padding(horizontal = 24.dp), label = { Text("Type here") })
+                        // segmented buttons: their outlines are path differences (DepCalc's theme switch drew as solid grey)
+                        var mode by remember { mutableIntStateOf(1) }
+                        SingleChoiceSegmentedButtonRow(Modifier.padding(24.dp)) {
+                            listOf("System", "Light", "Dark").forEachIndexed { i, label ->
+                                SegmentedButton(selected = mode == i, onClick = { mode = i }, shape = SegmentedButtonDefaults.itemShape(i, 3)) { Text(label) }
+                            }
+                        }
                     }
                     var taps by remember { mutableIntStateOf(0) }
                     Column(
