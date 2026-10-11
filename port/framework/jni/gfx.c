@@ -1359,14 +1359,15 @@ typedef struct tcache {
 #define TCACHE_SLOTS 1024
 static tcache g_tc[TCACHE_SLOTS];
 static size_t g_tc_bytes;
+static int64_t g_tc_hit, g_tc_miss, g_tc_color, g_tc_skip, g_tc_px;     /* HUSK_FRAME_STATS */
 static void tc_free(tcache *e) { free(e->chars); if (e->mask) g_tc_bytes -= (size_t)e->W * e->H; free(e->mask); memset(e, 0, sizeof *e); }
 
 static bool text_cached(gcanvas *v, jobj *s, int start, int end, float x, float y, const int32_t *p, gface *g)
 {
     if (p[P_CFMODE] >= 0 || pf(p, P_SHRAD) > 0 || p[P_XFER] != 3 || p[P_STYLE] != 0
-        || (p[P_FLAGS] & (PF_FAKEBOLD | PF_UNDERLINE | PF_STRIKE))) return false;
+        || (p[P_FLAGS] & (PF_FAKEBOLD | PF_UNDERLINE | PF_STRIKE))) { g_tc_skip++; return false; }
     CGAffineTransform m;
-    if (!blend_ok(v, &m)) return false;
+    if (!blend_ok(v, &m)) { g_tc_skip++; return false; }
     int32_t n = 0;
     const uint16_t *u = s ? tl_dvm_string_chars(s, &n) : NULL;
     if (!u) return false;
@@ -1398,7 +1399,8 @@ static bool text_cached(gcanvas *v, jobj *s, int start, int end, float x, float 
         bool hit = t->key == key && t->n == n && t->face == g && t->size == size && t->lspace == ls && t->sx == sx && t->skew == skew
                 && t->flags == flags && t->ma == ma && t->md == md && t->phx == phx && t->phy == phy && !memcmp(t->chars, u, (size_t)n * 2);
         if (hit && (p[P_ALIGN] == 0 || pass == 1)) {
-            if (t->color) return false;
+            if (t->color) { g_tc_color++; return false; }
+            g_tc_hit++; g_tc_px += (int64_t)t->W * t->H;
             if (t->mask && (argb >> 24)) mask_blend(v, t->mask, ix + t->ox, b->h - (iy + t->oy), t->W, t->H, argb);
             return true;
         }
@@ -1413,6 +1415,7 @@ static bool text_cached(gcanvas *v, jobj *s, int start, int end, float x, float 
             continue;
         }
         /* not kept: lay it out and fill its coverage, unclipped, for this and the frames after */
+        g_tc_miss++;
         e = t;
         tc_free(e);
         CFStringRef str = CFStringCreateWithCharacters(NULL, u, n);
@@ -2227,6 +2230,9 @@ NAT(G_blitStats)
     tl_log_line("FrameStats: clip per frame: %.1f masks (%.2f Mpx, %.2f ms), %.1f of them turned or left-out rectangles; CoreGraphics given clips %.1f times (%.1f clips, %.2f ms)",
                 g_cs_masks / fr, g_cs_mask_px / fr / 1e6, g_cs_mask_ns / fr / 1e6, g_cs_shaped_rects / fr, g_cs_flushes / fr, g_cs_flushed_ops / fr, g_cs_flush_ns / fr / 1e6);
     g_cs_masks = g_cs_mask_px = g_cs_mask_ns = g_cs_flushes = g_cs_flushed_ops = g_cs_flush_ns = g_cs_shaped_rects = 0;
+    tl_log_line("FrameStats: text per frame: %.1f from the cache (%.2f Mpx), %.1f laid out, %.1f colour glyphs, %.1f not cacheable",
+                g_tc_hit / fr, g_tc_px / fr / 1e6, g_tc_miss / fr, g_tc_color / fr, g_tc_skip / fr);
+    g_tc_hit = g_tc_miss = g_tc_color = g_tc_skip = g_tc_px = 0;
     return true;
 }
 NAT(G_cvDrawBitmap)
