@@ -1,6 +1,9 @@
 package dev.huskport.composehello
 
 import android.os.Bundle
+import android.view.ContextThemeWrapper
+import androidx.compose.runtime.LaunchedEffect
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
@@ -8,8 +11,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Button
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -45,14 +46,15 @@ class MainActivity : ComponentActivity() {
                         Text("taps: $taps", style = MaterialTheme.typography.bodyLarge)
                         Button(onClick = { taps++ }) { Text("Tap") }
                     }
-                    // a tap opens an alert dialog with a long message, as DepCalc's update dialog that showed cut
-                    if (taps > 0) AlertDialog(
-                        onDismissRequest = {},
-                        title = { Text("Update available") },
-                        text = { Text((1..30).joinToString("\n") { "line $it of the changes" }) },
-                        confirmButton = { TextButton(onClick = {}) { Text("Update") } },
-                        dismissButton = { TextButton(onClick = {}) { Text("Later") } },
-                    )
+                    // a tap opens a classic (View) alert dialog with a long message, as DepCalc's update offer that showed cut
+                    if (taps == 1) LaunchedEffect(Unit) {
+                        MaterialAlertDialogBuilder(ContextThemeWrapper(this@MainActivity, com.google.android.material.R.style.Theme_Material3_DayNight_NoActionBar))
+                            .setTitle("Update available v1.9.1")
+                            .setMessage((1..30).joinToString("\n") { "line $it of the changes" })
+                            .setPositiveButton("Update", null)
+                            .setNegativeButton("Later", null)
+                            .show()
+                    }
                 } }
             }
         }
