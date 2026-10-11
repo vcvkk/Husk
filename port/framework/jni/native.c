@@ -10,6 +10,7 @@
 
 #include <fcntl.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -96,7 +97,22 @@ static struct {
     pthread_mutex_t t_lock;
     char **text; int ntext, ctext;
     int insets[5];
-} A = { .q_lock = PTHREAD_MUTEX_INITIALIZER, .t_lock = PTHREAD_MUTEX_INITIALIZER };
+    /* the app's main thread waits here (Native.waitEvents) for what wakes it: the host's input, a message from another
+     * thread, the display's refresh it asked for */
+    pthread_mutex_t w_lock;
+    pthread_cond_t w_cond;
+    bool w_flag;
+    atomic_bool want_vsync;
+} A = { .q_lock = PTHREAD_MUTEX_INITIALIZER, .t_lock = PTHREAD_MUTEX_INITIALIZER,
+        .w_lock = PTHREAD_MUTEX_INITIALIZER, .w_cond = PTHREAD_COND_INITIALIZER };
+
+static void wake(void)
+{
+    pthread_mutex_lock(&A.w_lock);
+    A.w_flag = true;
+    pthread_cond_signal(&A.w_cond);
+    pthread_mutex_unlock(&A.w_lock);
+}
 
 static char *dup_or_empty(const char *s) { return strdup(s ? s : ""); }
 
@@ -278,6 +294,38 @@ static jstring N_apkPath(JNIEnv *env, jclass c) { (void)c; return jstr(env, A.cf
 static jobjectArray N_splitPaths(JNIEnv *env, jclass c) { (void)c; return jstrings(env, NULL, 0); }
 static void N_looperPrepare(JNIEnv *env, jclass c) { (void)env; (void)c; }
 static jboolean N_looperPoll(JNIEnv *env, jclass c) { (void)env; (void)c; return JNI_FALSE; }
+/* the main thread's wait: until woken, or ms passes (ms < 0: no limit) */
+static void N_waitEvents(JNIEnv *env, jclass c, jlong ms)
+{
+    (void)env; (void)c;
+    pthread_mutex_lock(&A.w_lock);
+    if (!A.w_flag && ms != 0) {
+        if (ms < 0) pthread_cond_wait(&A.w_cond, &A.w_lock);
+        else {
+#ifdef __APPLE__
+            struct timespec rel = { (time_t)(ms / 1000), (long)(ms % 1000) * 1000000L };
+            pthread_cond_timedwait_relative_np(&A.w_cond, &A.w_lock, &rel);
+#else
+            struct timespec t; clock_gettime(CLOCK_REALTIME, &t);
+            t.tv_sec += (time_t)(ms / 1000); t.tv_nsec += (long)(ms % 1000) * 1000000L;
+            if (t.tv_nsec >= 1000000000L) { t.tv_sec++; t.tv_nsec -= 1000000000L; }
+            pthread_cond_timedwait(&A.w_cond, &A.w_lock, &t);
+#endif
+        }
+    }
+    A.w_flag = false;
+    pthread_mutex_unlock(&A.w_lock);
+}
+static void N_wake(JNIEnv *env, jclass c) { (void)env; (void)c; wake(); }
+/* the Choreographer wants the display's next refresh (husk_app_vsync); false where the host has none to give */
+static jboolean N_requestVsync(JNIEnv *env, jclass c)
+{
+    (void)env; (void)c;
+    if (!A.cfg.vsync) return JNI_FALSE;
+    atomic_store(&A.want_vsync, true);
+    return JNI_TRUE;
+}
+static jfloat N_refreshRate(JNIEnv *env, jclass c) { (void)env; (void)c; return A.cfg.refresh_rate > 0 ? A.cfg.refresh_rate : 60; }
 static void N_setAppClassLoader(JNIEnv *env, jclass c, jobject loader) { (void)env; (void)c; (void)loader; }
 static jstring N_dataDir(JNIEnv *env, jclass c) { (void)c; return jstr(env, A.cfg.data); }
 static jstring N_externalDir(JNIEnv *env, jclass c) { (void)c; return jstr(env, A.cfg.external); }
@@ -380,6 +428,10 @@ static const JNINativeMethod k_native[] = {
     { "splitPaths", "()[Ljava/lang/String;", (void *)N_splitPaths },
     { "nativeLooperPrepare", "()V", (void *)N_looperPrepare },
     { "nativeLooperPoll", "()Z", (void *)N_looperPoll },
+    { "waitEvents", "(J)V", (void *)N_waitEvents },
+    { "wake", "()V", (void *)N_wake },
+    { "requestVsync", "()Z", (void *)N_requestVsync },
+    { "refreshRate", "()F", (void *)N_refreshRate },
     { "setAppClassLoader", "(Ljava/lang/ClassLoader;)V", (void *)N_setAppClassLoader },
     { "dataDir", "()Ljava/lang/String;", (void *)N_dataDir },
     { "externalDir", "()Ljava/lang/String;", (void *)N_externalDir },
@@ -436,7 +488,10 @@ static void push(int phase, int id, float x, float y)
     pthread_mutex_lock(&A.q_lock);
     if (A.qn + 4 <= 4096) { A.q[A.qn++] = phase; A.q[A.qn++] = id; A.q[A.qn++] = fx.i; A.q[A.qn++] = fy.i; }
     pthread_mutex_unlock(&A.q_lock);
+    wake();
 }
+/* the display refreshed: a frame for the Choreographer, when it asked for one */
+void husk_app_vsync(void) { if (atomic_exchange(&A.want_vsync, false)) push(10, 0, 0, 0); }
 void husk_app_touch(int phase, int id, float x, float y) { push(phase, id, x, y); }
 void husk_app_back(void) { push(5, 0, 0, 0); }
 void husk_app_web_event(void) { push(9, 0, 0, 0); }   /* web.m: husk.Web has events to poll */

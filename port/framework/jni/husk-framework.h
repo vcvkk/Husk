@@ -32,6 +32,8 @@ typedef struct husk_app_config {
     void (*vibrate)(int ms);
     void (*set_orientation)(int android_orientation);
     void (*exit)(void);
+    bool vsync;                      /* the host calls husk_app_vsync at each display refresh */
+    float refresh_rate;              /* its refreshes a second (0: 60) */
 } husk_app_config;
 
 void husk_app_configure(const husk_app_config *cfg);
@@ -45,6 +47,7 @@ void husk_app_text_delete(void);
 void husk_app_text_action(void);                  /* the keyboard's return key */
 void husk_app_text_hidden(void);                  /* the host's keyboard went away (the user closed it) */
 void husk_app_insets(int left, int top, int right, int bottom, int keyboard);
+void husk_app_vsync(void);                        /* the display refreshed (from any thread) */
 
 /* The latest frame the app drew, when there is a new one: premultiplied RGBA rows, 4 * w bytes
  * each, locked until husk_frame_done. *any is false when the app shows nothing. */

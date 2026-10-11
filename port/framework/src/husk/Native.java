@@ -18,6 +18,12 @@ public final class Native {
     /** The NDK looper of this thread: made with the Java one, and its callbacks run between messages. */
     public static native void nativeLooperPrepare();
     public static native boolean nativeLooperPoll();
+    /** husk-port: the main thread's wait for the host's input, another thread's message or the display's refresh (ms < 0: no limit) */
+    public static native void waitEvents(long ms);
+    public static native void wake();
+    /** the next display refresh, as an input event (10); false where the host has no display refreshes to give */
+    public static native boolean requestVsync();
+    public static native float refreshRate();
     /** Class.getClassLoader for the app's own classes. */
     public static native void setAppClassLoader(ClassLoader loader);
     public static native String dataDir();

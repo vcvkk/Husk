@@ -9,7 +9,7 @@ import java.util.ArrayList;
 public final class Choreographer {
     public interface FrameCallback { void doFrame(long frameTimeNanos); }
     public static final int CALLBACK_INPUT = 0, CALLBACK_ANIMATION = 1, CALLBACK_INSETS_ANIMATION = 2, CALLBACK_TRAVERSAL = 3, CALLBACK_COMMIT = 4;
-    private static final long FRAME_NS = 16_666_667L;
+    private static final long FRAME_NS = (long) (1e9 / husk.Native.refreshRate());
     private static final ThreadLocal<Choreographer> sThread = new ThreadLocal<>();
     private static Choreographer sMain;
     private final Handler mHandler;
@@ -31,7 +31,7 @@ public final class Choreographer {
         return c;
     }
     public static Choreographer getMainThreadInstance() { if (sMain == null) sMain = new Choreographer(Looper.getMainLooper()); return sMain; }
-    public static long getFrameDelay() { return 16; }
+    public static long getFrameDelay() { return FRAME_NS / 1_000_000L; }
     public static void setFrameDelay(long d) {}
     public long getFrameTime() { return mLastFrame / 1_000_000L; }
     public long getFrameTimeNanos() { return mLastFrame; }
@@ -46,7 +46,16 @@ public final class Choreographer {
         mScheduled = true;
         long now = System.nanoTime(), next = Math.max(now, mLastFrame + FRAME_NS);
         mDue = next;
+        // the main thread's frames come with the display's refreshes, where the host gives them (husk.AppRunner: event 10)
+        if (this == sMain && husk.Native.requestVsync()) return;
         mHandler.postDelayed(mDoFrame, Math.max(0, (next - now) / 1_000_000L));
+    }
+    /** husk-port: the display refreshed, and this frame was asked for. */
+    public static void huskVsync() {
+        Choreographer c = sMain;
+        if (c == null) return;
+        synchronized (c) { if (!c.mScheduled) return; }
+        c.doFrame();
     }
     public void postCallback(int type, Runnable r, Object token) { add(type, r, token, 0); }
     public void postCallbackDelayed(int type, Runnable r, Object token, long delayMs) { add(type, r, token, delayMs); }

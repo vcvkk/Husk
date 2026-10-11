@@ -12,6 +12,7 @@
 #include <CoreGraphics/CoreGraphics.h>
 #include <ImageIO/ImageIO.h>
 #include <pthread.h>
+#include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -49,6 +50,22 @@ static void write_png(const char *path, const uint8_t *px, int w, int h)
     CFRelease(d); CFRelease(url); CGImageRelease(img); CGContextRelease(c); CGColorSpaceRelease(cs);
 }
 
+/* the display's refreshes, as a display link would give them (a headless Mac has none) */
+static void *vsync_main(void *arg)
+{
+    (void)arg;
+    uint64_t period = 16666667, next = clock_gettime_nsec_np(CLOCK_UPTIME_RAW) + period;
+    for (;;) {
+        uint64_t now = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+        if (next > now) { struct timespec ts = { 0, (long)(next - now) }; nanosleep(&ts, NULL); }
+        husk_app_vsync();
+        next += period;
+        now = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+        if (next < now) next = now + period;
+    }
+    return NULL;
+}
+
 int main(int argc, char **argv)
 {
     husk_app_config cfg = { .width = 1080, .height = 2400, .density = 3.0f };
@@ -79,13 +96,17 @@ int main(int argc, char **argv)
     snprintf(ext, sizeof ext, "%s/external", g_data);
     mkdir(g_data, 0755); mkdir(ext, 0755); mkdir(frames, 0755);
     cfg.data = g_data; cfg.external = ext;
+    cfg.vsync = true; cfg.refresh_rate = 60;     /* a 60 Hz display: vsync_main */
     husk_app_configure(&cfg);
 
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     pthread_attr_setstacksize(&attr, 64 << 20);
+    pthread_attr_set_qos_class_np(&attr, QOS_CLASS_USER_INTERACTIVE, 0);   /* as the iOS shell's */
     pthread_t t;
     pthread_create(&t, &attr, app_main, NULL);
+    pthread_t vt;
+    pthread_create(&vt, &attr, vsync_main, NULL);
 
     int written = 0;
     for (int tenth = 0; tenth < seconds * 10; tenth++) {

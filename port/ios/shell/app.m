@@ -97,6 +97,7 @@ static void FrameStat(double t0, double t1)
 
 - (void)nextFrame:(CADisplayLink *)link
 {
+    husk_app_vsync();                       // the app's Choreographer draws its next frame now, when it wants one
     const uint8_t *px; int w, h; bool any;
     if (gStats) gStatTicks++;
     double t0 = gStats ? CACurrentMediaTime() : 0;
@@ -322,6 +323,8 @@ static char *GetClipboard(void)
         .set_clipboard = SetClipboard,
         .get_clipboard = GetClipboard,
         .show_keyboard = ShowKeyboard,
+        .vsync = true,                      // nextFrame: each refresh of the display link
+        .refresh_rate = (float)screen.maximumFramesPerSecond,
     };
     husk_app_configure(&cfg);
     UIEdgeInsets i = self.window.safeAreaInsets;
@@ -332,6 +335,8 @@ static char *GetClipboard(void)
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     pthread_attr_setstacksize(&attr, 64 << 20);
+    // the app's UI thread: iOS holds its timers to time and schedules it as it does its own main thread
+    pthread_attr_set_qos_class_np(&attr, QOS_CLASS_USER_INTERACTIVE, 0);
     pthread_t t;
     pthread_create(&t, &attr, AppMain, NULL);
     return YES;
