@@ -388,35 +388,16 @@ static void shader_fill(CGContextRef c, const gshader *s, float alpha)
 
 /* ================================================================== canvases */
 
-/* a clip other than rectangles (a path, a difference, a turned rectangle) as Husk's blending sees it: its coverage, a byte a
- * pixel over the clip's bounds (x0, y0 from the bitmap's top left), shared by the save levels it was set at and above */
+/* a clip other than rectangles (a path, a difference, a turned rectangle) as Husk's blending sees it, over the clip's bounds
+ * (x0, y0 from the bitmap's top left), shared by the save levels it was set at and above */
 typedef struct cmask {
     int x0, y0, w, h, refs;
-    uint8_t *m;                     /* NULL until a draw needs it (cmask_build) */
-    /* what makes it: the path under the transform t, times the mask before it (or left out of it, a difference) */
+    /* the path under the transform t, times the mask before it (or left out of it, a difference): clip_region */
     CGPathRef path; CGAffineTransform t; bool even_odd, difference; struct cmask *prev;
 } cmask;
-/* masks' buffers, kept for the next: fresh memory costs a page fault a 16 KB, a full screen's mask a third of a ms */
-static struct { uint8_t *p; size_t cap; } g_mpool[8];
-static uint8_t *mpool_get(size_t need)
-{
-    int best = -1;
-    for (int i = 0; i < 8; i++) if (g_mpool[i].p && g_mpool[i].cap >= need && (best < 0 || g_mpool[i].cap < g_mpool[best].cap)) best = i;
-    if (best >= 0) { uint8_t *p = g_mpool[best].p; g_mpool[best].p = NULL; return p; }
-    return malloc(need < 4096 ? 4096 : need);
-}
-static void mpool_put(uint8_t *p, size_t cap)
-{
-    if (!p) return;
-    int slot = -1;
-    for (int i = 0; i < 8; i++) if (!g_mpool[i].p) { slot = i; break; }
-    if (slot < 0) { slot = 0; for (int i = 1; i < 8; i++) if (g_mpool[i].cap < g_mpool[slot].cap) slot = i; free(g_mpool[slot].p); }
-    g_mpool[slot].p = p; g_mpool[slot].cap = cap < 4096 ? 4096 : cap;
-}
 static void cmask_release(cmask *k)
 {
     if (!k || --k->refs > 0) return;
-    mpool_put(k->m, (size_t)k->w * k->h);
     if (k->path) CGPathRelease(k->path);
     cmask_release(k->prev);
     free(k);
@@ -603,59 +584,67 @@ static void clip_mask_add_(gcanvas *v, CGPathRef path, bool even_odd, bool diffe
     k->prev = v->mask;                      /* the canvas's reference, now the new mask's */
     v->mask = k;
 }
-/* the mask's bytes, made when first needed; false without memory */
-static bool cmask_build(cmask *k, int bh)
+/* The clip's coverage over a box of the bitmap (x0, y0 from its top left, w x h), into g_clipcov: each mask's path filled
+ * there by CoreGraphics, times the masks before it. Only where a draw blends, so a clip costs what is drawn through it,
+ * not its whole area. */
+static uint8_t *g_clipcov, *g_cliptmp; static size_t g_clipcov_cap;
+static int g_cc_x0, g_cc_y0, g_cc_w;
+static bool clip_region(const gcanvas *v, int x0, int y0, int w, int h)
 {
-    if (k->m || k->w <= 0 || k->h <= 0) return true;
-    size_t n = (size_t)k->w * k->h;
-    k->m = mpool_get(n);
-    if (!k->m) return false;
-    memset(k->m, 0, n);
-    CGContextRef mc = CGBitmapContextCreate(k->m, (size_t)k->w, (size_t)k->h, 8, (size_t)k->w, NULL, (CGBitmapInfo)kCGImageAlphaOnly);
-    if (!mc) { mpool_put(k->m, n); k->m = NULL; return false; }
-    CGContextConcatCTM(mc, CGAffineTransformConcat(k->t, CGAffineTransformMakeTranslation(-k->x0, -(bh - k->y0 - k->h))));
-    CGContextSetGrayFillColor(mc, 0, 1);
-    CGContextAddPath(mc, k->path);
-    if (k->even_odd) CGContextEOFillPath(mc); else CGContextFillPath(mc);
-    CGContextRelease(mc);
-    /* with what was there: the mask before (made now if it was not), or (rectangles only) all of the bounds */
-    cmask *o = k->prev;
-    if (o && !cmask_build(o, bh)) o = NULL;
-    if (o || k->difference)
-        for (int y = 0; y < k->h; y++) {
-            uint8_t *r = k->m + (size_t)y * k->w;
-            int gy = k->y0 + y;
-            bool in_y = o && gy >= o->y0 && gy < o->y0 + o->h;
-            for (int x = 0; x < k->w; x++) {
-                uint32_t c = k->difference ? 255u - r[x] : r[x], prev = 255;
-                if (o) {
-                    int gx = k->x0 + x;
-                    prev = in_y && gx >= o->x0 && gx < o->x0 + o->w && o->m ? o->m[(size_t)(gy - o->y0) * o->w + (gx - o->x0)] : 0;
-                }
-                r[x] = (uint8_t)((c * prev + 127) / 255);
+    size_t n = (size_t)w * h;
+    if (n > g_clipcov_cap) {
+        free(g_clipcov); free(g_cliptmp);
+        g_clipcov_cap = n + n / 4; g_clipcov = malloc(g_clipcov_cap); g_cliptmp = malloc(g_clipcov_cap);
+        if (!g_clipcov || !g_cliptmp) { free(g_clipcov); free(g_cliptmp); g_clipcov = g_cliptmp = NULL; g_clipcov_cap = 0; return false; }
+    }
+    g_cc_x0 = x0; g_cc_y0 = y0; g_cc_w = w;
+    memset(g_clipcov, 255, n);
+    int bh = v->bm->h;
+    for (const cmask *k = v->mask; k; k = k->prev) {
+        memset(g_cliptmp, 0, n);
+        /* the box's part inside this mask's bounds: outside them, nothing (a difference: what was) */
+        int ix0 = x0 > k->x0 ? x0 : k->x0, iy0 = y0 > k->y0 ? y0 : k->y0;
+        int ix1 = x0 + w < k->x0 + k->w ? x0 + w : k->x0 + k->w, iy1 = y0 + h < k->y0 + k->h ? y0 + h : k->y0 + k->h;
+        if (ix0 < ix1 && iy0 < iy1) {
+            CGContextRef mc = CGBitmapContextCreate(g_cliptmp, (size_t)w, (size_t)h, 8, (size_t)w, NULL, (CGBitmapInfo)kCGImageAlphaOnly);
+            if (!mc) return false;
+            CGContextClipToRect(mc, CGRectMake(ix0 - x0, (y0 + h) - iy1, ix1 - ix0, iy1 - iy0));
+            CGContextConcatCTM(mc, CGAffineTransformConcat(k->t, CGAffineTransformMakeTranslation(-x0, -(bh - y0 - h))));
+            CGContextSetGrayFillColor(mc, 0, 1);
+            CGContextAddPath(mc, k->path);
+            if (k->even_odd) CGContextEOFillPath(mc); else CGContextFillPath(mc);
+            CGContextRelease(mc);
+        }
+        for (int yy = 0; yy < h; yy++) {
+            uint8_t *cv = g_clipcov + (size_t)yy * w; const uint8_t *tp = g_cliptmp + (size_t)yy * w;
+            bool rin = y0 + yy >= iy0 && y0 + yy < iy1;
+            for (int xx = 0; xx < w; xx++) {
+                uint32_t c = tp[xx];
+                if (k->difference) c = (rin && x0 + xx >= ix0 && x0 + xx < ix1) ? 255u - c : 255u;
+                cv[xx] = (uint8_t)((cv[xx] * c + 127) / 255);
             }
         }
-    CGPathRelease(k->path); k->path = NULL;
-    cmask_release(k->prev); k->prev = NULL;
+    }
     return true;
-}/* the rows and columns the clip's mask leaves to draw (all, without one); false when none */
+}
+/* the rows and columns the clip's mask leaves to draw (all, without one); false when none */
 static inline bool clip_box(const gcanvas *v, int *x0, int *x1, int *y0, int *y1)
 {
-    cmask *k = v->mask;
+    const cmask *k = v->mask;
     if (k) {
-        if (!cmask_build(k, v->bm->h)) return false;
         if (*x0 < k->x0) *x0 = k->x0;
         if (*y0 < k->y0) *y0 = k->y0;
         if (*x1 > k->x0 + k->w) *x1 = k->x0 + k->w;
         if (*y1 > k->y0 + k->h) *y1 = k->y0 + k->h;
+        if (*x0 >= *x1 || *y0 >= *y1) return false;
+        return clip_region(v, *x0, *y0, *x1 - *x0, *y1 - *y0);
     }
     return *x0 < *x1 && *y0 < *y1;
 }
 /* the mask at (x, y), inside clip_box's; NULL without a mask */
 static inline const uint8_t *clip_at(const gcanvas *v, int x, int y)
 {
-    const cmask *k = v->mask;
-    return k ? k->m + (size_t)(y - k->y0) * k->w + (x - k->x0) : NULL;
+    return v->mask ? g_clipcov + (size_t)(y - g_cc_y0) * g_cc_w + (x - g_cc_x0) : NULL;
 }
 
 static inline uint32_t over(uint32_t d, uint32_t s)
