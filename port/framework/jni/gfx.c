@@ -1145,11 +1145,84 @@ NAT(G_cvDrawRect)
     CGPathRelease(path);
     return true;
 }
+/* ---- rrect_fill: a rounded rectangle filled as blend_fill fills a rectangle, its corners' coverage from the distance to
+ * their ellipses (Compose's buttons, circles and cards; CoreGraphics blends a translucent one a pixel at a time) */
+static inline float clamp01(float v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
+/* how much of the pixel centred at (px, py) the rounded rectangle covers */
+static inline float rrect_cover(float px, float py, float x0, float y0, float x1, float y1, float rx, float ry)
+{
+    float cx = clamp01(fminf(px - x0, x1 - px) + 0.5f), cy = clamp01(fminf(py - y0, y1 - py) + 0.5f);
+    float ex = px < x0 + rx ? x0 + rx : px > x1 - rx ? x1 - rx : px;
+    float ey = py < y0 + ry ? y0 + ry : py > y1 - ry ? y1 - ry : py;
+    if (ex == px || ey == py || rx <= 0 || ry <= 0) return cx * cy;
+    float nx = (px - ex) / rx, ny = (py - ey) / ry;
+    float f = nx * nx + ny * ny - 1, gx = nx / rx, gy = ny / ry, g = 2 * sqrtf(gx * gx + gy * gy);
+    return g > 0 ? clamp01(0.5f - f / g) : 1;
+}
+static bool rrect_fill(gcanvas *v, CGRect r, float rx, float ry, uint32_t argb, bool aa)
+{
+    CGAffineTransform m;
+    if (!blend_ok(v, &m)) return false;
+    gbitmap *b = v->bm;
+    CGRect d = CGRectStandardize(CGRectApplyAffineTransform(CGRectStandardize(r), m));
+    float srx = (float)fabs(rx * m.a), sry = (float)fabs(ry * m.d);
+    float x0 = (float)d.origin.x, x1 = x0 + (float)d.size.width;
+    float y0 = (float)(b->h - (d.origin.y + d.size.height)), y1 = (float)(b->h - d.origin.y);
+    if (srx > (x1 - x0) / 2) srx = (x1 - x0) / 2;
+    if (sry > (y1 - y0) / 2) sry = (y1 - y0) / 2;
+    CGRect clip = CGContextGetClipBoundingBox(v->c);
+    if (CGRectIsNull(clip) || !(argb >> 24)) return true;
+    CGRect cd = CGRectStandardize(CGRectApplyAffineTransform(clip, m));
+    /* the pixels the shape may touch, inside the clip (its edges at pixel centres) */
+    int ix0 = (int)floor(fmax(x0, ceil(cd.origin.x - 0.5))), ix1 = (int)ceil(fmin(x1, ceil(cd.origin.x + cd.size.width - 0.5)));
+    int iy0 = (int)floor(fmax(y0, ceil(b->h - (cd.origin.y + cd.size.height) - 0.5))), iy1 = (int)ceil(fmin(y1, ceil(b->h - cd.origin.y - 0.5)));
+    if (ix0 < 0) ix0 = 0;
+    if (iy0 < 0) iy0 = 0;
+    if (ix1 > b->w) ix1 = b->w;
+    if (iy1 > b->h) iy1 = b->h;
+    if (ix0 >= ix1 || iy0 >= iy1) return true;
+    /* the columns where a row's coverage may vary: the corners' and the edges' */
+    int lx = (int)ceil(x0 + srx + 0.5f), rxs = (int)floor(x1 - srx - 0.5f);
+    if (lx < ix0) lx = ix0;
+    if (rxs > ix1) rxs = ix1;
+    if (lx > rxs) lx = rxs = ix1;
+    uint32_t inv_full, s_full = premul(argb, 1, &inv_full);
+    for (int j = iy0; j < iy1; j++) {
+        uint32_t *row = (uint32_t *)(b->px + (size_t)j * b->stride);
+        float py = j + 0.5f;
+        float cy = clamp01(fminf(py - y0, y1 - py) + 0.5f);
+        if (!aa) cy = cy >= 0.5f ? 1 : 0;
+        if (cy <= 0) continue;
+        bool corner_row = py < y0 + sry || py > y1 - sry;
+        for (int i = ix0; i < ix1; i++) {
+            if (i == lx && i < rxs && !corner_row) {
+                /* the middle of a straight row: one coverage throughout */
+                uint32_t inv, sv;
+                if (cy >= 0.999f) { sv = s_full; inv = inv_full; } else sv = premul(argb, cy, &inv);
+                blend_run(row + lx, rxs - lx, sv, inv);
+                i = rxs - 1;
+                continue;
+            }
+            float c = rrect_cover(i + 0.5f, py, x0, y0, x1, y1, srx, sry);
+            if (!aa) c = c >= 0.5f ? 1 : 0;
+            if (c <= 0) continue;
+            uint32_t inv, sv;
+            if (c >= 0.999f) { sv = s_full; inv = inv_full; } else sv = premul(argb, c, &inv);
+            blend_run(row + i, 1, sv, inv);
+        }
+    }
+    return true;
+}
+
 NAT(G_cvDrawRRect)
 {
     (void)self; (void)ret;
     gcanvas *v = H(gcanvas, 0);
     if (!v) return true;
+    const int32_t *pp = paint_of(a[7].l);
+    if (!a[8].j && pp[P_STYLE] == 0 && pp[P_CFMODE] < 0 && pf(pp, P_SHRAD) <= 0 && pp[P_XFER] == 3
+        && rrect_fill(v, CGRectMake(a[1].f, a[2].f, a[3].f - a[1].f, a[4].f - a[2].f), a[5].f, a[6].f, (uint32_t)pp[P_COLOR], (pp[P_FLAGS] & PF_AA) != 0))
+        return true;
     float rad[8]; for (int i = 0; i < 8; i++) rad[i] = (i & 1) ? a[6].f : a[5].f;
     CGMutablePathRef p = CGPathCreateMutable();
     add_rrect8(p, NULL, a[1].f, a[2].f, a[3].f, a[4].f, rad, false);
