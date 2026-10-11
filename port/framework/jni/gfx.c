@@ -390,8 +390,37 @@ static void shader_fill(CGContextRef c, const gshader *s, float alpha)
 
 /* a clip other than rectangles (a path, a difference, a turned rectangle) as Husk's blending sees it: its coverage, a byte a
  * pixel over the clip's bounds (x0, y0 from the bitmap's top left), shared by the save levels it was set at and above */
-typedef struct cmask { int x0, y0, w, h, refs; uint8_t *m; } cmask;
-static void cmask_release(cmask *k) { if (k && --k->refs == 0) { free(k->m); free(k); } }
+typedef struct cmask {
+    int x0, y0, w, h, refs;
+    uint8_t *m;                     /* NULL until a draw needs it (cmask_build) */
+    /* what makes it: the path under the transform t, times the mask before it (or left out of it, a difference) */
+    CGPathRef path; CGAffineTransform t; bool even_odd, difference; struct cmask *prev;
+} cmask;
+/* masks' buffers, kept for the next: fresh memory costs a page fault a 16 KB, a full screen's mask a third of a ms */
+static struct { uint8_t *p; size_t cap; } g_mpool[8];
+static uint8_t *mpool_get(size_t need)
+{
+    int best = -1;
+    for (int i = 0; i < 8; i++) if (g_mpool[i].p && g_mpool[i].cap >= need && (best < 0 || g_mpool[i].cap < g_mpool[best].cap)) best = i;
+    if (best >= 0) { uint8_t *p = g_mpool[best].p; g_mpool[best].p = NULL; return p; }
+    return malloc(need < 4096 ? 4096 : need);
+}
+static void mpool_put(uint8_t *p, size_t cap)
+{
+    if (!p) return;
+    int slot = -1;
+    for (int i = 0; i < 8; i++) if (!g_mpool[i].p) { slot = i; break; }
+    if (slot < 0) { slot = 0; for (int i = 1; i < 8; i++) if (g_mpool[i].cap < g_mpool[slot].cap) slot = i; free(g_mpool[slot].p); }
+    g_mpool[slot].p = p; g_mpool[slot].cap = cap < 4096 ? 4096 : cap;
+}
+static void cmask_release(cmask *k)
+{
+    if (!k || --k->refs > 0) return;
+    mpool_put(k->m, (size_t)k->w * k->h);
+    if (k->path) CGPathRelease(k->path);
+    cmask_release(k->prev);
+    free(k);
+}
 
 typedef struct gcanvas {
     gbitmap *bm;
@@ -413,6 +442,8 @@ typedef struct gcanvas {
     CGRect cb_saved[256];
     struct clipop *ops; int nops, cops;
 } gcanvas;
+/* HUSK_FRAME_STATS: the clip's costs (reported with the blit's) */
+static int64_t g_cs_masks, g_cs_mask_px, g_cs_mask_ns, g_cs_flushes, g_cs_flushed_ops, g_cs_flush_ns, g_cs_shaped_rects;
 typedef struct clipop {
     CGAffineTransform t;            /* the transform when it was set */
     CGPathRef path;                 /* or NULL: the rectangle */
@@ -422,9 +453,13 @@ typedef struct clipop {
     int applied;                    /* the save level CoreGraphics took it at, or -1 */
 } clipop;
 /* CoreGraphics takes the clips it has not: before it draws */
+static int64_t now_ns(void);
 static void cv_flush(gcanvas *v)
 {
     CGContextRef c = v->c;
+    int64_t t0 = now_ns(); int before = 0;
+    for (int i = 0; i < v->nops; i++) before += v->ops[i].applied < 0;
+    if (before) { g_cs_flushes++; g_cs_flushed_ops += before; }
     for (int i = 0; i < v->nops; i++) {
         clipop *o = &v->ops[i];
         if (o->applied >= 0) continue;
@@ -444,6 +479,7 @@ static void cv_flush(gcanvas *v)
         CGContextConcatCTM(c, cur);
         o->applied = v->depth;
     }
+    if (before) g_cs_flush_ns += now_ns() - t0;
 }
 static CGContextRef cg(gcanvas *v) { cv_flush(v); return v->c; }
 /* the clip's bounds in the canvas's coordinates now */
@@ -540,11 +576,18 @@ static void cv_restore(gcanvas *v)
 
 /* After the CoreGraphics clip took a path (user space), the mask takes it too: its coverage times the mask's so far (or the
  * coverage left out of it, for a difference). Where that cannot be, blending leaves the canvas to CoreGraphics (complex). */
+static void clip_mask_add_(gcanvas *v, CGPathRef path, bool even_odd, bool difference);
 static void clip_mask_add(gcanvas *v, CGPathRef path, bool even_odd, bool difference)
+{
+    int64_t t0 = now_ns();
+    clip_mask_add_(v, path, even_odd, difference);
+    g_cs_masks++; g_cs_mask_ns += now_ns() - t0;
+    if (v->mask) g_cs_mask_px += (int64_t)v->mask->w * v->mask->h;
+}
+static void clip_mask_add_(gcanvas *v, CGPathRef path, bool even_odd, bool difference)
 {
     if (v->depth >= 256) { v->complex = true; return; }
     gbitmap *b = v->bm;
-    CGAffineTransform m = CGContextGetCTM(v->c);
     cmask *k = calloc(1, sizeof *k);
     if (!k) { v->complex = true; return; }
     k->refs = 1;
@@ -556,40 +599,51 @@ static void clip_mask_add(gcanvas *v, CGPathRef path, bool even_odd, bool differ
             k->x0 = dx0; k->y0 = b->h - dy1; k->w = dx1 - dx0; k->h = dy1 - dy0;
         }
     }
-    if (k->w > 0 && k->h > 0) {
-        k->m = calloc((size_t)k->w * k->h, 1);
-        CGContextRef mc = k->m ? CGBitmapContextCreate(k->m, (size_t)k->w, (size_t)k->h, 8, (size_t)k->w, NULL, (CGBitmapInfo)kCGImageAlphaOnly) : NULL;
-        if (!mc) { free(k->m); free(k); v->complex = true; return; }
-        CGContextConcatCTM(mc, CGAffineTransformConcat(m, CGAffineTransformMakeTranslation(-k->x0, -(b->h - k->y0 - k->h))));
-        CGContextSetGrayFillColor(mc, 0, 1);
-        CGContextAddPath(mc, path);
-        if (even_odd) CGContextEOFillPath(mc); else CGContextFillPath(mc);
-        CGContextRelease(mc);
-        /* with what was there: the old mask, or (rectangles only) all of the bounds */
-        cmask *o = v->mask;
-        if (!o && !difference) goto done;
+    k->path = CGPathRetain(path); k->t = CGContextGetCTM(v->c); k->even_odd = even_odd; k->difference = difference;
+    k->prev = v->mask;                      /* the canvas's reference, now the new mask's */
+    v->mask = k;
+}
+/* the mask's bytes, made when first needed; false without memory */
+static bool cmask_build(cmask *k, int bh)
+{
+    if (k->m || k->w <= 0 || k->h <= 0) return true;
+    size_t n = (size_t)k->w * k->h;
+    k->m = mpool_get(n);
+    if (!k->m) return false;
+    memset(k->m, 0, n);
+    CGContextRef mc = CGBitmapContextCreate(k->m, (size_t)k->w, (size_t)k->h, 8, (size_t)k->w, NULL, (CGBitmapInfo)kCGImageAlphaOnly);
+    if (!mc) { mpool_put(k->m, n); k->m = NULL; return false; }
+    CGContextConcatCTM(mc, CGAffineTransformConcat(k->t, CGAffineTransformMakeTranslation(-k->x0, -(bh - k->y0 - k->h))));
+    CGContextSetGrayFillColor(mc, 0, 1);
+    CGContextAddPath(mc, k->path);
+    if (k->even_odd) CGContextEOFillPath(mc); else CGContextFillPath(mc);
+    CGContextRelease(mc);
+    /* with what was there: the mask before (made now if it was not), or (rectangles only) all of the bounds */
+    cmask *o = k->prev;
+    if (o && !cmask_build(o, bh)) o = NULL;
+    if (o || k->difference)
         for (int y = 0; y < k->h; y++) {
             uint8_t *r = k->m + (size_t)y * k->w;
             int gy = k->y0 + y;
+            bool in_y = o && gy >= o->y0 && gy < o->y0 + o->h;
             for (int x = 0; x < k->w; x++) {
-                uint32_t c = difference ? 255u - r[x] : r[x], prev = 255;
+                uint32_t c = k->difference ? 255u - r[x] : r[x], prev = 255;
                 if (o) {
                     int gx = k->x0 + x;
-                    prev = gx >= o->x0 && gx < o->x0 + o->w && gy >= o->y0 && gy < o->y0 + o->h ? o->m[(size_t)(gy - o->y0) * o->w + (gx - o->x0)] : 0;
+                    prev = in_y && gx >= o->x0 && gx < o->x0 + o->w && o->m ? o->m[(size_t)(gy - o->y0) * o->w + (gx - o->x0)] : 0;
                 }
                 r[x] = (uint8_t)((c * prev + 127) / 255);
             }
         }
-    }
-done:
-    cmask_release(v->mask);
-    v->mask = k;
-}
-/* the rows and columns the clip's mask leaves to draw (all, without one); false when none */
+    CGPathRelease(k->path); k->path = NULL;
+    cmask_release(k->prev); k->prev = NULL;
+    return true;
+}/* the rows and columns the clip's mask leaves to draw (all, without one); false when none */
 static inline bool clip_box(const gcanvas *v, int *x0, int *x1, int *y0, int *y1)
 {
-    const cmask *k = v->mask;
+    cmask *k = v->mask;
     if (k) {
+        if (!cmask_build(k, v->bm->h)) return false;
         if (*x0 < k->x0) *x0 = k->x0;
         if (*y0 < k->y0) *y0 = k->y0;
         if (*x1 > k->x0 + k->w) *x1 = k->x0 + k->w;
@@ -1364,7 +1418,7 @@ NAT(G_cvClipRect)
     bool diff = a[5].i == 0, shaped = diff || fabs(m.b) > 1e-6 || fabs(m.c) > 1e-6;
     clip_record(v, NULL, r, false, diff);
     if (!diff) v->cb = CGRectIntersection(v->cb, CGRectStandardize(CGRectApplyAffineTransform(r, m)));
-    if (shaped) { CGPathRef rp = CGPathCreateWithRect(r, NULL); clip_mask_add(v, rp, false, diff); CGPathRelease(rp); }
+    if (shaped) { g_cs_shaped_rects++; CGPathRef rp = CGPathCreateWithRect(r, NULL); clip_mask_add(v, rp, false, diff); CGPathRelease(rp); }
     *ret = Ii(!CGRectIsNull(v->cb) && v->cb.size.width > 0 && v->cb.size.height > 0);
     return true;
 }
@@ -1633,7 +1687,7 @@ static inline uint32_t bilerp(uint32_t p00, uint32_t p10, uint32_t p01, uint32_t
 /* HUSK_FRAME_STATS (husk.DrawStats via Gfx.blitStats): bitmaps drawn here, how, and why the rest went to CoreGraphics */
 enum { BS_HERE, BS_EXACT_PX, BS_SCALED_PX, BS_NS, BS_PAINT, BS_LAYER, BS_CLIP, BS_TURNED, BS_SHRUNK, BS_COUNT };
 static int64_t g_bs[BS_COUNT];
-static inline int64_t now_ns(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return (int64_t)t.tv_sec * 1000000000 + t.tv_nsec; }
+static int64_t now_ns(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return (int64_t)t.tv_sec * 1000000000 + t.tv_nsec; }
 static bool blit_(gcanvas *v, gbitmap *src, float sl, float st, float sr, float sb, float dl, float dt, float dr, float db,
                   const int32_t *p);
 static bool blit(gcanvas *v, gbitmap *src, float sl, float st, float sr, float sb, float dl, float dt, float dr, float db,
@@ -1837,6 +1891,10 @@ NAT(G_blitStats)
     int64_t *o = arr_data(a[0].l);
     if (o) for (int i = 0; i < BS_COUNT; i++) { o[i] = g_bs[i]; g_bs[i] = 0; }
     k_gfx_report(a[1].j);               /* gfx_jni.c (gen-jni.py): the costliest natives */
+    double fr = a[1].j > 0 ? (double)a[1].j : 1;
+    tl_log_line("FrameStats: clip per frame: %.1f masks (%.2f Mpx, %.2f ms), %.1f of them turned or left-out rectangles; CoreGraphics given clips %.1f times (%.1f clips, %.2f ms)",
+                g_cs_masks / fr, g_cs_mask_px / fr / 1e6, g_cs_mask_ns / fr / 1e6, g_cs_shaped_rects / fr, g_cs_flushes / fr, g_cs_flushed_ops / fr, g_cs_flush_ns / fr / 1e6);
+    g_cs_masks = g_cs_mask_px = g_cs_mask_ns = g_cs_flushes = g_cs_flushed_ops = g_cs_flush_ns = g_cs_shaped_rects = 0;
     return true;
 }
 NAT(G_cvDrawBitmap)
