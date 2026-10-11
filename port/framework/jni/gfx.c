@@ -406,7 +406,59 @@ typedef struct gcanvas {
     int layers;
     cmask *mask;                    /* the clip's coverage, where it is other than rectangles */
     cmask *mask_saved[256];         /* as it was at each save level */
+    /* The clip is Husk's: its bounds (CoreGraphics' device space, y up) and the clips that made it, given to CoreGraphics
+     * only when it draws (cv_flush). Each clip it takes makes it intersect masks a pixel at a time, and Compose clips
+     * every list item and shape: tens a frame, most never drawn through by CoreGraphics. */
+    CGRect cb;
+    CGRect cb_saved[256];
+    struct clipop *ops; int nops, cops;
 } gcanvas;
+typedef struct clipop {
+    CGAffineTransform t;            /* the transform when it was set */
+    CGPathRef path;                 /* or NULL: the rectangle */
+    CGRect r;
+    bool even_odd, difference;
+    int level;                      /* the save level it was set at */
+    int applied;                    /* the save level CoreGraphics took it at, or -1 */
+} clipop;
+/* CoreGraphics takes the clips it has not: before it draws */
+static void cv_flush(gcanvas *v)
+{
+    CGContextRef c = v->c;
+    for (int i = 0; i < v->nops; i++) {
+        clipop *o = &v->ops[i];
+        if (o->applied >= 0) continue;
+        CGAffineTransform cur = CGContextGetCTM(c);
+        CGContextConcatCTM(c, CGAffineTransformInvert(cur));
+        CGContextConcatCTM(c, o->t);
+        if (o->difference) {
+            CGRect all = CGRectApplyAffineTransform(CGRectMake(-2, -2, v->bm->w + 4, v->bm->h + 4), CGAffineTransformInvert(o->t));
+            CGContextAddRect(c, all);
+            if (o->path) CGContextAddPath(c, o->path); else CGContextAddRect(c, o->r);
+            CGContextEOClip(c);
+        } else if (o->path) {
+            CGContextAddPath(c, o->path);
+            if (o->even_odd) CGContextEOClip(c); else CGContextClip(c);
+        } else CGContextClipToRect(c, o->r);
+        CGContextConcatCTM(c, CGAffineTransformInvert(o->t));
+        CGContextConcatCTM(c, cur);
+        o->applied = v->depth;
+    }
+}
+static CGContextRef cg(gcanvas *v) { cv_flush(v); return v->c; }
+/* the clip's bounds in the canvas's coordinates now */
+static CGRect clip_user(gcanvas *v)
+{
+    if (CGRectIsNull(v->cb) || v->cb.size.width <= 0 || v->cb.size.height <= 0) return CGRectNull;
+    return CGRectApplyAffineTransform(v->cb, CGAffineTransformInvert(CGContextGetCTM(v->c)));
+}
+static void clip_record(gcanvas *v, CGPathRef path, CGRect r, bool even_odd, bool difference)
+{
+    if (v->nops == v->cops) { v->cops = v->cops ? v->cops * 2 : 16; v->ops = realloc(v->ops, (size_t)v->cops * sizeof *v->ops); }
+    clipop *o = &v->ops[v->nops++];
+    o->t = CGContextGetCTM(v->c); o->path = path ? CGPathRetain(path) : NULL; o->r = r;
+    o->even_odd = even_odd; o->difference = difference; o->level = v->depth; o->applied = -1;
+}
 
 static gcanvas *cv_new(gbitmap *b)
 {
@@ -417,6 +469,7 @@ static gcanvas *cv_new(gbitmap *b)
     CGContextScaleCTM(v->c, 1, -1);
     v->base = CGContextGetCTM(v->c);
     CGContextSetTextMatrix(v->c, CGAffineTransformMakeScale(1, -1));
+    v->cb = CGRectMake(0, 0, b->w, b->h);
     return v;
 }
 static void cv_free(gcanvas *v)
@@ -429,6 +482,8 @@ static void cv_free(gcanvas *v)
         if (v->depth < 256) { cmask_release(v->mask); v->mask = v->mask_saved[v->depth]; }
     }
     cmask_release(v->mask);
+    for (int i = 0; i < v->nops; i++) if (v->ops[i].path) CGPathRelease(v->ops[i].path);
+    free(v->ops);
     CGContextRestoreGState(v->c);
     free(v);
 }
@@ -436,9 +491,12 @@ static CGBlendMode blend_of(int mode);
 static int cv_save_mode(gcanvas *v, bool layer, float alpha, CGRect bounds, int mode);
 static int cv_save(gcanvas *v, bool layer, float alpha, CGRect bounds) { return cv_save_mode(v, layer, alpha, bounds, 3); }
 /* a layer is composited on restore with the alpha and blend mode set when it began */
+static void cv_flush(gcanvas *v);
 static int cv_save_mode(gcanvas *v, bool layer, float alpha, CGRect bounds, int mode)
 {
+    if (layer) cv_flush(v);
     CGContextSaveGState(v->c);
+    if (v->depth < 256) v->cb_saved[v->depth] = v->cb;
     if (v->depth < 256) {
         uint64_t bit = 1ull << (v->depth & 63);
         if (v->complex) v->complex_bits[v->depth >> 6] |= bit; else v->complex_bits[v->depth >> 6] &= ~bit;
@@ -467,7 +525,16 @@ static void cv_restore(gcanvas *v)
         v->complex = (v->complex_bits[v->depth >> 6] & bit) != 0;
         cmask_release(v->mask);
         v->mask = v->mask_saved[v->depth];
+        v->cb = v->cb_saved[v->depth];
     }
+    int k = 0;
+    for (int i = 0; i < v->nops; i++) {
+        clipop o = v->ops[i];
+        if (o.level > v->depth) { if (o.path) CGPathRelease(o.path); continue; }
+        if (o.applied > v->depth) o.applied = -1;
+        v->ops[k++] = o;
+    }
+    v->nops = k;
     CGContextRestoreGState(v->c);
 }
 
@@ -478,12 +545,11 @@ static void clip_mask_add(gcanvas *v, CGPathRef path, bool even_odd, bool differ
     if (v->depth >= 256) { v->complex = true; return; }
     gbitmap *b = v->bm;
     CGAffineTransform m = CGContextGetCTM(v->c);
-    CGRect cb = CGContextGetClipBoundingBox(v->c);
     cmask *k = calloc(1, sizeof *k);
     if (!k) { v->complex = true; return; }
     k->refs = 1;
-    if (!CGRectIsNull(cb)) {
-        CGRect d = CGRectIntersection(CGRectStandardize(CGRectApplyAffineTransform(cb, m)), CGRectMake(0, 0, b->w, b->h));
+    if (!CGRectIsNull(v->cb)) {
+        CGRect d = CGRectIntersection(v->cb, CGRectMake(0, 0, b->w, b->h));
         if (!CGRectIsNull(d) && d.size.width > 0 && d.size.height > 0) {
             int dx0 = (int)floor(d.origin.x), dy0 = (int)floor(d.origin.y);
             int dx1 = (int)ceil(d.origin.x + d.size.width), dy1 = (int)ceil(d.origin.y + d.size.height);
@@ -501,6 +567,7 @@ static void clip_mask_add(gcanvas *v, CGPathRef path, bool even_odd, bool differ
         CGContextRelease(mc);
         /* with what was there: the old mask, or (rectangles only) all of the bounds */
         cmask *o = v->mask;
+        if (!o && !difference) goto done;
         for (int y = 0; y < k->h; y++) {
             uint8_t *r = k->m + (size_t)y * k->w;
             int gy = k->y0 + y;
@@ -514,6 +581,7 @@ static void clip_mask_add(gcanvas *v, CGPathRef path, bool even_odd, bool differ
             }
         }
     }
+done:
     cmask_release(v->mask);
     v->mask = k;
 }
@@ -588,7 +656,7 @@ static bool blend_fill(gcanvas *v, CGRect r, uint32_t argb, bool aa)
     if (!blend_ok(v, &m)) return false;
     gbitmap *b = v->bm;
     CGRect d = CGRectStandardize(CGRectApplyAffineTransform(CGRectStandardize(r), m));
-    CGRect clip = CGContextGetClipBoundingBox(v->c);
+    CGRect clip = clip_user(v);
     if (CGRectIsNull(clip)) return true;
     d = CGRectIntersection(d, CGRectStandardize(CGRectApplyAffineTransform(clip, m)));
     d = CGRectIntersection(d, CGRectMake(0, 0, b->w, b->h));
@@ -646,6 +714,15 @@ static bool blend_fill(gcanvas *v, CGRect r, uint32_t argb, bool aa)
  * (quick: an opaque fill of one channel), and Husk blends the colour through it (CoreGraphics' translucent blending is a
  * pixel at a time: Compose's shapes, Material's expressive polygons, ovals and strokes). Where blend_ok allows. */
 static uint8_t *g_mask; static size_t g_mask_cap;
+static void mask_blend(gcanvas *v, int dx0, int dy1, int W, int H, uint32_t argb);
+/* g_mask zeroed for W x H; false without memory */
+static bool mask_room(int W, int H)
+{
+    size_t need = (size_t)W * H;
+    if (need > g_mask_cap) { free(g_mask); g_mask_cap = need + need / 4; g_mask = malloc(g_mask_cap); if (!g_mask) { g_mask_cap = 0; return false; } }
+    memset(g_mask, 0, need);
+    return true;
+}
 static bool mask_draw(gcanvas *v, CGPathRef path, const int32_t *p, bool even_odd)
 {
     int style = p[P_STYLE];
@@ -660,7 +737,7 @@ static bool mask_draw(gcanvas *v, CGPathRef path, const int32_t *p, bool even_od
     if (CGRectIsNull(box)) return true;
     if (style != 0) { float e = (sw > 0 ? sw : 1) * (p[P_JOIN] == 0 ? fmaxf(pf(p, P_MITER), 4) : 1) + 2; box = CGRectInset(box, -e, -e); }
     box = CGRectApplyAffineTransform(box, m);
-    CGRect clip = CGContextGetClipBoundingBox(v->c);
+    CGRect clip = clip_user(v);
     if (CGRectIsNull(clip)) return true;
     box = CGRectIntersection(box, CGRectApplyAffineTransform(clip, m));
     box = CGRectIntersection(box, CGRectMake(0, 0, b->w, b->h));
@@ -670,9 +747,7 @@ static bool mask_draw(gcanvas *v, CGPathRef path, const int32_t *p, bool even_od
     int dx1 = (int)ceil(box.origin.x + box.size.width), dy1 = (int)ceil(box.origin.y + box.size.height);
     int W = dx1 - dx0, H = dy1 - dy0;
     if (W <= 0 || H <= 0) return true;
-    size_t need = (size_t)W * H;
-    if (need > g_mask_cap) { free(g_mask); g_mask_cap = need + need / 4; g_mask = malloc(g_mask_cap); if (!g_mask) { g_mask_cap = 0; return false; } }
-    memset(g_mask, 0, need);
+    if (!mask_room(W, H)) return false;
     CGContextRef mc = CGBitmapContextCreate(g_mask, (size_t)W, (size_t)H, 8, (size_t)W, NULL, (CGBitmapInfo)kCGImageAlphaOnly);
     if (!mc) return false;
     CGContextConcatCTM(mc, CGAffineTransformConcat(m, CGAffineTransformMakeTranslation(-dx0, -dy0)));
@@ -685,18 +760,25 @@ static bool mask_draw(gcanvas *v, CGPathRef path, const int32_t *p, bool even_od
     CGContextAddPath(mc, path);
     CGContextDrawPath(mc, style == 1 ? kCGPathStroke : style == 2 ? (even_odd ? kCGPathEOFillStroke : kCGPathFillStroke) : (even_odd ? kCGPathEOFill : kCGPathFill));
     CGContextRelease(mc);
+    mask_blend(v, dx0, dy1, W, H, argb);
+    return true;
+}
+/* argb blended through g_mask, W x H, over the bitmap from column dx0 and (device space) row dy1 down; and the clip's mask */
+static void mask_blend(gcanvas *v, int dx0, int dy1, int W, int H, uint32_t argb)
+{
+    gbitmap *b = v->bm;
     /* the mask's rows from the top, as the bitmap's: row r is the bitmap's row (h - dy1) + r */
     uint32_t inv, s_full = premul(argb, 1, &inv);
     int top = b->h - dy1;
     if (v->mask) {
         int mx0 = dx0, mx1 = dx0 + W, my0 = top, my1 = top + H;
-        if (!clip_box(v, &mx0, &mx1, &my0, &my1)) return true;
+        if (!clip_box(v, &mx0, &mx1, &my0, &my1)) return;
         for (int j = my0; j < my1; j++) {
             const uint8_t *mk = g_mask + (size_t)(j - top) * W + (mx0 - dx0), *ck = clip_at(v, mx0, j);
             uint32_t *d = (uint32_t *)(b->px + (size_t)j * b->stride) + mx0;
             for (int i = 0; i < mx1 - mx0; i++) d[i] = over(d[i], scale_px(s_full, (mk[i] * (uint32_t)ck[i] + 127) / 255));
         }
-        return true;
+        return;
     }
     for (int r = 0; r < H; r++) {
         const uint8_t *mk = g_mask + (size_t)r * W;
@@ -706,7 +788,7 @@ static bool mask_draw(gcanvas *v, CGPathRef path, const int32_t *p, bool even_od
             d[i] = over(d[i], scale_px(s_full, c));
         }
     }
-    return true;
+    return;
 }
 
 
@@ -967,6 +1049,53 @@ static float line_width(CTLineRef line, const int32_t *p)
     return (float)CTLineGetTypographicBounds(line, NULL, NULL, NULL) * (pf(p, P_SCALEX) > 0 ? pf(p, P_SCALEX) : 1);
 }
 
+/* Text in a plain colour, as mask_draw draws a path: CoreText's glyphs as coverage, Husk blending the colour through it (and
+ * through the clip's mask, without handing CoreGraphics the clip). Not colour glyphs (emoji): those are their own colours. */
+static bool text_mask(gcanvas *v, CTLineRef line, float x, float y, float w, const int32_t *p)
+{
+    if (p[P_CFMODE] >= 0 || pf(p, P_SHRAD) > 0 || p[P_XFER] != 3 || p[P_STYLE] != 0
+        || (p[P_FLAGS] & (PF_FAKEBOLD | PF_UNDERLINE | PF_STRIKE))) return false;
+    CFArrayRef runs = CTLineGetGlyphRuns(line);
+    for (CFIndex i = 0; i < CFArrayGetCount(runs); i++) {
+        CTFontRef f = CFDictionaryGetValue(CTRunGetAttributes(CFArrayGetValueAtIndex(runs, i)), kCTFontAttributeName);
+        if (f && (CTFontGetSymbolicTraits(f) & kCTFontTraitColorGlyphs)) return false;
+    }
+    CGAffineTransform m;
+    if (!blend_ok(v, &m)) return false;
+    uint32_t argb = (uint32_t)p[P_COLOR];
+    if (!(argb >> 24)) return true;
+    gbitmap *b = v->bm;
+    CGFloat asc = 0, desc = 0;
+    CTLineGetTypographicBounds(line, &asc, &desc, NULL);
+    float sx = pf(p, P_SCALEX) > 0 ? pf(p, P_SCALEX) : 1, skew = pf(p, P_SKEWX);
+    /* room for what glyphs reach past their advance and the line's bounds (italics, accents, swashes) */
+    float pad = (float)(asc + desc) * 0.5f + 2;
+    CGRect area = CGRectMake(x - pad, y - (float)asc - pad, w * sx + 2 * pad + fabsf(skew) * (float)(asc + desc), (float)(asc + desc) + 2 * pad);
+    CGRect box = CGRectApplyAffineTransform(area, m);
+    CGRect clip = clip_user(v);
+    if (CGRectIsNull(clip)) return true;
+    box = CGRectIntersection(box, CGRectApplyAffineTransform(clip, m));
+    box = CGRectIntersection(box, CGRectMake(0, 0, b->w, b->h));
+    if (CGRectIsNull(box) || box.size.width <= 0 || box.size.height <= 0) return true;
+    int dx0 = (int)floor(box.origin.x), dy0 = (int)floor(box.origin.y);
+    int dx1 = (int)ceil(box.origin.x + box.size.width), dy1 = (int)ceil(box.origin.y + box.size.height);
+    int W = dx1 - dx0, H = dy1 - dy0;
+    if (W <= 0 || H <= 0) return true;
+    if (!mask_room(W, H)) return false;
+    CGContextRef mc = CGBitmapContextCreate(g_mask, (size_t)W, (size_t)H, 8, (size_t)W, NULL, (CGBitmapInfo)kCGImageAlphaOnly);
+    if (!mc) return false;
+    CGContextConcatCTM(mc, CGAffineTransformConcat(m, CGAffineTransformMakeTranslation(-dx0, -dy0)));
+    CGContextSetShouldAntialias(mc, (p[P_FLAGS] & PF_AA) != 0);
+    CGContextSetShouldSmoothFonts(mc, false);
+    CGContextSetGrayFillColor(mc, 0, 1);
+    CGContextSetTextMatrix(mc, CGAffineTransformMake(sx, 0, -skew, -1, 0, 0));
+    CGContextSetTextDrawingMode(mc, kCGTextFill);
+    CGContextSetTextPosition(mc, x, y);
+    CTLineDraw(line, mc);
+    CGContextRelease(mc);
+    mask_blend(v, dx0, dy1, W, H, argb);
+    return true;
+}
 static void draw_text(gcanvas *v, jobj *s, int start, int end, float x, float y, const int32_t *p, gface *g, gshader *sh)
 {
     CFStringRef str = cfstr(s, start, end);
@@ -975,7 +1104,8 @@ static void draw_text(gcanvas *v, jobj *s, int start, int end, float x, float y,
     float w = line_width(line, p);
     if (p[P_ALIGN] == 1) x -= w / 2;
     else if (p[P_ALIGN] == 2) x -= w;
-    CGContextRef c = v->c;
+    if (!sh && text_mask(v, line, x, y, w, p)) { CFRelease(line); return; }
+    CGContextRef c = cg(v);
     bool layered;
     if (paint_begin(c, p, &layered)) {
         float sx = pf(p, P_SCALEX) > 0 ? pf(p, P_SCALEX) : 1, skew = pf(p, P_SKEWX);
@@ -1231,15 +1361,11 @@ NAT(G_cvClipRect)
     if (!v) return true;
     CGRect r = CGRectMake(a[1].f, a[2].f, a[3].f - a[1].f, a[4].f - a[2].f);
     CGAffineTransform m = CGContextGetCTM(v->c);
-    bool shaped = a[5].i == 0 || fabs(m.b) > 1e-6 || fabs(m.c) > 1e-6;
-    if (a[5].i == 0) {
-        CGRect all = CGContextGetClipBoundingBox(v->c);
-        CGContextAddRect(v->c, CGRectInset(all, -1, -1));
-        CGContextAddRect(v->c, r);
-        CGContextEOClip(v->c);
-    } else CGContextClipToRect(v->c, r);
-    if (shaped) { CGPathRef rp = CGPathCreateWithRect(r, NULL); clip_mask_add(v, rp, false, a[5].i == 0); CGPathRelease(rp); }
-    *ret = Ii(!CGRectIsEmpty(CGContextGetClipBoundingBox(v->c)));
+    bool diff = a[5].i == 0, shaped = diff || fabs(m.b) > 1e-6 || fabs(m.c) > 1e-6;
+    clip_record(v, NULL, r, false, diff);
+    if (!diff) v->cb = CGRectIntersection(v->cb, CGRectStandardize(CGRectApplyAffineTransform(r, m)));
+    if (shaped) { CGPathRef rp = CGPathCreateWithRect(r, NULL); clip_mask_add(v, rp, false, diff); CGPathRelease(rp); }
+    *ret = Ii(!CGRectIsNull(v->cb) && v->cb.size.width > 0 && v->cb.size.height > 0);
     return true;
 }
 /* (long, float[] path, int n, int fill (1 even-odd), int op) */
@@ -1250,18 +1376,15 @@ NAT(G_cvClipPath)
     *ret = Ii(1);
     if (!v || !f) return true;
     CGPathRef p = build_path(f, a[2].i);
-    if (a[4].i == 0) {
-        CGRect all = CGContextGetClipBoundingBox(v->c);
-        CGContextAddRect(v->c, CGRectInset(all, -1, -1));
-        CGContextAddPath(v->c, p);
-        CGContextEOClip(v->c);
-    } else {
-        CGContextAddPath(v->c, p);
-        if (a[3].i == 1) CGContextEOClip(v->c); else CGContextClip(v->c);
+    bool diff = a[4].i == 0;
+    clip_record(v, p, CGRectNull, a[3].i == 1, diff);
+    if (!diff) {
+        CGRect bb = CGPathIsEmpty(p) ? CGRectNull : CGPathGetPathBoundingBox(p);
+        v->cb = CGRectIsNull(bb) ? CGRectNull : CGRectIntersection(v->cb, CGRectStandardize(CGRectApplyAffineTransform(bb, CGContextGetCTM(v->c))));
     }
-    clip_mask_add(v, p, a[3].i == 1, a[4].i == 0);
+    clip_mask_add(v, p, a[3].i == 1, diff);
     CGPathRelease(p);
-    *ret = Ii(!CGRectIsEmpty(CGContextGetClipBoundingBox(v->c)));
+    *ret = Ii(!CGRectIsNull(v->cb) && v->cb.size.width > 0 && v->cb.size.height > 0);
     return true;
 }
 NAT(G_cvClipBounds)
@@ -1270,10 +1393,10 @@ NAT(G_cvClipBounds)
     gcanvas *v = H(gcanvas, 0); int32_t *o = arr_data(a[1].l);
     *ret = Ii(0);
     if (!v || !o) return true;
-    CGRect r = CGContextGetClipBoundingBox(v->c);
+    CGRect r = clip_user(v);
     if (CGRectIsNull(r) || CGRectIsEmpty(r)) { o[0] = o[1] = o[2] = o[3] = 0; return true; }
-    o[0] = (int32_t)floor(r.origin.x); o[1] = (int32_t)floor(r.origin.y);
-    o[2] = (int32_t)ceil(r.origin.x + r.size.width); o[3] = (int32_t)ceil(r.origin.y + r.size.height);
+    o[0] = (int32_t)floor(r.origin.x + 1e-3); o[1] = (int32_t)floor(r.origin.y + 1e-3);
+    o[2] = (int32_t)ceil(r.origin.x + r.size.width - 1e-3); o[3] = (int32_t)ceil(r.origin.y + r.size.height - 1e-3);
     *ret = Ii(1);
     return true;
 }
@@ -1285,7 +1408,8 @@ NAT(G_cvDrawColor)
     if (!v) return true;
     CGContextRef c = v->c;
     int mode = a[2].i;
-    if (mode == 3 && ((uint32_t)a[1].i >> 24) < 255 && blend_fill(v, CGContextGetClipBoundingBox(c), (uint32_t)a[1].i, false)) return true;
+    if (mode == 3 && ((uint32_t)a[1].i >> 24) < 255 && blend_fill(v, clip_user(v), (uint32_t)a[1].i, false)) return true;
+    cv_flush(v);
     CGContextSaveGState(c);
     CGRect all = CGContextGetClipBoundingBox(c);
     if (mode == 0) CGContextClearRect(c, all);
@@ -1303,7 +1427,7 @@ NAT(G_cvDrawColor)
 static void shape(gcanvas *v, CGPathRef p, jobj *paint, int64_t shader)
 {
     if (!shader && mask_draw(v, p, paint_of(paint), false)) return;
-    draw_path(v->c, p, paint_of(paint), (gshader *)(uintptr_t)shader, false);
+    draw_path(cg(v), p, paint_of(paint), (gshader *)(uintptr_t)shader, false);
 }
 NAT(G_cvDrawRect)
 {
@@ -1315,6 +1439,7 @@ NAT(G_cvDrawRect)
     if (!a[6].j && p[P_STYLE] == 0 && p[P_CFMODE] < 0 && pf(p, P_SHRAD) <= 0 && p[P_XFER] == 3) {
         if (((uint32_t)p[P_COLOR] >> 24) < 255 && blend_fill(v, r, (uint32_t)p[P_COLOR], (p[P_FLAGS] & PF_AA) != 0)) return true;
         /* the common case, without a path */
+        cv_flush(v);
         CGContextSaveGState(v->c);
         CGColorRef cc = color_of((uint32_t)p[P_COLOR], 1);
         CGContextSetFillColorWithColor(v->c, cc);
@@ -1354,7 +1479,7 @@ static bool rrect_fill(gcanvas *v, CGRect r, float rx, float ry, uint32_t argb, 
     float y0 = (float)(b->h - (d.origin.y + d.size.height)), y1 = (float)(b->h - d.origin.y);
     if (srx > (x1 - x0) / 2) srx = (x1 - x0) / 2;
     if (sry > (y1 - y0) / 2) sry = (y1 - y0) / 2;
-    CGRect clip = CGContextGetClipBoundingBox(v->c);
+    CGRect clip = clip_user(v);
     if (CGRectIsNull(clip) || !(argb >> 24)) return true;
     CGRect cd = CGRectStandardize(CGRectApplyAffineTransform(clip, m));
     /* the pixels the shape may touch, inside the clip (its edges at pixel centres) */
@@ -1463,7 +1588,7 @@ NAT(G_cvDrawPath)
     if (!v || !f) return true;
     CGPathRef p = build_path(f, a[2].i);
     if (a[5].j || !mask_draw(v, p, paint_of(a[4].l), a[3].i == 1))
-        draw_path(v->c, p, paint_of(a[4].l), (gshader *)(uintptr_t)a[5].j, a[3].i == 1);
+        draw_path(cg(v), p, paint_of(a[4].l), (gshader *)(uintptr_t)a[5].j, a[3].i == 1);
     CGPathRelease(p);
     return true;
 }
@@ -1487,7 +1612,7 @@ NAT(G_cvDrawLines)
             else CGPathAddRect(path, NULL, CGRectMake(f[i] - sw / 2, f[i + 1] - sw / 2, sw, sw));
         }
     } else for (int i = off; i + 3 < off + n; i += 4) { CGPathMoveToPoint(path, NULL, f[i], f[i + 1]); CGPathAddLineToPoint(path, NULL, f[i + 2], f[i + 3]); }
-    draw_path(v->c, path, q, (gshader *)(uintptr_t)a[5].j, false);
+    draw_path(cg(v), path, q, (gshader *)(uintptr_t)a[5].j, false);
     CGPathRelease(path);
     return true;
 }
@@ -1664,7 +1789,7 @@ static bool blit_(gcanvas *v, gbitmap *src, float sl, float st, float sr, float 
     }
     g_bs[exact ? BS_EXACT_PX : BS_SCALED_PX] += (int64_t)W * H;
     /* the clip: the pixels whose centres it covers */
-    CGRect clip = CGContextGetClipBoundingBox(v->c);
+    CGRect clip = clip_user(v);
     if (CGRectIsNull(clip)) return true;
     CGRect cd = CGRectStandardize(CGRectApplyAffineTransform(clip, m));
     int ix0 = (int)ceil(cd.origin.x - 0.5), ix1 = (int)ceil(cd.origin.x + cd.size.width - 0.5);
@@ -1728,7 +1853,7 @@ NAT(G_cvDrawBitmap)
     CGImageRef full = bm_image(b);
     bool whole = sl == 0 && st == 0 && sr == b->w && sb == b->h;
     CGImageRef img = whole ? full : CGImageCreateWithImageInRect(full, CGRectMake(sl, st, sr - sl, sb - st));
-    CGContextRef c = v->c;
+    CGContextRef c = cg(v);
     bool layered;
     if (img && paint_begin(c, q, &layered)) {
         CGContextSetFillColorWithColor(c, CGColorGetConstantColor(kCGColorBlack));
@@ -1754,7 +1879,7 @@ NAT(G_cvDrawBitmapM)
     int32_t q[P_COUNT]; memcpy(q, p, sizeof(q));
     if (!a[3].l) q[P_FLAGS] |= PF_FILTER;
     CGImageRef img = bm_image(b);
-    CGContextRef c = v->c;
+    CGContextRef c = cg(v);
     bool layered;
     if (paint_begin(c, q, &layered)) {
         CGContextSetAlpha(c, (float)((uint32_t)q[P_COLOR] >> 24) / 255.0f);
