@@ -1,0 +1,202 @@
+diff --git a/libcore/ojluni/src/main/java/java/lang/ProcessBuilder.java b/libcore/ojluni/src/main/java/java/lang/ProcessBuilder.java
+index 0c892c23..e013ab31 100644
+--- a/libcore/ojluni/src/main/java/java/lang/ProcessBuilder.java
++++ b/libcore/ojluni/src/main/java/java/lang/ProcessBuilder.java
+@@ -1032,6 +1032,10 @@ public final class ProcessBuilder
+                                      redirects,
+                                      redirectErrorStream);
+         } catch (IOException | IllegalArgumentException e) {
++            // husk-port: iOS lets an app start no process, not even sh. A shell the app asks for answers in-process.
++            if (e instanceof IOException && HuskShell.wanted(prog)) {
++                return new HuskShell(cmdarray, redirectErrorStream);
++            }
+             String exceptionInfo = ": " + e.getMessage();
+             Throwable cause = e;
+             if ((e instanceof IOException) && security != null) {
+@@ -1052,4 +1056,186 @@ public final class ProcessBuilder
+                 cause);
+         }
+     }
++
++    /**
++     * husk-port: a shell for an app on iOS, where no process can be started. Enough of sh for what apps ask of one (libsu's
++     * shells, sh -c of a command): echo (with $? and >&2), id, uname, getprop, cat, true/false, exit; anything else is
++     * "not found", status 127. Commands run as their lines are written.
++     */
++    private static final class HuskShell extends Process {
++        static boolean wanted(String prog) {
++            try {
++                if (!"Darwin".equals(libcore.io.Libcore.os.uname().sysname)) return false;
++            } catch (RuntimeException e) { return false; }
++            String name = prog.substring(prog.lastIndexOf('/') + 1);
++            return name.equals("sh") || name.equals("bash") || name.equals("mksh") || name.equals("toybox") || name.equals("toolbox");
++        }
++
++        /** a pipe that never blocks its writer */
++        private static final class Pipe extends InputStream {
++            private final java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream();
++            private int pos;
++            private boolean closed;
++            synchronized void put(byte[] b) { buf.write(b, 0, b.length); notifyAll(); }
++            synchronized void close0() { closed = true; notifyAll(); }
++            @Override public synchronized int read() throws IOException {
++                byte[] one = new byte[1];
++                return read(one, 0, 1) < 0 ? -1 : one[0] & 255;
++            }
++            @Override public synchronized int read(byte[] b, int off, int len) throws IOException {
++                while (pos >= buf.size() && !closed) {
++                    try { wait(); } catch (InterruptedException e) { throw new java.io.InterruptedIOException(); }
++                }
++                if (pos >= buf.size()) return -1;
++                byte[] all = buf.toByteArray();
++                int n = Math.min(len, all.length - pos);
++                System.arraycopy(all, pos, b, off, n);
++                pos += n;
++                if (pos == all.length) { buf.reset(); pos = 0; }
++                return n;
++            }
++            @Override public synchronized int available() { return buf.size() - pos; }
++        }
++
++        private final Pipe out = new Pipe(), err;
++        private final StringBuilder line = new StringBuilder();
++        private final java.io.ByteArrayOutputStream pending = new java.io.ByteArrayOutputStream();
++        private int status;
++        private boolean done;
++
++        HuskShell(String[] cmd, boolean mergeErr) {
++            err = mergeErr ? out : new Pipe();
++            for (int i = 1; i < cmd.length; i++) {
++                if (cmd[i].equals("-c") && i + 1 < cmd.length) { run(cmd[i + 1]); finish(status); return; }
++            }
++        }
++
++        private final OutputStream in = new OutputStream() {
++            @Override public void write(int b) throws IOException { write(new byte[] { (byte) b }, 0, 1); }
++            @Override public void write(byte[] b, int off, int len) throws IOException {
++                synchronized (HuskShell.this) {
++                    if (done) throw new IOException("Stream closed");
++                    for (int i = off; i < off + len; i++) {
++                        if (b[i] == '\n') {
++                            String l = new String(pending.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
++                            pending.reset();
++                            run(l);
++                            if (done) return;
++                        } else pending.write(b[i]);
++                    }
++                }
++            }
++            @Override public void close() { synchronized (HuskShell.this) { finish(status); } }
++        };
++
++        private synchronized void finish(int code) {
++            if (done) return;
++            done = true; status = code;
++            out.close0(); err.close0();
++            notifyAll();
++        }
++
++        private void print(Pipe p, String s) { p.put(s.getBytes(java.nio.charset.StandardCharsets.UTF_8)); }
++
++        /** a line of commands, separated by ; && || */
++        private void run(String text) {
++            List<String> words = new ArrayList<>();
++            StringBuilder w = new StringBuilder();
++            boolean any = false;
++            char q = 0;
++            String sep = ";";
++            for (int i = 0; i <= text.length(); i++) {
++                char c = i < text.length() ? text.charAt(i) : '\n';
++                if (q != 0) {
++                    if (c == q) { q = 0; continue; }
++                    if (c == '$' && q == '"' && i + 1 < text.length() && text.charAt(i + 1) == '?') { w.append(status); i++; continue; }
++                    w.append(c); continue;
++                }
++                if (c == '\'' || c == '"') { q = c; any = true; continue; }
++                if (c == '$' && i + 1 < text.length() && text.charAt(i + 1) == '?') { w.append(status); any = true; i++; continue; }
++                boolean end = c == '\n' || c == ';' || (c == '&' && i + 1 < text.length() && text.charAt(i + 1) == '&')
++                           || (c == '|' && i + 1 < text.length() && text.charAt(i + 1) == '|');
++                if (c == ' ' || c == '\t' || end) {
++                    if (w.length() > 0 || any) { words.add(w.toString()); w.setLength(0); any = false; }
++                    if (end) {
++                        boolean go = sep.equals(";") || (sep.equals("&&") && status == 0) || (sep.equals("||") && status != 0);
++                        if (go && !words.isEmpty()) command(words);
++                        words = new ArrayList<>();
++                        sep = c == '&' ? "&&" : c == '|' ? "||" : ";";
++                        if (c == '&' || c == '|') i++;
++                        if (done) return;
++                    }
++                    continue;
++                }
++                w.append(c);
++            }
++        }
++
++        private void command(List<String> args) {
++            Pipe to = out;
++            List<String> a = new ArrayList<>();
++            for (String x : args) {
++                if (x.equals(">&2") || x.equals("1>&2")) to = err;
++                else if (x.equals("2>&1") || x.matches("[12]?>/dev/null") || x.equals("2>")) { }
++                else a.add(x);
++            }
++            if (a.isEmpty()) return;
++            String c = a.get(0);
++            switch (c) {
++                case "echo": {
++                    boolean nl = true; int from = 1;
++                    if (a.size() > 1 && a.get(1).equals("-n")) { nl = false; from = 2; }
++                    print(to, String.join(" ", a.subList(from, a.size())) + (nl ? "\n" : ""));
++                    status = 0; return;
++                }
++                case "id":
++                    print(to, "uid=10123(u0_a123) gid=10123(u0_a123) groups=10123(u0_a123),3003(inet),9997(everybody)\n");
++                    status = 0; return;
++                case "uname": {
++                    android.system.StructUtsname u = libcore.io.Libcore.os.uname();
++                    String f = a.size() > 1 ? a.get(1) : "-s";
++                    print(to, (f.equals("-a") ? "Linux localhost " + u.release + " " + u.version + " " + u.machine
++                              : f.equals("-r") ? u.release : f.equals("-m") ? u.machine : "Linux") + "\n");
++                    status = 0; return;
++                }
++                case "getprop": {
++                    String v = "";
++                    if (a.size() > 1) {
++                        try {
++                            Class<?> sp = Class.forName("android.os.SystemProperties");
++                            v = (String) sp.getMethod("get", String.class).invoke(null, a.get(1));
++                        } catch (ReflectiveOperationException | RuntimeException e) { v = ""; }
++                    }
++                    if (a.size() > 1) print(to, (v == null ? "" : v) + "\n");
++                    status = 0; return;
++                }
++                case "cat": {
++                    status = 0;
++                    for (String f : a.subList(1, a.size())) {
++                        try { print(to, new String(java.nio.file.Files.readAllBytes(new File(f).toPath()), java.nio.charset.StandardCharsets.UTF_8)); }
++                        catch (IOException | RuntimeException e) { print(err, "cat: " + f + ": No such file or directory\n"); status = 1; }
++                    }
++                    return;
++                }
++                case "true": case ":": case "cd": case "export": case "set": case "unset": case "umask": status = 0; return;
++                case "false": status = 1; return;
++                case "exit": {
++                    int code = status;
++                    try { if (a.size() > 1) code = Integer.parseInt(a.get(1)); } catch (NumberFormatException e) { }
++                    finish(code); return;
++                }
++                default:
++                    print(err, "sh: " + c + ": not found\n");
++                    status = 127;
++            }
++        }
++
++        @Override public OutputStream getOutputStream() { return in; }
++        @Override public InputStream getInputStream() { return out; }
++        @Override public InputStream getErrorStream() { return err; }
++        @Override public synchronized int waitFor() throws InterruptedException { while (!done) wait(); return status; }
++        @Override public synchronized int exitValue() { if (!done) throw new IllegalThreadStateException("process hasn't exited"); return status; }
++        @Override public synchronized void destroy() { finish(143); }
++        @Override public synchronized boolean isAlive() { return !done; }
++    }
+ }
