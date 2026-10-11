@@ -41,6 +41,7 @@ jobs:
           perl -e 'alarm shift; exec @ARGV' $(( ${{ env.SECONDS }} + 60 )) lldb --batch \
             -o 'process handle SIGSEGV -s false -p true -n false' -o 'process handle SIGBUS -s false -p true -n false' \
             -o 'settings set target.process.stop-on-exec false' \
+            -o 'settings set platform.plugin.darwin.ignored-exceptions EXC_BAD_ACCESS|EXC_BAD_INSTRUCTION|EXC_ARITHMETIC' \
             -o run -o 'thread backtrace all' -o 'register read' \
             -- build/fw/mac-host --art "$PWD/build/app/boot" --apk "$PWD/build/app/app/base.apk" --fwres "$PWD/build/app/app/framework-res.apk" \
             --seconds ${{ env.SECONDS }} --frames build/frames > build/app-run.log 2>&1
