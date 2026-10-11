@@ -1323,12 +1323,28 @@ static inline uint32_t scale_px(uint32_t s, uint32_t a)    /* s times a / 255, e
     ag = (ag + ((ag >> 8) & 0x00FF00FFu)) & 0xFF00FF00u;
     return rb | ag;
 }
+/* HUSK_FRAME_STATS (husk.DrawStats via Gfx.blitStats): bitmaps drawn here, how, and why the rest went to CoreGraphics */
+enum { BS_HERE, BS_EXACT_PX, BS_SCALED_PX, BS_NS, BS_PAINT, BS_LAYER, BS_CLIP, BS_TURNED, BS_SHRUNK, BS_COUNT };
+static int64_t g_bs[BS_COUNT];
+static inline int64_t now_ns(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return (int64_t)t.tv_sec * 1000000000 + t.tv_nsec; }
+static bool blit_(gcanvas *v, gbitmap *src, float sl, float st, float sr, float sb, float dl, float dt, float dr, float db,
+                  const int32_t *p);
 static bool blit(gcanvas *v, gbitmap *src, float sl, float st, float sr, float sb, float dl, float dt, float dr, float db,
                  const int32_t *p)
 {
-    if (src == v->bm || p[P_CFMODE] >= 0 || p[P_XFER] != 3 || pf(p, P_SHRAD) > 0) return false;
+    int64_t t0 = now_ns();
+    bool r = blit_(v, src, sl, st, sr, sb, dl, dt, dr, db, p);
+    if (r) { g_bs[BS_HERE]++; g_bs[BS_NS] += now_ns() - t0; }
+    return r;
+}
+static bool blit_(gcanvas *v, gbitmap *src, float sl, float st, float sr, float sb, float dl, float dt, float dr, float db,
+                  const int32_t *p)
+{
+    if (src == v->bm || p[P_CFMODE] >= 0 || p[P_XFER] != 3 || pf(p, P_SHRAD) > 0) { g_bs[BS_PAINT]++; return false; }
     CGAffineTransform m;
-    if (!blend_ok(v, &m)) return false;
+    if (v->layers) { g_bs[BS_LAYER]++; return false; }
+    if (v->complex || v->depth >= 256) { g_bs[BS_CLIP]++; return false; }
+    if (!blend_ok(v, &m)) { g_bs[BS_TURNED]++; return false; }
     gbitmap *b = v->bm;
     uint32_t ga = (uint32_t)p[P_COLOR] >> 24;
     if (!ga) return true;
@@ -1352,10 +1368,11 @@ static bool blit(gcanvas *v, gbitmap *src, float sl, float st, float sr, float s
     int n = ix1 - ix0;
     bool filter = (p[P_FLAGS] & PF_FILTER) != 0;
     double kx = (sr - sl) / (mx1 - mx0), ky = (sb - st) / (my1 - my0);
-    if (filter && (fabs(kx) > 2 || fabs(ky) > 2)) return false;   /* much smaller: CoreGraphics' filtering, not bilinear's shimmer */
+    if (filter && (fabs(kx) > 2 || fabs(ky) > 2)) { g_bs[BS_SHRUNK]++; return false; }   /* much smaller: CoreGraphics' filtering */
     /* one to one on whole pixels: a copy */
     bool exact = fabs(fabs(kx) - 1) < 1e-6 && fabs(fabs(ky) - 1) < 1e-6 && kx > 0 && ky > 0
               && fabs((sl - mx0) - lrint(sl - mx0)) < 1e-4 && fabs((st - my0) - lrint(st - my0)) < 1e-4;
+    g_bs[exact ? BS_EXACT_PX : BS_SCALED_PX] += (int64_t)n * (iy1 - iy0);
     int smaxx = src->w - 1, smaxy = src->h - 1;
     int32_t *xi = malloc((size_t)n * sizeof *xi);
     uint8_t *xf = malloc((size_t)n);
@@ -1399,6 +1416,14 @@ static bool blit(gcanvas *v, gbitmap *src, float sl, float st, float sr, float s
     return true;
 }
 
+/* (long[] out): the blit counters (BS_*), then zero */
+NAT(G_blitStats)
+{
+    (void)self; (void)ret;
+    int64_t *o = arr_data(a[0].l);
+    if (o) for (int i = 0; i < BS_COUNT; i++) { o[i] = g_bs[i]; g_bs[i] = 0; }
+    return true;
+}
 NAT(G_cvDrawBitmap)
 {
     (void)self; (void)ret;
@@ -1836,7 +1861,7 @@ static const struct { const char *name, *sig; dvm_native_fn fn; } k_gfx[] = {
     { "shBitmap", "(JI)J", G_shBitmap },
     { "shMatrix", "(J[F)V", G_shMatrix },
     { "shFree", "(J)V", G_shFree },
-    { "pathBounds", "([FI[F)V", G_pathBounds }, { "pathOp", "([FI[FIII)[F", G_pathOp },
+    { "pathBounds", "([FI[F)V", G_pathBounds }, { "pathOp", "([FI[FIII)[F", G_pathOp }, { "blitStats", "([J)V", G_blitStats },
     { "pathContains", "([FIIFF)Z", G_pathContains },
     { "pathLength", "([FI[F)F", G_pathLength },
     { "present", "(J)V", G_present },

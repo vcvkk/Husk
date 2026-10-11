@@ -29,6 +29,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -36,6 +40,24 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme {
                 Surface(Modifier.fillMaxSize()) { Box(Modifier.fillMaxSize()) {
+                    // a tiled wallpaper, as DepCalc's: one small bitmap drawn scaled again and again, half transparent
+                    val tile = remember {
+                        val b = android.graphics.Bitmap.createBitmap(64, 64, android.graphics.Bitmap.Config.ARGB_8888)
+                        val c = android.graphics.Canvas(b)
+                        val paint = android.graphics.Paint().apply { isAntiAlias = true; color = 0x5533AA55; strokeWidth = 6f }
+                        c.drawCircle(32f, 32f, 20f, paint)
+                        paint.color = 0x88228833.toInt(); c.drawLine(8f, 40f, 28f, 56f, paint); c.drawLine(28f, 56f, 58f, 10f, paint)
+                        b.asImageBitmap()
+                    }
+                    Canvas(Modifier.fillMaxSize()) {
+                        val step = 150f
+                        var y = 0f
+                        while (y < size.height) {
+                            var x = 0f
+                            while (x < size.width) { drawImage(tile, dstOffset = IntOffset(x.toInt(), y.toInt()), dstSize = IntSize(step.toInt(), step.toInt())); x += step }
+                            y += step
+                        }
+                    }
                     // text measured and laid out at heavy weights and large sizes, as DepCalc's titles; above, where it moves nothing
                     Column(Modifier.align(Alignment.TopStart).padding(top = 48.dp)) {
                         Text("Ещё", Modifier.padding(24.dp, 6.dp), style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.Black, letterSpacing = (-2).sp)

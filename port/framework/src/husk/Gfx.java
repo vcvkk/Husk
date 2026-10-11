@@ -61,6 +61,8 @@ public final class Gfx {
     public static native void pathBounds(float[] path, int n, float[] out);
     /** a op b (Path.Op order) as a new op stream, or null where the system has no boolean path operations */
     public static native float[] pathOp(float[] a, int na, float[] b, int nb, int op, int evenOdd);
+    /** HUSK_FRAME_STATS: the bitmap blit's counters (gfx.c BS_*), zeroed */
+    public static native void blitStats(long[] out);
     public static native boolean pathContains(float[] path, int n, int fill, float x, float y);
     public static native float pathLength(float[] path, int n, float[] out);
 
