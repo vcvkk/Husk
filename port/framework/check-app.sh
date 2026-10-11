@@ -13,7 +13,7 @@ set -uo pipefail
 APK="$1"; FW="$2"; LC="$3"
 R8="${R8_JAR:?R8_JAR: r8.jar}"
 libs=(--lib "$FW")
-for j in core-oj core-libart okhttp bouncycastle apache-xml apachehttp; do libs+=(--lib "$LC/$j-hostdex_intermediates/classes.jar"); done
+for j in core-oj core-libart okhttp bouncycastle apache-xml apachehttp wolfssljni; do libs+=(--lib "$LC/$j-hostdex_intermediates/classes.jar"); done
 out=$(mktemp)
 java -cp "$R8" com.android.tools.r8.tracereferences.TraceReferences --check --source "$APK" "${libs[@]}" > "$out" 2>&1
 grep -oE "Missing (class|method|field) [^(]*(\([^)]*\))?" "$out" | sed 's/^Missing //' | grep -E " (android|java|javax)\." | sort -u
