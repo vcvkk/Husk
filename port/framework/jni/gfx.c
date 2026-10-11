@@ -1704,12 +1704,14 @@ static bool blit_(gcanvas *v, gbitmap *src, float sl, float st, float sr, float 
     return true;
 }
 
-/* (long[] out): the blit counters (BS_*), then zero */
+void k_gfx_report(long frames);
+/* (long[] out, long frames): the blit counters (BS_*), then zero; and the natives' costs to the log */
 NAT(G_blitStats)
 {
     (void)self; (void)ret;
     int64_t *o = arr_data(a[0].l);
     if (o) for (int i = 0; i < BS_COUNT; i++) { o[i] = g_bs[i]; g_bs[i] = 0; }
+    k_gfx_report(a[1].j);               /* gfx_jni.c (gen-jni.py): the costliest natives */
     return true;
 }
 NAT(G_cvDrawBitmap)
@@ -2150,7 +2152,7 @@ static const struct { const char *name, *sig; dvm_native_fn fn; } k_gfx[] = {
     { "shBitmap", "(JI)J", G_shBitmap },
     { "shMatrix", "(J[F)V", G_shMatrix },
     { "shFree", "(J)V", G_shFree },
-    { "pathBounds", "([FI[F)V", G_pathBounds }, { "pathOp", "([FI[FIII)[F", G_pathOp }, { "blitStats", "([J)V", G_blitStats },
+    { "pathBounds", "([FI[F)V", G_pathBounds }, { "pathOp", "([FI[FIII)[F", G_pathOp }, { "blitStats", "([JJ)V", G_blitStats },
     { "pathContains", "([FIIFF)Z", G_pathContains },
     { "pathLength", "([FI[F)F", G_pathLength },
     { "present", "(J)V", G_present },
