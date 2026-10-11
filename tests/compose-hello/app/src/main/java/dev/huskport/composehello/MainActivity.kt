@@ -31,7 +31,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.Canvas
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -64,6 +67,11 @@ class MainActivity : ComponentActivity() {
                             }
                             y += step
                         }
+                        // gradients, as DepCalc's scrims and fades: a vertical one over the lower half, a horizontal band
+                        drawRect(Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC000000)), startY = size.height / 2, endY = size.height),
+                                 topLeft = Offset(0f, size.height / 2), size = Size(size.width, size.height / 2))
+                        drawRect(Brush.horizontalGradient(listOf(Color(0xFFE91E63), Color(0x802196F3), Color(0xFF4CAF50))),
+                                 topLeft = Offset(0f, size.height * 0.62f), size = Size(size.width, 60f))
                     }
                     // text measured and laid out at heavy weights and large sizes, as DepCalc's titles; above, where it moves nothing
                     Column(Modifier.align(Alignment.TopStart).padding(top = 48.dp)) {

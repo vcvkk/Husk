@@ -268,6 +268,7 @@ typedef struct gshader {
     CGImageRef image;               /* SH_BITMAP */
     int iw, ih;
     CGAffineTransform local;
+    uint32_t *lut; int lut_alpha;   /* grad_fill's 256 premultiplied colours, for the paint alpha lut_alpha */
 } gshader;
 
 static CGColorRef color_of(uint32_t c, float alpha)
@@ -1825,10 +1826,13 @@ NAT(G_cvDrawColor)
     CGContextRestoreGState(c);
     return true;
 }
+static int64_t g_gs_fast, g_gs_cg;      /* HUSK_FRAME_STATS: shaded draws done here, given to CoreGraphics */
+static bool grad_fill(gcanvas *v, CGRect r, gshader *s, uint32_t argb, bool aa);
 /* shapes: (long, l, t, r, b, [extra...], int[] paint, long shader) */
 static void shape(gcanvas *v, CGPathRef p, jobj *paint, int64_t shader)
 {
     if (!shader && mask_draw(v, p, paint_of(paint), false)) return;
+    if (shader) g_gs_cg++;
     draw_path(cg(v), p, paint_of(paint), (gshader *)(uintptr_t)shader, false);
 }
 NAT(G_cvDrawRect)
@@ -1851,9 +1855,113 @@ NAT(G_cvDrawRect)
         CGContextRestoreGState(v->c);
         return true;
     }
+    if (a[6].j && p[P_STYLE] == 0 && p[P_CFMODE] < 0 && pf(p, P_SHRAD) <= 0 && p[P_XFER] == 3
+        && grad_fill(v, r, (gshader *)(uintptr_t)a[6].j, (uint32_t)p[P_COLOR], (p[P_FLAGS] & PF_AA) != 0)) return true;
     CGPathRef path = CGPathCreateWithRect(r, NULL);
     shape(v, path, a[5].l, a[6].j);
     CGPathRelease(path);
+    return true;
+}
+/* ---- grad_fill: a rectangle filled with a linear gradient, as blend_fill fills one with a colour (Compose's scrims and
+ * fades, Brush.verticalGradient over the whole screen: CoreGraphics draws the gradient and blends it a pixel at a time, some
+ * 3 ms a screen). t is affine in device space, so a row is a start and a step; the colours come from a table of 256. */
+static const uint32_t *grad_lut(gshader *s, int alpha)
+{
+    if (!s->lut) { s->lut = malloc(256 * sizeof(uint32_t)); if (!s->lut) return NULL; s->lut_alpha = -1; }
+    if (s->lut_alpha != alpha) {
+        for (int i = 0; i < 256; i++) { uint32_t inv; s->lut[i] = premul(sweep_at(s, i / 255.0f), alpha / 255.0f, &inv); }
+        s->lut_alpha = alpha;
+    }
+    return s->lut;
+}
+static inline int grad_index(float t, int tile)
+{
+    if (tile == 1) t -= floorf(t);
+    else if (tile == 2) { t = fabsf(t); float w = t - 2 * floorf(t / 2); t = w > 1 ? 2 - w : w; }
+    if (!(t > 0)) return 0;             /* NaN too */
+    if (t >= 1) return 255;
+    return (int)(t * 255 + 0.5f);
+}
+static bool grad_fill(gcanvas *v, CGRect r, gshader *s, uint32_t argb, bool aa)
+{
+    CGAffineTransform m;
+    if (s->kind != SH_LINEAR || !blend_ok(v, &m)) return false;
+    gbitmap *b = v->bm;
+    /* device (x right, y down from the top, pixel centres) to the gradient's space */
+    CGAffineTransform full = CGAffineTransformConcat(s->local, m);
+    full = CGAffineTransformConcat(full, CGAffineTransformMake(1, 0, 0, -1, 0, b->h));
+    if (fabs(full.a * full.d - full.b * full.c) < 1e-12) return false;
+    CGAffineTransform inv = CGAffineTransformInvert(full);
+    float gx = s->x1 - s->x0, gy = s->y1 - s->y0, len2 = gx * gx + gy * gy;
+    if (len2 < 1e-9f) return false;
+    /* t(x, y) = ((inv(x, y)) - p0) . g / |g|^2 = tx * x + ty * y + t0 */
+    float tx = (float)(inv.a * gx + inv.b * gy) / len2, ty = (float)(inv.c * gx + inv.d * gy) / len2;
+    float t0 = (float)((inv.tx - s->x0) * gx + (inv.ty - s->y0) * gy) / len2;
+    int alpha = (int)(argb >> 24);
+    const uint32_t *lut = grad_lut(s, alpha);
+    if (!lut) return false;
+    CGRect d = CGRectStandardize(CGRectApplyAffineTransform(CGRectStandardize(r), m));
+    CGRect clip = clip_user(v);
+    if (CGRectIsNull(clip)) return true;
+    d = CGRectIntersection(d, CGRectStandardize(CGRectApplyAffineTransform(clip, m)));
+    d = CGRectIntersection(d, CGRectMake(0, 0, b->w, b->h));
+    if (CGRectIsNull(d) || d.size.width <= 0 || d.size.height <= 0 || !alpha) return true;
+    double x0 = d.origin.x, x1 = x0 + d.size.width, y0 = b->h - (d.origin.y + d.size.height), y1 = b->h - d.origin.y;
+    if (!aa) { x0 = ceil(x0 - 0.5); x1 = ceil(x1 - 0.5); y0 = ceil(y0 - 0.5); y1 = ceil(y1 - 0.5); }
+    int ix0 = (int)floor(x0), ix1 = (int)ceil(x1), iy0 = (int)floor(y0), iy1 = (int)ceil(y1);
+    if (ix0 < 0) ix0 = 0;
+    if (iy0 < 0) iy0 = 0;
+    if (ix1 > b->w) ix1 = b->w;
+    if (iy1 > b->h) iy1 = b->h;
+    if (ix0 >= ix1 || iy0 >= iy1) return true;
+    int mx0 = ix0, mx1 = ix1, my0 = iy0, my1 = iy1;
+    bool masked = clip_need(v, ix0, ix1, iy0, iy1);
+    if (masked) { if (!clip_box(v, &mx0, &mx1, &my0, &my1)) return true; }
+    else g_cc_on = false;
+    int tile = s->tile;
+    /* the first and last columns' coverage, where a pixel is partly covered */
+    uint32_t cl8 = (uint32_t)lrintf((float)(fmin(ix0 + 1, x1) - fmax(ix0, x0)) * 255);
+    uint32_t cr8 = (uint32_t)lrintf((float)(fmin(ix1, x1) - fmax(ix1 - 1, x0)) * 255);
+    if (cl8 > 255) cl8 = 255;
+    if (cr8 > 255) cr8 = 255;
+    if (ix1 - ix0 == 1 && cr8 < cl8) cl8 = cr8;
+    int fx0 = mx0, fx1 = mx1;               /* the columns wholly covered across */
+    if (cl8 < 255 && ix0 >= mx0) fx0 = ix0 + 1;
+    if (cr8 < 255 && ix1 - 1 < mx1 && ix1 - 1 >= fx0) fx1 = ix1 - 1;
+    /* a gradient along y alone (the usual scrim) is one colour a row */
+    bool rowwise = fabsf(tx) * (float)(ix1 - ix0) < 0.5f / 255;
+    for (int j = my0; j < my1; j++) {
+        float cy = (float)(fmin(j + 1, y1) - fmax(j, y0));
+        if (cy <= 0) continue;
+        uint32_t cy8 = cy >= 0.999f ? 255 : (uint32_t)lrintf(cy * 255);
+        uint32_t *row = (uint32_t *)(b->px + (size_t)j * b->stride);
+        const uint8_t *mk = clip_at(v, mx0, j);
+        const uint8_t *m0 = mk ? mk - mx0 : NULL;
+        float tj = t0 + ty * (j + 0.5f);
+        if (rowwise && !m0) {
+            uint32_t c = lut[grad_index(tj + tx * (mx0 + 0.5f), tile)];
+            if (cy8 != 255) c = scale_px(c, cy8);
+            if (fx1 > fx0) blend_run(row + fx0, fx1 - fx0, c, 255 - (c >> 24));
+        } else {
+            float t = tj + tx * (fx0 + 0.5f);
+            for (int i = fx0; i < fx1; i++, t += tx) {
+                uint32_t c = lut[grad_index(t, tile)];
+                uint32_t k = cy8;
+                if (m0) k = (k * m0[i] + 127) / 255;
+                if (k != 255) c = scale_px(c, k);
+                row[i] = over(row[i], c);
+            }
+        }
+        for (int e = 0; e < 2; e++) {
+            int i = e ? ix1 - 1 : ix0;
+            uint32_t ce = e ? cr8 : cl8;
+            if (ce >= 255 || i < mx0 || i >= mx1 || (e && i == ix0)) continue;
+            uint32_t k = (cy8 * ce + 127) / 255;
+            if (m0) k = (k * m0[i] + 127) / 255;
+            row[i] = over(row[i], scale_px(lut[grad_index(tj + tx * (i + 0.5f), tile)], k));
+        }
+    }
+    g_gs_fast++;
     return true;
 }
 /* ---- rrect_fill: a rounded rectangle filled as blend_fill fills a rectangle, its corners' coverage from the distance to
@@ -2256,6 +2364,8 @@ NAT(G_blitStats)
     tl_log_line("FrameStats: text per frame: %.1f from the cache (%.2f Mpx), %.1f laid out, %.1f colour glyphs, %.1f not cacheable",
                 g_tc_hit / fr, g_tc_px / fr / 1e6, g_tc_miss / fr, g_tc_color / fr, g_tc_skip / fr);
     g_tc_hit = g_tc_miss = g_tc_color = g_tc_skip = g_tc_px = 0;
+    tl_log_line("FrameStats: shaders per frame: %.1f gradients filled here, %.1f shaded shapes given to CoreGraphics", g_gs_fast / fr, g_gs_cg / fr);
+    g_gs_fast = g_gs_cg = 0;
     return true;
 }
 NAT(G_cvDrawBitmap)
@@ -2502,7 +2612,7 @@ NAT(G_shFree)
     if (!s) return true;
     if (s->grad) CGGradientRelease(s->grad);
     if (s->image) CGImageRelease(s->image);
-    free(s->colors); free(s->pos); free(s);
+    free(s->colors); free(s->pos); free(s->lut); free(s);
     return true;
 }
 
