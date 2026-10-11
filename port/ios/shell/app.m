@@ -196,7 +196,7 @@ static char *GetClipboard(void)
         .width = (int)(screen.bounds.size.width * scale),
         .height = (int)(screen.bounds.size.height * scale),
         .density = (float)scale,
-        .night_mode = self.window.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark,
+        .night_mode = screen.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark,   /* the screen's: known before the window shows */
         .open_url = OpenURL,
         .set_clipboard = SetClipboard,
         .get_clipboard = GetClipboard,
