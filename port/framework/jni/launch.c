@@ -81,7 +81,8 @@ bool husk_vm_start(const char *art, const char *data_dir, const char *const *ext
     snprintf(bcl, sizeof bcl, "-Xbootclasspath-locations:%s", locations);
     const char *base[] = { "-Xusejit:false", image, bcp, bcl, "-Xss8m" };
     int n = (int)(sizeof base / sizeof *base);
-    /* art/vm.options, if there: more options, one a line (-Dwolfjsse.debug=true and the like, for a diagnostic build) */
+    /* art/vm.options, if there: more options, one a line (-Dwolfjsse.debug=true and the like, for a diagnostic build), and
+     * env:NAME=VALUE lines for the environment (env:TL_VIEW_DUMP=1: the framework's view dumps) */
     char *more[32]; int nmore = 0;
     snprintf(path, sizeof path, "%s/vm.options", art);
     FILE *f = fopen(path, "r");
@@ -89,7 +90,8 @@ bool husk_vm_start(const char *art, const char *data_dir, const char *const *ext
         char line[1024];
         while (nmore < 32 && fgets(line, sizeof line, f)) {
             line[strcspn(line, "\r\n")] = 0;
-            if (line[0] && line[0] != '#') more[nmore++] = strdup(line);
+            if (!strncmp(line, "env:", 4)) { char *eq = strchr(line + 4, '='); if (eq) { *eq = 0; setenv(line + 4, eq + 1, 1); } }
+            else if (line[0] && line[0] != '#') more[nmore++] = strdup(line);
         }
         fclose(f);
     }

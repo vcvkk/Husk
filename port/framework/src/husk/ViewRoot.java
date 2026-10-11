@@ -211,7 +211,14 @@ public final class ViewRoot implements ViewParent {
         try {
             int ws, hs;
             int lw = mLp.width, lh = mLp.height;
-            int maxW = sw, maxH = sh;
+            // the area a window may take: the screen, less the bars and the keyboard for windows that keep off them (a dialog
+            // is no taller than that, its message scrolling, as Android's window manager sizes it)
+            Rect area = new Rect(0, 0, sw, sh);
+            boolean base = mLp.type == WindowManager.LayoutParams.TYPE_BASE_APPLICATION;
+            boolean under = (mLp.flags & WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS) != 0
+                    || (mView instanceof DecorView && ((DecorView) mView).huskUnderBars());
+            if (!base && !under) area.set(sInsets[0], sInsets[1], sw - sInsets[2], sh - Math.max(sInsets[3], sImeBottom));
+            int maxW = base ? sw : area.width(), maxH = base ? sh : area.height();
             if (lw == ViewGroup.LayoutParams.MATCH_PARENT) ws = View.MeasureSpec.makeMeasureSpec(maxW, View.MeasureSpec.EXACTLY);
             else if (lw == ViewGroup.LayoutParams.WRAP_CONTENT) ws = View.MeasureSpec.makeMeasureSpec(maxW, View.MeasureSpec.AT_MOST);
             else ws = View.MeasureSpec.makeMeasureSpec(lw, View.MeasureSpec.EXACTLY);
@@ -225,12 +232,7 @@ public final class ViewRoot implements ViewParent {
             Rect out = new Rect();
             if (g == 0 && (lw != ViewGroup.LayoutParams.MATCH_PARENT || lh != ViewGroup.LayoutParams.MATCH_PARENT)) g = Gravity.TOP | Gravity.LEFT;
             if (g == 0) out.set(0, 0, w, h);
-            else {
-                Rect area = new Rect(0, 0, sw, sh);
-                if (mLp.type >= 1000 || (mLp.flags & WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS) == 0 && mLp.type != WindowManager.LayoutParams.TYPE_BASE_APPLICATION)
-                    area.set(sInsets[0], sInsets[1], sw - sInsets[2], sh - Math.max(sInsets[3], sImeBottom));
-                Gravity.apply(g, w, h, area, mLp.x, mLp.y, out);
-            }
+            else Gravity.apply(g, w, h, area, mLp.x, mLp.y, out);
             mX = out.left; mY = out.top; mW = w; mH = h;
             mView.layout(0, 0, w, h);
         } finally { mInLayout = false; }
