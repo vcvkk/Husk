@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -22,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.dp
 
+@OptIn(ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -42,6 +45,13 @@ class MainActivity : ComponentActivity() {
                         Text("Hello from Compose on husk-port", style = MaterialTheme.typography.headlineSmall)
                         Text("taps: $taps", style = MaterialTheme.typography.bodyLarge)
                         Button(onClick = { taps++ }) { Text("Tap") }
+                    }
+                    // a tap opens a bottom sheet in its own window, taller than half the screen, as DepCalc's update sheet
+                    if (taps > 0) ModalBottomSheet(onDismissRequest = {}) {
+                        Column(Modifier.padding(24.dp)) {
+                            Text("Bottom sheet", style = MaterialTheme.typography.headlineSmall)
+                            for (i in 1..24) Text("line $i of the sheet", style = MaterialTheme.typography.bodyLarge)
+                        }
                     }
                 } }
             }
