@@ -36,15 +36,16 @@ index a4083a4f..40002737 100644
      self->AssertPendingException();
      return nullptr;
 diff --git a/libcore/ojluni/src/main/java/java/lang/Runtime.java b/libcore/ojluni/src/main/java/java/lang/Runtime.java
-index bebc6740..1f20f211 100644
+index bebc6740..d655a88d 100644
 --- a/libcore/ojluni/src/main/java/java/lang/Runtime.java
 +++ b/libcore/ojluni/src/main/java/java/lang/Runtime.java
-@@ -1003,6 +1003,13 @@ public class Runtime {
+@@ -1003,6 +1003,14 @@ public class Runtime {
          String libraryName = libname;
          if (loader != null) {
              String filename = loader.findLibrary(libraryName);
-+            if (filename == null && "Darwin".equals(System.getProperty("os.name"))) {
-+                // husk-port: an Android app's own native libraries are Linux ELF files, which iOS and macOS can not load.
++            if (filename == null && "Darwin".equals(libcore.io.Libcore.os.uname().sysname)) {
++                // husk-port: an Android app's own native libraries are Linux ELF files, which iOS and macOS can not load
++                // (os.name says Linux, as on Android: the kernel's name is uname's).
 +                // The app goes on without them; their methods return zero, false or null when called (the runtime's
 +                // stand-in for a native method it can not find), as a feature its phone lacks.
 +                System.logW("husk-port: " + System.mapLibraryName(libraryName) + " is not here; its native methods return nothing");
