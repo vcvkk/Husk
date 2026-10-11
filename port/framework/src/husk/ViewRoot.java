@@ -150,11 +150,34 @@ public final class ViewRoot implements ViewParent {
     }
     private static void doFrame() {
         sScheduled = false;
+        long t0 = System.nanoTime();
         ArrayList<ViewRoot> roots = new ArrayList<>(sRoots);
         for (ViewRoot r : roots) if (!r.mRemoved) r.performLayout();
         for (ViewRoot r : roots) if (!r.mRemoved && r.mObserver.dispatchOnPreDraw()) { scheduleFrame(); }
+        long t1 = System.nanoTime();
         drawAll(roots);
         for (ViewRoot r : roots) if (!r.mRemoved) r.mObserver.dispatchOnDraw();
+        if (STATS) stats(t1 - t0, System.nanoTime() - t1);
+    }
+
+    // ---- HUSK_FRAME_STATS: where a frame's time goes, summed up every 2 s in the log
+    private static final boolean STATS = System.getenv("HUSK_FRAME_STATS") != null;
+    private static long sStatStart, sStatFrames, sStatLayout, sStatDraw, sStatClear, sStatViews, sStatPresent, sStatMax;
+    static long sClearNs, sViewsNs, sPresentNs;   // drawAll's parts, this frame
+    private static void stats(long layout, long draw) {
+        long now = System.nanoTime();
+        if (sStatStart == 0) sStatStart = now;
+        sStatFrames++; sStatLayout += layout; sStatDraw += draw;
+        sStatClear += sClearNs; sStatViews += sViewsNs; sStatPresent += sPresentNs;
+        sStatMax = Math.max(sStatMax, layout + draw);
+        if (now - sStatStart >= 2_000_000_000L) {
+            double f = sStatFrames, ms = 1e6;
+            android.util.Log.i("FrameStats", String.format(java.util.Locale.ROOT,
+                "%d frames in %.1f s: layout %.2f ms, draw %.2f ms (clear %.2f, views %.2f, present %.2f), worst %.2f ms",
+                sStatFrames, (now - sStatStart) / 1e9, sStatLayout / f / ms, sStatDraw / f / ms, sStatClear / f / ms, sStatViews / f / ms,
+                sStatPresent / f / ms, sStatMax / ms));
+            sStatStart = now; sStatFrames = sStatLayout = sStatDraw = sStatClear = sStatViews = sStatPresent = sStatMax = 0;
+        }
     }
     private static Boolean sDump;
     private long mLastDump;
@@ -266,7 +289,9 @@ public final class ViewRoot implements ViewParent {
             sScreen = Bitmap.createBitmap(sw, sh, Bitmap.Config.ARGB_8888);
             sCanvas = new Canvas(sScreen);
         }
+        long c0 = STATS ? System.nanoTime() : 0;
         sScreen.eraseColor(0);
+        long c1 = STATS ? System.nanoTime() : 0;
         int gen = sScreen.getGenerationId();
         Paint dim = null;
         boolean drew = false;
@@ -291,8 +316,10 @@ public final class ViewRoot implements ViewParent {
         }
         // a window drawn counts even when its drawing left the generation alone (the screen must lose a closed dialog)
         boolean any = drew || sScreen.getGenerationId() != gen;
+        long c2 = STATS ? System.nanoTime() : 0;
         if (any || sPresentedAny) Gfx.present(any ? sScreen.huskNative() : 0);
         sPresentedAny = any;
+        if (STATS) { sClearNs = c1 - c0; sViewsNs = c2 - c1; sPresentNs = System.nanoTime() - c2; }
     }
 
     // ---- input

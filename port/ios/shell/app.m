@@ -80,9 +80,26 @@ static void *AppMain(void *unused)
     return self;
 }
 
+// HUSK_FRAME_STATS: how many frames reach the screen, and what putting one there costs, every 2 s in the log
+static bool gStats;
+static double gStatStart, gStatTime, gStatMax; static int gStatFrames, gStatTicks;
+static void FrameStat(double t0, double t1)
+{
+    double dt = t1 - t0;
+    gStatFrames++; gStatTime += dt; if (dt > gStatMax) gStatMax = dt;
+    if (gStatStart == 0) gStatStart = t0;
+    if (t1 - gStatStart >= 2) {
+        fprintf(stderr, "FrameStats(host): %d frames shown of %d display refreshes in %.1f s: %.2f ms each to put on screen, worst %.2f ms\n",
+                gStatFrames, gStatTicks, t1 - gStatStart, gStatTime / gStatFrames * 1e3, gStatMax * 1e3);
+        gStatStart = t1; gStatFrames = gStatTicks = 0; gStatTime = gStatMax = 0;
+    }
+}
+
 - (void)nextFrame:(CADisplayLink *)link
 {
     const uint8_t *px; int w, h; bool any;
+    if (gStats) gStatTicks++;
+    double t0 = gStats ? CACurrentMediaTime() : 0;
     if (!husk_frame_take(&px, &w, &h, &any)) return;
     CGImageRef img = NULL;
     if (any && w > 0 && h > 0) {
@@ -99,6 +116,7 @@ static void *AppMain(void *unused)
     self.layer.contents = (__bridge id)img;
     [CATransaction commit];
     if (img) CGImageRelease(img);
+    if (gStats) FrameStat(t0, CACurrentMediaTime());
 }
 
 // a touch on a web view's page goes to it, in the container below
@@ -279,6 +297,7 @@ static char *GetClipboard(void)
 - (BOOL)application:(UIApplication *)app didFinishLaunchingWithOptions:(NSDictionary *)opts
 {
     Log();
+    gStats = getenv("HUSK_FRAME_STATS") != NULL;
     gBundle = NSBundle.mainBundle.bundlePath;
     self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
     self.window.rootViewController = [FrameController new];

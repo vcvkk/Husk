@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -58,6 +59,8 @@ class MainActivity : ComponentActivity() {
                     ) {
                         Text("Hello from Compose on husk-port", style = MaterialTheme.typography.headlineSmall)
                         Text("taps: $taps", style = MaterialTheme.typography.bodyLarge)
+                        // always moving: every display refresh draws a frame (HUSK_FRAME_STATS measures them in CI)
+                        CircularProgressIndicator()
                         Button(onClick = { taps++ }) { Text("Tap") }
                     }
                     // a tap opens an alert dialog with a long message, as DepCalc's update offer (Compose's Dialog window, whose
