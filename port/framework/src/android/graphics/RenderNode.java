@@ -69,6 +69,13 @@ public final class RenderNode {
         c.translate(mLeft, mTop);
         if (!hasIdentityMatrix()) { Matrix m = new Matrix(); getMatrix(m); c.concat(m); }
         if (mClipRect != null) c.clipRect(mClipRect);
+        if (mClipToOutline && mOutline != null && !mOutline.isEmpty()) {
+            /* the outline the layer is clipped to: Compose's shapes (Modifier.clip, a graphics layer's shape), rounded */
+            if (mOutline.mRect != null) {
+                if (mOutline.mRadius > 0) { Path o = new Path(); o.addRoundRect(new RectF(mOutline.mRect), mOutline.mRadius, mOutline.mRadius, Path.Direction.CW); c.clipPath(o); }
+                else c.clipRect(mOutline.mRect);
+            } else if (mOutline.mPath != null) c.clipPath(mOutline.mPath);
+        }
         Paint p = null;
         if (mAlpha < 1f || mLayerPaint != null) {
             p = mLayerPaint != null ? new Paint(mLayerPaint) : new Paint();
