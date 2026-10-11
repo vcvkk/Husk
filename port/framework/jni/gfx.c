@@ -1456,8 +1456,31 @@ static bool text_cached(gcanvas *v, jobj *s, int start, int end, float x, float 
         CTLineDraw(line, mc);
         CGContextRelease(mc);
         CFRelease(line);
-        e->W = W; e->H = H; e->ox = dx0 - ix; e->oy = (b->h - (dy0 + H)) - iy;
-        if (argb >> 24) mask_blend(v, e->mask, dx0, dy0 + H, W, H, argb);
+        /* kept to the glyphs' own bounds: the box had room around them for what glyphs may reach, mostly empty */
+        int tx0 = W, ty0 = H, tx1 = -1, ty1 = -1;
+        for (int r = 0; r < H; r++) {
+            const uint8_t *row = e->mask + (size_t)r * W;
+            int a0 = 0, a1 = W - 1;
+            while (a0 < W && !row[a0]) a0++;
+            if (a0 == W) continue;
+            while (!row[a1]) a1--;
+            if (a0 < tx0) tx0 = a0;
+            if (a1 > tx1) tx1 = a1;
+            if (r < ty0) ty0 = r;
+            ty1 = r;
+        }
+        int top = b->h - (dy0 + H);
+        if (tx1 < 0) { g_tc_bytes -= (size_t)W * H; free(e->mask); e->mask = NULL; e->W = e->H = 0; e->ox = e->oy = 0; return true; }
+        int nW = tx1 - tx0 + 1, nH = ty1 - ty0 + 1;
+        uint8_t *tight = malloc((size_t)nW * nH);
+        if (tight) {
+            for (int r = 0; r < nH; r++) memcpy(tight + (size_t)r * nW, e->mask + (size_t)(ty0 + r) * W + tx0, (size_t)nW);
+            g_tc_bytes -= (size_t)W * H; g_tc_bytes += (size_t)nW * nH;
+            free(e->mask); e->mask = tight;
+            dx0 += tx0; top += ty0; W = nW; H = nH;
+        }
+        e->W = W; e->H = H; e->ox = dx0 - ix; e->oy = top - iy;
+        if (argb >> 24) mask_blend(v, e->mask, dx0, b->h - top, W, H, argb);
         /* a bound on what is kept: past 48 MB, the cache starts again */
         if (g_tc_bytes > (48u << 20)) for (int i = 0; i < TCACHE_SLOTS; i++) if (&g_tc[i] != e) tc_free(&g_tc[i]);
         return true;
