@@ -5,13 +5,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -26,7 +24,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.dp
 
-@OptIn(ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -48,14 +45,14 @@ class MainActivity : ComponentActivity() {
                         Text("taps: $taps", style = MaterialTheme.typography.bodyLarge)
                         Button(onClick = { taps++ }) { Text("Tap") }
                     }
-                    // a tap opens a bottom sheet in its own window, taller than half the screen, as DepCalc's update sheet
-                    if (taps > 0) ModalBottomSheet(onDismissRequest = {}) {
-                        // taller than the screen: the sheet opens half way, the rest below to drag or scroll up
-                        Column(Modifier.verticalScroll(rememberScrollState()).padding(24.dp)) {
-                            Text("Bottom sheet", style = MaterialTheme.typography.headlineSmall)
-                            for (i in 1..60) Text("line $i of the sheet", style = MaterialTheme.typography.bodyLarge)
-                        }
-                    }
+                    // a tap opens an alert dialog with a long message, as DepCalc's update dialog that showed cut
+                    if (taps > 0) AlertDialog(
+                        onDismissRequest = {},
+                        title = { Text("Update available") },
+                        text = { Text((1..30).joinToString("\n") { "line $it of the changes" }) },
+                        confirmButton = { TextButton(onClick = {}) { Text("Update") } },
+                        dismissButton = { TextButton(onClick = {}) { Text("Later") } },
+                    )
                 } }
             }
         }
