@@ -53,6 +53,17 @@ jobj *shim_in(jobject ref, char kind)
         return o;
     }
     (void)kind;
+    jclass oc = (*env)->FindClass(env, "[Ljava/lang/Object;");
+    bool objs = (*env)->IsInstanceOf(env, ref, oc);
+    (*env)->DeleteLocalRef(env, oc);
+    if (objs) {
+        o->kind = TL_K_OBJ_ARRAY;
+        o->oarr.len = (uint32_t)(*env)->GetArrayLength(env, (jarray)ref);
+        o->oarr.v = calloc(o->oarr.len ? o->oarr.len : 1, sizeof *o->oarr.v);
+        for (uint32_t i = 0; i < o->oarr.len; i++)
+            o->oarr.v[i] = shim_in((*env)->GetObjectArrayElement(env, (jobjectArray)ref, (jsize)i), 'L');
+        return o;
+    }
     jclass c = (*env)->GetObjectClass(env, ref);
     static const struct { const char *desc; char elem; } prims[] = {
         { "[I", 'I' }, { "[F", 'F' }, { "[B", 'B' }, { "[J", 'J' }, { "[S", 'S' }, { "[C", 'C' }, { "[Z", 'Z' }, { "[D", 'D' },
@@ -101,6 +112,7 @@ void shim_end(shim_call *c)
         next = o->next;
         if (o->kind == TL_K_PRIM_ARRAY && o->ref) elements(env, (jarray)o->ref, o->arr.elem, false, o->arr.data);
         else if (o->kind == TL_K_PRIM_ARRAY) free(o->arr.data);
+        if (o->kind == TL_K_OBJ_ARRAY) free(o->oarr.v);
         if (o->utf8) (*env)->ReleaseStringUTFChars(env, (jstring)o->ref, o->utf8);
         if (o->utf16) (*env)->ReleaseStringChars(env, (jstring)o->ref, o->utf16);
         free(o);
@@ -145,6 +157,14 @@ const uint16_t *tl_dvm_string_chars(jobj *s, int32_t *len)
     }
     *len = s->utf16_len;
     return s->utf16;
+}
+
+jobj *tl_jni_wrap(jobject ref)
+{
+    if (!ref) return NULL;
+    jobj *o = new_jobj();
+    o->ref = ref;
+    return o;
 }
 
 jobj *tl_jni_new_prim_array(char elem, uint32_t len)

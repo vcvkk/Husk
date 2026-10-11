@@ -16,12 +16,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-enum { TL_K_OBJECT = 0, TL_K_PRIM_ARRAY = 1, TL_K_STRING = 2 };
+enum { TL_K_OBJECT = 0, TL_K_PRIM_ARRAY = 1, TL_K_STRING = 2, TL_K_OBJ_ARRAY = 3 };
 
 typedef struct jobj {
     int kind;
     jobject ref;                     /* the JNI reference: a parameter's, or a returned array's */
     struct { uint32_t len; void *data; char elem; } arr;
+    struct { uint32_t len; struct jobj **v; } oarr;   /* an object array's elements, each a jobj */
     const char *utf8;                /* a string's, once asked for */
     const jchar *utf16;
     jsize utf16_len;
@@ -50,6 +51,7 @@ void tl_log_line(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 const char *tl_jni_string(jobj *s);                          /* UTF-8 */
 const uint16_t *tl_dvm_string_chars(jobj *s, int32_t *len);  /* UTF-16 */
 jobj *tl_jni_new_prim_array(char elem, uint32_t len);
+jobj *tl_jni_wrap(jobject ref);                              /* a reference the native made, to return */
 jvalue tl_jni_get_field(jobj *o, const char *name, const char *sig);
 bool tl_jni_pending(void);
 void tl_jni_clear(void);

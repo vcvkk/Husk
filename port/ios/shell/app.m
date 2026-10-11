@@ -22,6 +22,10 @@
 
 static NSString *gBundle;
 
+/* the framework's web views (port/framework/jni/web.m): WKWebViews in a container under the app's frames */
+void tl_web_attach(void *screen_view, void *container, float scale, bool fresh);
+bool tl_web_hit(float x, float y);
+
 static void Log(void)
 {
     NSString *docs = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
@@ -93,6 +97,13 @@ static void *AppMain(void *unused)
     if (img) CGImageRelease(img);
 }
 
+// a touch on a web view's page goes to it, in the container below
+- (UIView *)hitTest:(CGPoint)p withEvent:(UIEvent *)e
+{
+    if (tl_web_hit((float)p.x, (float)p.y)) return nil;
+    return [super hitTest:p withEvent:e];
+}
+
 - (void)send:(NSSet<UITouch *> *)touches phase:(int)phase
 {
     CGFloat s = UIScreen.mainScreen.scale;   // pixels, as the frame has them
@@ -121,7 +132,21 @@ static void *AppMain(void *unused)
 @interface FrameController : UIViewController
 @end
 @implementation FrameController
-- (void)loadView { self.view = [[FrameView alloc] initWithFrame:UIScreen.mainScreen.bounds]; }
+- (void)loadView
+{
+    CGRect r = UIScreen.mainScreen.bounds;
+    UIView *root = [[UIView alloc] initWithFrame:r];
+    root.backgroundColor = UIColor.blackColor;
+    UIView *webs = [[UIView alloc] initWithFrame:r];
+    webs.backgroundColor = UIColor.blackColor;
+    webs.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    FrameView *frames = [[FrameView alloc] initWithFrame:r];
+    frames.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [root addSubview:webs];
+    [root addSubview:frames];
+    self.view = root;
+    tl_web_attach((__bridge void *)frames, (__bridge void *)webs, (float)UIScreen.mainScreen.scale, true);
+}
 - (BOOL)prefersStatusBarHidden { return NO; }
 - (BOOL)prefersHomeIndicatorAutoHidden { return NO; }
 @end

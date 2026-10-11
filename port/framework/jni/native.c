@@ -398,12 +398,14 @@ static const JNINativeMethod k_sensors[] = {
 
 bool husk_register_gfx(JNIEnv *env);   /* gfx_jni.c, from gen-jni.py */
 bool husk_register_sqlite(JNIEnv *env);   /* sqlite.c */
+bool husk_register_web(JNIEnv *env);      /* web_jni.m, from gen-jni.py */
 
 bool husk_framework_register(JNIEnv *env)
 {
     bool ok = shim_register(env, "husk/Native", k_native, (int)(sizeof k_native / sizeof *k_native));
     ok &= shim_register(env, "husk/Sensors", k_sensors, (int)(sizeof k_sensors / sizeof *k_sensors));
     ok &= husk_register_sqlite(env);
+    ok &= husk_register_web(env);
     return husk_register_gfx(env) && ok;
 }
 
@@ -418,6 +420,8 @@ static void push(int phase, int id, float x, float y)
 }
 void husk_app_touch(int phase, int id, float x, float y) { push(phase, id, x, y); }
 void husk_app_back(void) { push(5, 0, 0, 0); }
+void husk_app_web_event(void) { push(9, 0, 0, 0); }   /* web.m: husk.Web has events to poll */
+const char *tl_data_dir(void) { return A.cfg.data; }
 
 static void text_push(const char *kind, const char *utf8)
 {

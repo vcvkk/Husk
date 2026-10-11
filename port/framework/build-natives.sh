@@ -19,10 +19,12 @@ CC=(xcrun --sdk $SDK clang -target $TRIPLE -isysroot "$(xcrun --sdk $SDK --show-
     -Wall -Wno-incompatible-pointer-types -Wno-unused-function -Wno-unused-variable -I"$JNI")
 python3 "$HERE/jni/gen-jni.py" "$HERE/jni/gfx.c" k_gfx husk/Gfx husk_register_gfx "$OUT/gfx_jni.c"
 cp "$HERE/jni/gfx.c" "$OUT/gfx.c"
+python3 "$HERE/jni/gen-jni.py" "$HERE/jni/web.m" k_web husk/Web husk_register_web "$OUT/web_jni.m"
 objs=()
-for f in "$OUT/gfx_jni.c" "$HERE/jni/shim.c" "$HERE/jni/native.c" "$HERE/jni/sqlite.c" "$HERE/jni/launch.c"; do
-    o="$OUT/$(basename "$f" .c).o"
-    "${CC[@]}" -I"$HERE/jni" -c "$f" -o "$o"
+for f in "$OUT/gfx_jni.c" "$OUT/web_jni.m" "$HERE/jni/shim.c" "$HERE/jni/native.c" "$HERE/jni/sqlite.c" "$HERE/jni/launch.c"; do
+    o="$OUT/$(basename "${f%.*}").o"
+    case "$f" in *.m) arc=(-fobjc-arc) ;; *) arc=() ;; esac
+    "${CC[@]}" ${arc[@]+"${arc[@]}"} -I"$HERE/jni" -c "$f" -o "$o"
     objs+=("$o")
 done
 rm -f "$OUT/libhuskframework.a"
@@ -32,6 +34,6 @@ if [ "$TARGET" = macos ] && [ -n "$ARTLIB" ]; then
     "${CC[@]}" "$HERE/host/mac-host.c" "$OUT/libhuskframework.a" -o "$OUT/mac-host" \
         -L"$ARTLIB" -lart -Wl,-force_load,"$ARTLIB/libsigchain.a" -lc++ -lz -lsqlite3 \
         -framework CoreFoundation -framework CoreGraphics -framework CoreText -framework ImageIO \
-        -Wl,-rpath,"$ARTLIB"
+        -framework Foundation -framework AppKit -framework WebKit -Wl,-rpath,"$ARTLIB"
     echo "$OUT/mac-host"
 fi

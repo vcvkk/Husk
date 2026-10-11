@@ -51,8 +51,12 @@ int __android_log_print(int prio, const char *tag, const char *fmt, ...)
     return n;
 }
 EOF2
+# their Android branches (libcore's FileDescriptor.descriptor and the like), without defining
+# __ANDROID__ for wolfSSL's headers, which the library was built without
+mkdir -p "$WORK/native"
+for f in "$SRC"/native/*.c; do sed -e 's/^#ifdef __ANDROID__/#if 1/' -e 's/^#ifndef __ANDROID__/#if 0/' "$f" > "$WORK/native/$(basename "$f")"; done
 objs=()
-for f in "$SRC"/native/*.c "$WORK/android_log.c"; do
+for f in "$WORK"/native/*.c "$WORK/android_log.c"; do
     o="$WORK/$(basename "$f" .c).o"
     "$CC" $CFLAGS -Wno-incompatible-pointer-types -Wno-deprecated-declarations -I"$P/include" -I"$JNI" \
         -I"$SRC/native" -c "$f" -o "$o"
