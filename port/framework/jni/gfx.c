@@ -1220,6 +1220,112 @@ NAT(G_cvDrawLines)
     return true;
 }
 /* (long, long bm, sl, st, sr, sb, dl, dt, dr, db, int[] paint or null) */
+/* ---- blit: a bitmap (or a part) drawn to a rectangle of the canvas's bitmap by Husk, not by CoreGraphics, which costs
+ * 4 ns a pixel on a phone (CGImage made, scaled, blended): DepCalc's tiled wallpaper alone took 36 ms a frame. Where
+ * blend_ok allows, with a plain paint; each pixel whose centre the rectangle covers is the source's there, bilinear when
+ * the paint filters (Compose's FilterQuality.Low), so tiles laid edge to edge leave no seam. */
+static inline uint32_t bilerp(uint32_t p00, uint32_t p10, uint32_t p01, uint32_t p11, uint32_t fx, uint32_t fy)
+{
+    /* weights out of 256, two channels a lane */
+    uint32_t w11 = (fx * fy + 128) >> 8, w10 = fx - w11, w01 = fy - w11, w00 = 256 - fx - fy + w11;
+    uint32_t rb = (p00 & 0x00FF00FFu) * w00 + (p10 & 0x00FF00FFu) * w10 + (p01 & 0x00FF00FFu) * w01 + (p11 & 0x00FF00FFu) * w11;
+    uint32_t ag = ((p00 >> 8) & 0x00FF00FFu) * w00 + ((p10 >> 8) & 0x00FF00FFu) * w10 + ((p01 >> 8) & 0x00FF00FFu) * w01 + ((p11 >> 8) & 0x00FF00FFu) * w11;
+    rb += 0x00800080u; ag += 0x00800080u;
+    return ((rb >> 8) & 0x00FF00FFu) | (ag & 0xFF00FF00u);
+}
+static inline uint32_t over(uint32_t d, uint32_t s)
+{
+    uint32_t inv = 255 - (s >> 24);
+    if (inv == 0) return s;
+    if (inv == 255) return d;
+    uint32_t rb = (d & 0x00FF00FFu) * inv + 0x00800080u, ag = ((d >> 8) & 0x00FF00FFu) * inv + 0x00800080u;
+    rb = ((rb + ((rb >> 8) & 0x00FF00FFu)) >> 8) & 0x00FF00FFu;
+    ag = (ag + ((ag >> 8) & 0x00FF00FFu)) & 0xFF00FF00u;
+    return (rb | ag) + s;
+}
+static inline uint32_t scale_px(uint32_t s, uint32_t a)    /* s times a / 255, every channel (a premultiplied colour's alpha) */
+{
+    uint32_t rb = (s & 0x00FF00FFu) * a + 0x00800080u, ag = ((s >> 8) & 0x00FF00FFu) * a + 0x00800080u;
+    rb = ((rb + ((rb >> 8) & 0x00FF00FFu)) >> 8) & 0x00FF00FFu;
+    ag = (ag + ((ag >> 8) & 0x00FF00FFu)) & 0xFF00FF00u;
+    return rb | ag;
+}
+static bool blit(gcanvas *v, gbitmap *src, float sl, float st, float sr, float sb, float dl, float dt, float dr, float db,
+                 const int32_t *p)
+{
+    if (src == v->bm || p[P_CFMODE] >= 0 || p[P_XFER] != 3 || pf(p, P_SHRAD) > 0) return false;
+    CGAffineTransform m;
+    if (!blend_ok(v, &m)) return false;
+    gbitmap *b = v->bm;
+    uint32_t ga = (uint32_t)p[P_COLOR] >> 24;
+    if (!ga) return true;
+    /* the destination's corners in the bitmap's memory (rows from the top) */
+    CGPoint c0 = CGPointApplyAffineTransform(CGPointMake(dl, dt), m), c1 = CGPointApplyAffineTransform(CGPointMake(dr, db), m);
+    double mx0 = c0.x, mx1 = c1.x, my0 = b->h - c0.y, my1 = b->h - c1.y;
+    if (fabs(mx1 - mx0) < 1e-6 || fabs(my1 - my0) < 1e-6) return true;
+    CGRect clip = CGContextGetClipBoundingBox(v->c);
+    if (CGRectIsNull(clip)) return true;
+    CGRect cd = CGRectStandardize(CGRectApplyAffineTransform(clip, m));
+    double cx0 = cd.origin.x, cx1 = cx0 + cd.size.width, cy0 = b->h - (cd.origin.y + cd.size.height), cy1 = b->h - cd.origin.y;
+    /* the pixels whose centres are inside both */
+    double lo_x = fmax(fmin(mx0, mx1), cx0), hi_x = fmin(fmax(mx0, mx1), cx1);
+    double lo_y = fmax(fmin(my0, my1), cy0), hi_y = fmin(fmax(my0, my1), cy1);
+    int ix0 = (int)ceil(lo_x - 0.5), ix1 = (int)ceil(hi_x - 0.5), iy0 = (int)ceil(lo_y - 0.5), iy1 = (int)ceil(hi_y - 0.5);
+    if (ix0 < 0) ix0 = 0;
+    if (iy0 < 0) iy0 = 0;
+    if (ix1 > b->w) ix1 = b->w;
+    if (iy1 > b->h) iy1 = b->h;
+    if (ix0 >= ix1 || iy0 >= iy1) return true;
+    int n = ix1 - ix0;
+    bool filter = (p[P_FLAGS] & PF_FILTER) != 0;
+    double kx = (sr - sl) / (mx1 - mx0), ky = (sb - st) / (my1 - my0);
+    if (filter && (fabs(kx) > 2 || fabs(ky) > 2)) return false;   /* much smaller: CoreGraphics' filtering, not bilinear's shimmer */
+    /* one to one on whole pixels: a copy */
+    bool exact = fabs(fabs(kx) - 1) < 1e-6 && fabs(fabs(ky) - 1) < 1e-6 && kx > 0 && ky > 0
+              && fabs((sl - mx0) - lrint(sl - mx0)) < 1e-4 && fabs((st - my0) - lrint(st - my0)) < 1e-4;
+    int smaxx = src->w - 1, smaxy = src->h - 1;
+    int32_t *xi = malloc((size_t)n * sizeof *xi);
+    uint8_t *xf = malloc((size_t)n);
+    if (!xi || !xf) { free(xi); free(xf); return false; }
+    for (int i = 0; i < n; i++) {
+        double sx = sl + (ix0 + i + 0.5 - mx0) * kx;
+        if (exact || !filter) { int x = (int)floor(sx); xi[i] = x < 0 ? 0 : x > smaxx ? smaxx : x; xf[i] = 0; }
+        else {
+            double fx = sx - 0.5, fl = floor(fx);
+            int x = (int)fl; uint32_t w = (uint32_t)lrint((fx - fl) * 256);
+            if (w >= 256) { x++; w = 0; }
+            if (x < 0) { x = 0; w = 0; }
+            if (x >= smaxx) { x = smaxx; w = 0; }
+            xi[i] = x; xf[i] = (uint8_t)w;
+        }
+    }
+    for (int j = iy0; j < iy1; j++) {
+        uint32_t *row = (uint32_t *)(b->px + (size_t)j * b->stride) + ix0;
+        double sy = st + (j + 0.5 - my0) * ky;
+        int y0, y1; uint32_t fy = 0;
+        if (exact || !filter) { y0 = (int)floor(sy); y0 = y0 < 0 ? 0 : y0 > smaxy ? smaxy : y0; y1 = y0; }
+        else {
+            double f = sy - 0.5, fl = floor(f);
+            y0 = (int)fl; fy = (uint32_t)lrint((f - fl) * 256);
+            if (fy >= 256) { y0++; fy = 0; }
+            if (y0 < 0) { y0 = 0; fy = 0; }
+            if (y0 >= smaxy) { y0 = smaxy; fy = 0; }
+            y1 = fy ? y0 + 1 : y0;
+        }
+        const uint32_t *s0 = (const uint32_t *)(src->px + (size_t)y0 * src->stride), *s1 = (const uint32_t *)(src->px + (size_t)y1 * src->stride);
+        for (int i = 0; i < n; i++) {
+            int x = xi[i];
+            uint32_t s;
+            if (!xf[i] && !fy) s = s0[x];
+            else s = bilerp(s0[x], s0[x + (xf[i] ? 1 : 0)], s1[x], s1[x + (xf[i] ? 1 : 0)], xf[i], fy);
+            if (ga != 255) s = scale_px(s, ga);
+            row[i] = over(row[i], s);
+        }
+    }
+    free(xi); free(xf);
+    return true;
+}
+
 NAT(G_cvDrawBitmap)
 {
     (void)self; (void)ret;
@@ -1230,6 +1336,7 @@ NAT(G_cvDrawBitmap)
     if (!a[10].l) q[P_FLAGS] |= PF_FILTER;
     float sl = a[2].f, st = a[3].f, sr = a[4].f, sb = a[5].f, dl = a[6].f, dt = a[7].f, dr = a[8].f, db = a[9].f;
     if (sr - sl <= 0 || sb - st <= 0 || dr - dl == 0 || db - dt == 0) return true;
+    if (blit(v, b, sl, st, sr, sb, dl, dt, dr, db, q)) return true;
     CGImageRef full = bm_image(b);
     bool whole = sl == 0 && st == 0 && sr == b->w && sb == b->h;
     CGImageRef img = whole ? full : CGImageCreateWithImageInRect(full, CGRectMake(sl, st, sr - sl, sb - st));
