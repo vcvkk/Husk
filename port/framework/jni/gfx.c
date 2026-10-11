@@ -458,6 +458,22 @@ static void cv_restore(gcanvas *v)
     CGContextRestoreGState(v->c);
 }
 
+static inline uint32_t over(uint32_t d, uint32_t s)
+{
+    uint32_t inv = 255 - (s >> 24);       /* no branches: inv 0 gives s, 255 gives d, and the loop vectorises */
+    uint32_t rb = (d & 0x00FF00FFu) * inv + 0x00800080u, ag = ((d >> 8) & 0x00FF00FFu) * inv + 0x00800080u;
+    rb = ((rb + ((rb >> 8) & 0x00FF00FFu)) >> 8) & 0x00FF00FFu;
+    ag = (ag + ((ag >> 8) & 0x00FF00FFu)) & 0xFF00FF00u;
+    return (rb | ag) + s;
+}
+static inline uint32_t scale_px(uint32_t s, uint32_t a)    /* s times a / 255, every channel (a premultiplied colour's alpha) */
+{
+    uint32_t rb = (s & 0x00FF00FFu) * a + 0x00800080u, ag = ((s >> 8) & 0x00FF00FFu) * a + 0x00800080u;
+    rb = ((rb + ((rb >> 8) & 0x00FF00FFu)) >> 8) & 0x00FF00FFu;
+    ag = (ag + ((ag >> 8) & 0x00FF00FFu)) & 0xFF00FF00u;
+    return rb | ag;
+}
+
 /* ---- blend_fill: a colour over a rectangle of the bitmap itself. CoreGraphics blends a translucent fill a pixel at a time
  * (a screen's worth takes it some 10 ms, against 0.2 ms opaque); Compose draws its translucent backgrounds, scrims and
  * state layers so, and a frame took tens of ms. Only where the result is the same as CoreGraphics': no transparency layer
@@ -530,6 +546,64 @@ static bool blend_fill(gcanvas *v, CGRect r, uint32_t argb, bool aa)
     }
     return true;
 }
+
+/* ---- mask_draw: any path filled or stroked in a plain colour. CoreGraphics only works out its coverage, into an 8-bit mask
+ * (quick: an opaque fill of one channel), and Husk blends the colour through it (CoreGraphics' translucent blending is a
+ * pixel at a time: Compose's shapes, Material's expressive polygons, ovals and strokes). Where blend_ok allows. */
+static uint8_t *g_mask; static size_t g_mask_cap;
+static bool mask_draw(gcanvas *v, CGPathRef path, const int32_t *p, bool even_odd)
+{
+    int style = p[P_STYLE];
+    if (p[P_CFMODE] >= 0 || pf(p, P_SHRAD) > 0 || p[P_XFER] != 3) return false;
+    CGAffineTransform m;
+    if (!blend_ok(v, &m)) return false;
+    uint32_t argb = (uint32_t)p[P_COLOR];
+    if (!(argb >> 24)) return true;
+    gbitmap *b = v->bm;
+    float sw = pf(p, P_STROKE);
+    CGRect box = CGPathGetBoundingBox(path);
+    if (CGRectIsNull(box)) return true;
+    if (style != 0) { float e = (sw > 0 ? sw : 1) * (p[P_JOIN] == 0 ? fmaxf(pf(p, P_MITER), 4) : 1) + 2; box = CGRectInset(box, -e, -e); }
+    box = CGRectApplyAffineTransform(box, m);
+    CGRect clip = CGContextGetClipBoundingBox(v->c);
+    if (CGRectIsNull(clip)) return true;
+    box = CGRectIntersection(box, CGRectApplyAffineTransform(clip, m));
+    box = CGRectIntersection(box, CGRectMake(0, 0, b->w, b->h));
+    if (CGRectIsNull(box) || box.size.width <= 0 || box.size.height <= 0) return true;
+    /* the box in whole pixels, CoreGraphics' device space (y up) */
+    int dx0 = (int)floor(box.origin.x), dy0 = (int)floor(box.origin.y);
+    int dx1 = (int)ceil(box.origin.x + box.size.width), dy1 = (int)ceil(box.origin.y + box.size.height);
+    int W = dx1 - dx0, H = dy1 - dy0;
+    if (W <= 0 || H <= 0) return true;
+    size_t need = (size_t)W * H;
+    if (need > g_mask_cap) { free(g_mask); g_mask_cap = need + need / 4; g_mask = malloc(g_mask_cap); if (!g_mask) { g_mask_cap = 0; return false; } }
+    memset(g_mask, 0, need);
+    CGContextRef mc = CGBitmapContextCreate(g_mask, (size_t)W, (size_t)H, 8, (size_t)W, NULL, (CGBitmapInfo)kCGImageAlphaOnly);
+    if (!mc) return false;
+    CGContextConcatCTM(mc, CGAffineTransformConcat(m, CGAffineTransformMakeTranslation(-dx0, -dy0)));
+    CGContextSetShouldAntialias(mc, (p[P_FLAGS] & PF_AA) != 0);
+    CGContextSetGrayFillColor(mc, 0, 1); CGContextSetGrayStrokeColor(mc, 0, 1);
+    CGContextSetLineWidth(mc, sw > 0 ? sw : 1.0f);
+    CGContextSetLineCap(mc, p[P_CAP] == 1 ? kCGLineCapRound : p[P_CAP] == 2 ? kCGLineCapSquare : kCGLineCapButt);
+    CGContextSetLineJoin(mc, p[P_JOIN] == 1 ? kCGLineJoinRound : p[P_JOIN] == 2 ? kCGLineJoinBevel : kCGLineJoinMiter);
+    CGContextSetMiterLimit(mc, pf(p, P_MITER) > 0 ? pf(p, P_MITER) : 4);
+    CGContextAddPath(mc, path);
+    CGContextDrawPath(mc, style == 1 ? kCGPathStroke : style == 2 ? (even_odd ? kCGPathEOFillStroke : kCGPathFillStroke) : (even_odd ? kCGPathEOFill : kCGPathFill));
+    CGContextRelease(mc);
+    /* the mask's rows from the top, as the bitmap's: row r is the bitmap's row (h - dy1) + r */
+    uint32_t inv, s_full = premul(argb, 1, &inv);
+    int top = b->h - dy1;
+    for (int r = 0; r < H; r++) {
+        const uint8_t *mk = g_mask + (size_t)r * W;
+        uint32_t *d = (uint32_t *)(b->px + (size_t)(top + r) * b->stride) + dx0;
+        for (int i = 0; i < W; i++) {
+            uint32_t c = mk[i];
+            d[i] = over(d[i], scale_px(s_full, c));
+        }
+    }
+    return true;
+}
+
 
 static CGBlendMode blend_of(int mode)
 {
@@ -1122,6 +1196,7 @@ NAT(G_cvDrawColor)
 /* shapes: (long, l, t, r, b, [extra...], int[] paint, long shader) */
 static void shape(gcanvas *v, CGPathRef p, jobj *paint, int64_t shader)
 {
+    if (!shader && mask_draw(v, p, paint_of(paint), false)) return;
     draw_path(v->c, p, paint_of(paint), (gshader *)(uintptr_t)shader, false);
 }
 NAT(G_cvDrawRect)
@@ -1267,7 +1342,8 @@ NAT(G_cvDrawPath)
     gcanvas *v = H(gcanvas, 0); float *f = arr_data(a[1].l);
     if (!v || !f) return true;
     CGPathRef p = build_path(f, a[2].i);
-    draw_path(v->c, p, paint_of(a[4].l), (gshader *)(uintptr_t)a[5].j, a[3].i == 1);
+    if (a[5].j || !mask_draw(v, p, paint_of(a[4].l), a[3].i == 1))
+        draw_path(v->c, p, paint_of(a[4].l), (gshader *)(uintptr_t)a[5].j, a[3].i == 1);
     CGPathRelease(p);
     return true;
 }
@@ -1308,21 +1384,6 @@ static inline uint32_t bilerp(uint32_t p00, uint32_t p10, uint32_t p01, uint32_t
     uint32_t ag = ((p00 >> 8) & 0x00FF00FFu) * w00 + ((p10 >> 8) & 0x00FF00FFu) * w10 + ((p01 >> 8) & 0x00FF00FFu) * w01 + ((p11 >> 8) & 0x00FF00FFu) * w11;
     rb += 0x00800080u; ag += 0x00800080u;
     return ((rb >> 8) & 0x00FF00FFu) | (ag & 0xFF00FF00u);
-}
-static inline uint32_t over(uint32_t d, uint32_t s)
-{
-    uint32_t inv = 255 - (s >> 24);       /* no branches: inv 0 gives s, 255 gives d, and the loop vectorises */
-    uint32_t rb = (d & 0x00FF00FFu) * inv + 0x00800080u, ag = ((d >> 8) & 0x00FF00FFu) * inv + 0x00800080u;
-    rb = ((rb + ((rb >> 8) & 0x00FF00FFu)) >> 8) & 0x00FF00FFu;
-    ag = (ag + ((ag >> 8) & 0x00FF00FFu)) & 0xFF00FF00u;
-    return (rb | ag) + s;
-}
-static inline uint32_t scale_px(uint32_t s, uint32_t a)    /* s times a / 255, every channel (a premultiplied colour's alpha) */
-{
-    uint32_t rb = (s & 0x00FF00FFu) * a + 0x00800080u, ag = ((s >> 8) & 0x00FF00FFu) * a + 0x00800080u;
-    rb = ((rb + ((rb >> 8) & 0x00FF00FFu)) >> 8) & 0x00FF00FFu;
-    ag = (ag + ((ag >> 8) & 0x00FF00FFu)) & 0xFF00FF00u;
-    return rb | ag;
 }
 /* HUSK_FRAME_STATS (husk.DrawStats via Gfx.blitStats): bitmaps drawn here, how, and why the rest went to CoreGraphics */
 enum { BS_HERE, BS_EXACT_PX, BS_SCALED_PX, BS_NS, BS_PAINT, BS_LAYER, BS_CLIP, BS_TURNED, BS_SHRUNK, BS_COUNT };
