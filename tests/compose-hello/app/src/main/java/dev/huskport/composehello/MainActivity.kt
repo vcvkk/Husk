@@ -30,8 +30,8 @@ class MainActivity : ComponentActivity() {
                 Surface(Modifier.fillMaxSize()) { Box(Modifier.fillMaxSize()) {
                     // text measured and laid out at heavy weights and large sizes, as DepCalc's titles; above, where it moves nothing
                     Column(Modifier.align(Alignment.TopStart).padding(top = 48.dp)) {
-                        Text("Ещё", Modifier.padding(24.dp, 6.dp), style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.Black)
-                        Text("99", Modifier.padding(horizontal = 24.dp), fontSize = 96.sp, fontWeight = FontWeight.Bold)
+                        Text("Ещё", Modifier.padding(24.dp, 6.dp), style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.Black, letterSpacing = (-2).sp)
+                        Text("99", Modifier.padding(horizontal = 24.dp), fontSize = 96.sp, fontWeight = FontWeight.Bold, letterSpacing = (-4).sp)
                     }
                     var taps by remember { mutableIntStateOf(0) }
                     Column(
