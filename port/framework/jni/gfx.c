@@ -641,6 +641,43 @@ static void clip_mask_add_(gcanvas *v, CGPathRef path, bool even_odd, bool diffe
  * not its whole area. */
 static uint8_t *g_clipcov, *g_cliptmp; static size_t g_clipcov_cap;
 static int g_cc_x0, g_cc_y0, g_cc_w;
+static uint8_t *g_cc_full; static size_t g_cc_full_cap;   /* per row of the region: wholly covered (no mask needed) */
+/* a rounded rectangle's coverage of one row, x0 .. x0 + w, pixel row j */
+static void rr_row(const cmask *k, uint8_t *o, int x0, int w, int j)
+{
+    float py = j + 0.5f;
+    float cy = clamp01(fminf(py - k->rt, k->rb - py) + 0.5f);
+    if (cy <= 0) { memset(o, 0, (size_t)w); return; }
+    bool band = py < k->rt + fmaxf(k->ry[0], k->ry[1]) || py > k->rb - fmaxf(k->ry[2], k->ry[3]);
+    float lx = band ? k->rl + fmaxf(k->rx[0], k->rx[3]) : k->rl + 1, rxe = band ? k->rr_ - fmaxf(k->rx[1], k->rx[2]) : k->rr_ - 1;
+    uint8_t mid = (uint8_t)lrintf(cy * 255);
+    for (int xx = 0; xx < w; xx++) {
+        float px = x0 + xx + 0.5f;
+        if (px >= lx && px <= rxe) {
+            int end = (int)floorf(rxe - 0.5f) - x0 + 1;
+            if (end > w) end = w;
+            if (end <= xx) end = xx + 1;
+            memset(o + xx, mid, (size_t)(end - xx));
+            xx = end - 1;
+            continue;
+        }
+        o[xx] = (uint8_t)lrintf(rrect4_cover(px, py, k->rl, k->rt, k->rr_, k->rb, k->rx, k->ry) * 255);
+    }
+}
+/* whether the rounded rectangle covers all of row j from x0 to x0 + w */
+static inline bool rr_row_full(const cmask *k, int x0, int w, int j)
+{
+    float py = j + 0.5f;
+    return j >= k->rt && j + 1 <= k->rb && py >= k->rt + fmaxf(k->ry[0], k->ry[1]) && py <= k->rb - fmaxf(k->ry[2], k->ry[3])
+        && x0 >= k->rl && x0 + w <= k->rr_;
+}
+static inline bool all_255(const uint8_t *p, int n)
+{
+    int i = 0;
+    for (; i + 8 <= n; i += 8) { uint64_t q; memcpy(&q, p + i, 8); if (q != ~0ull) return false; }
+    for (; i < n; i++) if (p[i] != 255) return false;
+    return true;
+}
 static bool clip_region(const gcanvas *v, int x0, int y0, int w, int h)
 {
     size_t n = (size_t)w * h;
@@ -650,34 +687,33 @@ static bool clip_region(const gcanvas *v, int x0, int y0, int w, int h)
         if (!g_clipcov || !g_cliptmp) { free(g_clipcov); free(g_cliptmp); g_clipcov = g_cliptmp = NULL; g_clipcov_cap = 0; return false; }
     }
     g_cc_x0 = x0; g_cc_y0 = y0; g_cc_w = w;
+    if ((size_t)h > g_cc_full_cap) { free(g_cc_full); g_cc_full_cap = (size_t)h + 64; g_cc_full = malloc(g_cc_full_cap); if (!g_cc_full) { g_cc_full_cap = 0; return false; } }
     int bh = v->bm->h;
+    bool all_rr = true;
+    for (const cmask *k = v->mask; k; k = k->prev) if (!k->rr) { all_rr = false; break; }
+    if (all_rr) {
+        /* rounded rectangles only: a row they all cover wholly is marked, the rest worked out */
+        for (int yy = 0; yy < h; yy++) {
+            int j = y0 + yy;
+            bool full = true;
+            for (const cmask *k = v->mask; k && full; k = k->prev) full = rr_row_full(k, x0, w, j);
+            g_cc_full[yy] = full;
+            if (full) continue;
+            uint8_t *o = g_clipcov + (size_t)yy * w;
+            bool first = true;
+            for (const cmask *k = v->mask; k; k = k->prev, first = false) {
+                if (first) { rr_row(k, o, x0, w, j); continue; }
+                rr_row(k, g_cliptmp, x0, w, j);
+                for (int xx = 0; xx < w; xx++) o[xx] = (uint8_t)((o[xx] * (uint32_t)g_cliptmp[xx] + 127) / 255);
+            }
+        }
+        return true;
+    }
     bool first = true;
     for (const cmask *k = v->mask; k; k = k->prev, first = false) {
         uint8_t *out = first ? g_clipcov : g_cliptmp;
         if (k->rr) {
-            /* a rounded rectangle: whole rows of one coverage, the corners and edges a pixel at a time */
-            for (int yy = 0; yy < h; yy++) {
-                uint8_t *o = out + (size_t)yy * w;
-                float py = y0 + yy + 0.5f;
-                float cy = clamp01(fminf(py - k->rt, k->rb - py) + 0.5f);
-                if (cy <= 0) { memset(o, 0, (size_t)w); continue; }
-                bool band = py < k->rt + fmaxf(k->ry[0], k->ry[1]) || py > k->rb - fmaxf(k->ry[2], k->ry[3]);
-                float lx = band ? k->rl + fmaxf(k->rx[0], k->rx[3]) : k->rl + 1, rxe = band ? k->rr_ - fmaxf(k->rx[1], k->rx[2]) : k->rr_ - 1;
-                uint8_t mid = (uint8_t)lrintf(cy * 255);
-                for (int xx = 0; xx < w; xx++) {
-                    float px = x0 + xx + 0.5f;
-                    if (px >= lx && px <= rxe) {
-                        /* the straight middle of the row */
-                        int end = (int)floorf(rxe - 0.5f) - x0 + 1;
-                        if (end > w) end = w;
-                        if (end <= xx) end = xx + 1;
-                        memset(o + xx, mid, (size_t)(end - xx));
-                        xx = end - 1;
-                        continue;
-                    }
-                    o[xx] = (uint8_t)lrintf(rrect4_cover(px, py, k->rl, k->rt, k->rr_, k->rb, k->rx, k->ry) * 255);
-                }
-            }
+            for (int yy = 0; yy < h; yy++) rr_row(k, out + (size_t)yy * w, x0, w, y0 + yy);
             if (!first) for (size_t i = 0; i < n; i++) g_clipcov[i] = (uint8_t)((g_clipcov[i] * (uint32_t)g_cliptmp[i] + 127) / 255);
             continue;
         }
@@ -706,6 +742,7 @@ static bool clip_region(const gcanvas *v, int x0, int y0, int w, int h)
             }
         }
     }
+    for (int yy = 0; yy < h; yy++) g_cc_full[yy] = all_255(g_clipcov + (size_t)yy * w, w);
     return true;
 }
 /* the rows and columns the clip's mask leaves to draw (all, without one); false when none */
@@ -755,7 +792,8 @@ static inline bool clip_box(const gcanvas *v, int *x0, int *x1, int *y0, int *y1
 static inline const uint8_t *clip_at(const gcanvas *v, int x, int y)
 {
     (void)v;
-    return g_cc_on ? g_clipcov + (size_t)(y - g_cc_y0) * g_cc_w + (x - g_cc_x0) : NULL;
+    if (!g_cc_on || g_cc_full[y - g_cc_y0]) return NULL;    /* no mask, or this row wholly covered */
+    return g_clipcov + (size_t)(y - g_cc_y0) * g_cc_w + (x - g_cc_x0);
 }
 
 static inline uint32_t over(uint32_t d, uint32_t s)
@@ -787,6 +825,7 @@ static bool blend_ok(gcanvas *v, CGAffineTransform *m)
 /* source over: d = s + d * (255 - sa) / 255, s premultiplied in the bitmap's byte order (R G B A) */
 static inline void blend_run(uint32_t *p, int n, uint32_t s, uint32_t inv)
 {
+    if (inv == 0) { for (int k = 0; k < n; k++) p[k] = s; return; }     /* opaque: the colour itself */
     for (int k = 0; k < n; k++) {
         uint32_t d = p[k];
         uint32_t rb = (d & 0x00FF00FFu) * inv + 0x00800080u, ag = ((d >> 8) & 0x00FF00FFu) * inv + 0x00800080u;
@@ -838,16 +877,27 @@ static bool blend_fill(gcanvas *v, CGRect r, uint32_t argb, bool aa)
         /* through the clip's mask: each pixel's coverage times the mask's */
         int mx0 = ix0, mx1 = ix1, my0 = iy0, my1 = iy1;
         if (!clip_box(v, &mx0, &mx1, &my0, &my1)) return true;
+        uint32_t cl8 = (uint32_t)lrintf(cl * 255), cr8 = (uint32_t)lrintf(cr * 255);
         for (int j = my0; j < my1; j++) {
             float cy = (float)(fmin(j + 1, y1) - fmax(j, y0));
             if (cy <= 0) continue;
             uint32_t *row = (uint32_t *)(b->px + (size_t)j * b->stride);
             const uint8_t *mk = clip_at(v, mx0, j);
-            for (int i = mx0; i < mx1; i++) {
-                float cx = (le && i == ix0) ? cl : (re && i == ix1 - 1) ? cr : 1;
-                uint32_t c = ((uint32_t)lrintf(cy * cx * 255) * mk[i - mx0] + 127) / 255;
-                row[i] = over(row[i], scale_px(s_full, c));
+            uint32_t inv, sv;
+            if (cy >= 0.999f) { sv = s_full; inv = inv_full; } else sv = premul(argb, cy, &inv);
+            int a0 = fx0 > mx0 ? fx0 : mx0, a1 = fx1 < mx1 ? fx1 : mx1;
+            if (!mk) {
+                /* wholly covered: as unclipped */
+                if (a1 > a0) blend_run(row + a0, a1 - a0, sv, inv);
+                if (le && ix0 >= mx0) { uint32_t i2, s2 = premul(argb, cy * cl, &i2); blend_run(row + ix0, 1, s2, i2); }
+                if (re && ix1 - 1 < mx1) { uint32_t i2, s2 = premul(argb, cy * cr, &i2); blend_run(row + ix1 - 1, 1, s2, i2); }
+                continue;
             }
+            const uint8_t *m0 = mk - mx0;
+            for (int i = a0; i < a1; i++) row[i] = over(row[i], scale_px(sv, m0[i]));
+            uint32_t sf = s_full, cy8 = (uint32_t)lrintf(cy * 255);
+            if (le && ix0 >= mx0) row[ix0] = over(row[ix0], scale_px(sf, (((cy8 * cl8 + 127) / 255) * m0[ix0] + 127) / 255));
+            if (re && ix1 - 1 < mx1) row[ix1 - 1] = over(row[ix1 - 1], scale_px(sf, (((cy8 * cr8 + 127) / 255) * m0[ix1 - 1] + 127) / 255));
         }
         return true;
     }
@@ -930,6 +980,7 @@ static void mask_blend(gcanvas *v, int dx0, int dy1, int W, int H, uint32_t argb
         for (int j = my0; j < my1; j++) {
             const uint8_t *mk = g_mask + (size_t)(j - top) * W + (mx0 - dx0), *ck = clip_at(v, mx0, j);
             uint32_t *d = (uint32_t *)(b->px + (size_t)j * b->stride) + mx0;
+            if (!ck) { for (int i = 0; i < mx1 - mx0; i++) d[i] = over(d[i], scale_px(s_full, mk[i])); continue; }
             for (int i = 0; i < mx1 - mx0; i++) d[i] = over(d[i], scale_px(s_full, (mk[i] * (uint32_t)ck[i] + 127) / 255));
         }
         return;
@@ -1653,10 +1704,28 @@ static bool rrect_fill(gcanvas *v, CGRect r, float rx, float ry, uint32_t argb, 
         for (int j = my0; j < my1; j++) {
             uint32_t *row = (uint32_t *)(b->px + (size_t)j * b->stride);
             const uint8_t *mk = clip_at(v, mx0, j);
+            float py = j + 0.5f;
+            float cy = clamp01(fminf(py - y0, y1 - py) + 0.5f);
+            if (!aa) cy = cy >= 0.5f ? 1 : 0;
+            if (cy <= 0) continue;
+            bool corner_row = py < y0 + sry || py > y1 - sry;
+            uint32_t cinv, cs;
+            if (cy >= 0.999f) { cs = s_full; cinv = inv_full; } else cs = premul(argb, cy, &cinv);
             for (int i = mx0; i < mx1; i++) {
-                float c = rrect_cover(i + 0.5f, j + 0.5f, x0, y0, x1, y1, srx, sry);
+                if (!corner_row && i >= lx && i < rxs) {
+                    /* the straight middle: one coverage, through the mask where the row has one */
+                    int e = rxs < mx1 ? rxs : mx1;
+                    if (!mk) blend_run(row + i, e - i, cs, cinv);
+                    else for (int q = i; q < e; q++) row[q] = over(row[q], scale_px(cs, mk[q - mx0]));
+                    i = e - 1;
+                    continue;
+                }
+                float c = rrect_cover(i + 0.5f, py, x0, y0, x1, y1, srx, sry);
                 if (!aa) c = c >= 0.5f ? 1 : 0;
-                row[i] = over(row[i], scale_px(s_full, ((uint32_t)lrintf(c * 255) * mk[i - mx0] + 127) / 255));
+                if (c <= 0) continue;
+                uint32_t c8 = (uint32_t)lrintf(c * 255);
+                if (mk) c8 = (c8 * mk[i - mx0] + 127) / 255;
+                row[i] = over(row[i], scale_px(s_full, c8));
             }
         }
         return true;
@@ -1964,6 +2033,10 @@ static bool blit_(gcanvas *v, gbitmap *src, float sl, float st, float sr, float 
             const uint32_t *sr0 = img + (size_t)(j - by0) * istride + (ix0 - bx0);
             const uint8_t *mk = clip_at(v, ix0, j);
             uint32_t *d = (uint32_t *)(b->px + (size_t)j * b->stride) + ix0;
+            if (!mk) {
+                if (cf < 0) over_run(d, sr0, ix1 - ix0, ga); else over_run_cf(d, sr0, ix1 - ix0, ga, cf, cp, ca);
+                continue;
+            }
             for (int i = 0; i < ix1 - ix0; i++) tmp[i] = 0;
             if (cf < 0) over_run(tmp, sr0, ix1 - ix0, ga); else over_run_cf(tmp, sr0, ix1 - ix0, ga, cf, cp, ca);
             for (int i = 0; i < ix1 - ix0; i++) d[i] = over(d[i], scale_px(tmp[i], mk[i]));
