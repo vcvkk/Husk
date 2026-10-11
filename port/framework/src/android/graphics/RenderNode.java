@@ -36,6 +36,7 @@ public final class RenderNode {
         if (mBitmap == null || mBitmap.getWidth() != w || mBitmap.getHeight() != h) mBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
         else mBitmap.eraseColor(0);
         mCanvas = new RecordingCanvas(this, mBitmap);
+        if (husk.DrawStats.ON) { husk.DrawStats.nodesRecorded++; husk.DrawStats.nodePx += (long) w * h; }
         return mCanvas;
     }
     public RecordingCanvas beginRecording() { return beginRecording(getWidth(), getHeight()); }
@@ -63,6 +64,7 @@ public final class RenderNode {
     /** Husk: the node drawn on a canvas, as drawRenderNode does it. */
     void huskDraw(Canvas c) {
         if (!mHasDisplayList || mBitmap == null || mAlpha <= 0f) return;
+        long t0 = husk.DrawStats.ON ? System.nanoTime() : 0;
         int save = c.save();
         c.translate(mLeft, mTop);
         if (!hasIdentityMatrix()) { Matrix m = new Matrix(); getMatrix(m); c.concat(m); }
@@ -74,6 +76,7 @@ public final class RenderNode {
         }
         c.drawBitmap(mBitmap, 0, 0, p);
         c.restoreToCount(save);
+        if (husk.DrawStats.ON) { husk.DrawStats.nodesDrawn++; husk.DrawStats.nodeDrawNs += System.nanoTime() - t0; }
     }
 
     // ---- position

@@ -176,6 +176,7 @@ public final class ViewRoot implements ViewParent {
                 "%d frames in %.1f s: layout %.2f ms, draw %.2f ms (clear %.2f, views %.2f, present %.2f), worst %.2f ms",
                 sStatFrames, (now - sStatStart) / 1e9, sStatLayout / f / ms, sStatDraw / f / ms, sStatClear / f / ms, sStatViews / f / ms,
                 sStatPresent / f / ms, sStatMax / ms));
+            android.util.Log.i("FrameStats", "drawing " + husk.DrawStats.take(sStatFrames));
             sStatStart = now; sStatFrames = sStatLayout = sStatDraw = sStatClear = sStatViews = sStatPresent = sStatMax = 0;
         }
     }

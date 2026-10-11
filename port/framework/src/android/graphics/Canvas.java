@@ -165,14 +165,18 @@ public class Canvas {
         if (mNative == 0 || b == null || b.isRecycled()) return;
         float w = b.getWidth(), h = b.getHeight();
         if (mDensity != 0 && b.getDensity() != 0 && mDensity != b.getDensity()) { w = b.getScaledWidth(mDensity); h = b.getScaledHeight(mDensity); }
+        long t0 = husk.DrawStats.ON ? System.nanoTime() : 0;
         husk.Gfx.cvDrawBitmap(mNative, b.huskNative(), 0, 0, b.getWidth(), b.getHeight(), left, top, left + w, top + h, paintOf(p));
+        if (husk.DrawStats.ON) husk.DrawStats.bitmap(w, h, System.nanoTime() - t0);
         touched();
     }
     public void drawBitmap(Bitmap b, Rect src, RectF dst, Paint p) {
         if (mNative == 0 || b == null || b.isRecycled()) return;
         float sl = 0, st = 0, sr = b.getWidth(), sb = b.getHeight();
         if (src != null) { sl = src.left; st = src.top; sr = src.right; sb = src.bottom; }
+        long t0 = husk.DrawStats.ON ? System.nanoTime() : 0;
         husk.Gfx.cvDrawBitmap(mNative, b.huskNative(), sl, st, sr, sb, dst.left, dst.top, dst.right, dst.bottom, paintOf(p));
+        if (husk.DrawStats.ON) husk.DrawStats.bitmap(dst.width(), dst.height(), System.nanoTime() - t0);
         touched();
     }
     public void drawBitmap(Bitmap b, Rect src, Rect dst, Paint p) { drawBitmap(b, src, new RectF(dst), p); }
