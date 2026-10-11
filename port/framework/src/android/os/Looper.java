@@ -27,14 +27,33 @@ public final class Looper {
     public boolean isCurrentThread() { return Thread.currentThread() == mThread; }
     public void quit() { mQueue.quit(); }
     public void quitSafely() { mQueue.quit(); }
+    // HUSK_FRAME_STATS: the main thread's time, waiting and running messages, and the slowest messages, every 2 s in the log
+    private static final boolean STATS = System.getenv("HUSK_FRAME_STATS") != null;
+    private static long sStart, sWait, sRun, sCount, sSlowest;
+    private static String sSlowestWhat;
+    private static void stat(Message m, long wait, long run) {
+        long now = System.nanoTime();
+        if (sStart == 0) sStart = now;
+        sWait += wait; sRun += run; sCount++;
+        if (run > sSlowest) { sSlowest = run; sSlowestWhat = m.callback != null ? m.callback.getClass().getName() : m.target.getClass().getName() + " what=" + m.what; }
+        if (now - sStart >= 2_000_000_000L) {
+            android.util.Log.i("FrameStats", String.format(java.util.Locale.ROOT,
+                "main thread: %d messages, running %.0f ms and waiting/polling %.0f ms of %.0f; slowest %.1f ms (%s)",
+                sCount, sRun / 1e6, sWait / 1e6, (now - sStart) / 1e6, sSlowest / 1e6, sSlowestWhat));
+            sStart = now; sWait = sRun = sCount = sSlowest = 0; sSlowestWhat = null;
+        }
+    }
     public static void loop() {
         Looper me = myLooper();
         boolean main = me == sMain;
         for (;;) {
+            long w0 = STATS && main ? System.nanoTime() : 0;
             Message m = me.mQueue.next(main);
             if (m == null) return;
+            long d0 = STATS && main ? System.nanoTime() : 0;
             try {
                 m.target.dispatchMessage(m);
+                if (STATS && main) stat(m, d0 - w0, System.nanoTime() - d0);
             } catch (Throwable t) {
                 android.util.Log.e("Looper", "uncaught exception on " + Thread.currentThread().getName(), t);
                 if (main) throw t;

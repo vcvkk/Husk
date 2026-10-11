@@ -73,9 +73,12 @@ public final class Choreographer {
         boolean later = false;
         for (int type = 0; type < 5; type++) {
             ArrayList<Object[]> run = new ArrayList<>();
+            // due by now, not by the frame's start: what an animation callback asks for (a traversal) runs in this frame, as
+            // Android's doCallbacks does, instead of costing the next one
+            long due = System.nanoTime();
             synchronized (this) {
                 ArrayList<Object[]> q = mQueues[type];
-                for (int i = 0; i < q.size(); ) { Object[] e = q.get(i); if ((Long) e[2] <= now) { run.add(e); q.remove(i); } else { i++; later = true; } }
+                for (int i = 0; i < q.size(); ) { Object[] e = q.get(i); if ((Long) e[2] <= due) { run.add(e); q.remove(i); } else { i++; later = true; } }
             }
             long t0 = STATS ? System.nanoTime() : 0;
             for (Object[] e : run) {
