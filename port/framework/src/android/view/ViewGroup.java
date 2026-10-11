@@ -653,7 +653,7 @@ public abstract class ViewGroup extends View implements ViewParent, ViewManager 
     protected boolean isChildrenDrawnWithCacheEnabled() { return (huskFill.get("ChildrenDrawnWithCacheEnabled") instanceof Boolean ? (Boolean) huskFill.get("ChildrenDrawnWithCacheEnabled") : false); }
     public boolean isShowingContextMenuWithCoords() { return false; }
     public void makeFrameworkOptionalFitsSystemWindows() {}
-    public void makeOptionalFitsSystemWindows() {}
+    @Override public void makeOptionalFitsSystemWindows() { super.makeOptionalFitsSystemWindows(); for (int i = 0; i < mChildrenCount; i++) mChildren[i].makeOptionalFitsSystemWindows(); }
     public void notifySubtreeAccessibilityStateChangedIfNeeded() {}
     protected void onDebugDraw(android.graphics.Canvas p0) {}
     protected void onDebugDrawMargins(android.graphics.Canvas p0, android.graphics.Paint p1) {}

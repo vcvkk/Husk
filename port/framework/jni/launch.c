@@ -81,10 +81,23 @@ bool husk_vm_start(const char *art, const char *data_dir, const char *const *ext
     snprintf(bcl, sizeof bcl, "-Xbootclasspath-locations:%s", locations);
     const char *base[] = { "-Xusejit:false", image, bcp, bcl, "-Xss8m" };
     int n = (int)(sizeof base / sizeof *base);
-    JavaVMOption *o = calloc((size_t)(n + nextra), sizeof *o);
+    /* art/vm.options, if there: more options, one a line (-Dwolfjsse.debug=true and the like, for a diagnostic build) */
+    char *more[32]; int nmore = 0;
+    snprintf(path, sizeof path, "%s/vm.options", art);
+    FILE *f = fopen(path, "r");
+    if (f) {
+        char line[1024];
+        while (nmore < 32 && fgets(line, sizeof line, f)) {
+            line[strcspn(line, "\r\n")] = 0;
+            if (line[0] && line[0] != '#') more[nmore++] = strdup(line);
+        }
+        fclose(f);
+    }
+    JavaVMOption *o = calloc((size_t)(n + nextra + nmore), sizeof *o);
     for (int i = 0; i < n; i++) o[i].optionString = (char *)base[i];
     for (int i = 0; i < nextra; i++) o[n + i].optionString = (char *)extra[i];
-    JavaVMInitArgs args = { .version = JNI_VERSION_1_6, .nOptions = n + nextra, .options = o };
+    for (int i = 0; i < nmore; i++) o[n + nextra + i].optionString = more[i];
+    JavaVMInitArgs args = { .version = JNI_VERSION_1_6, .nOptions = n + nextra + nmore, .options = o };
     bool ok = JNI_CreateJavaVM(vm, env, &args) == JNI_OK;
     if (!ok) tl_log_line("husk-port: JNI_CreateJavaVM failed");
     free(o); free(jars); free(locations);

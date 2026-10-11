@@ -933,7 +933,8 @@ public class View implements Drawable.Callback, KeyEvent.Callback {
 
     // ---- insets
     public WindowInsets onApplyWindowInsets(WindowInsets i) {
-        if (mFitsSystemWindows) {
+        // an optional fit (AppCompat's content wrapper) does not apply when the window lays out under the bars (edge to edge)
+        if (mFitsSystemWindows && !(mOptionalFits && getRootView() instanceof husk.DecorView && ((husk.DecorView) getRootView()).huskUnderBars())) {
             setPadding(i.getSystemWindowInsetLeft(), i.getSystemWindowInsetTop(), i.getSystemWindowInsetRight(), i.getSystemWindowInsetBottom());
             return i.consumeSystemWindowInsets();
         }
@@ -1731,7 +1732,8 @@ public class View implements Drawable.Callback, KeyEvent.Callback {
     public boolean isVisibleToUserForAutofill(int p0) { return false; }
     public android.view.View keyboardNavigationClusterSearch(android.view.View p0, int p1) { return this; }
     public void makeFrameworkOptionalFitsSystemWindows() {}
-    public void makeOptionalFitsSystemWindows() {}
+    boolean mOptionalFits;
+    public void makeOptionalFitsSystemWindows() { mOptionalFits = true; }
     public void mapRectFromViewToScreenCoords(android.graphics.RectF p0, boolean p1) {}
     public void mapRectFromViewToWindowCoords(android.graphics.RectF p0, boolean p1) {}
     public void notifyEnterOrExitForAutoFillIfNeeded(boolean p0) {}

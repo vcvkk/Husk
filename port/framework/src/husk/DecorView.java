@@ -115,6 +115,8 @@ public final class DecorView extends FrameLayout {
     }
 
     // ---- insets: the decor keeps its content off the bars unless the app lays out under them
+    /** The window lays its content out under the bars: optional fits (View.makeOptionalFitsSystemWindows) do not apply. */
+    public boolean huskUnderBars() { return !mWindow.huskDecorFits() && !mWindow.isFloating(); }
     @Override public WindowInsets dispatchApplyWindowInsets(WindowInsets in) {
         boolean fits = mWindow.huskDecorFits() && !mWindow.isFloating();
         mInsetLeft = in.getSystemWindowInsetLeft(); mInsetTop = mWindow.huskFullscreen() ? 0 : in.getSystemWindowInsetTop();
