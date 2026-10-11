@@ -31,6 +31,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.Canvas
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 
@@ -54,7 +56,12 @@ class MainActivity : ComponentActivity() {
                         var y = 0f
                         while (y < size.height) {
                             var x = 0f
-                            while (x < size.width) { drawImage(tile, dstOffset = IntOffset(x.toInt(), y.toInt()), dstSize = IntSize(step.toInt(), step.toInt())); x += step }
+                            while (x < size.width) {
+                                // every other one tinted, as icons are (ColorFilter.tint)
+                                val tint = if (((x + y) / step).toInt() % 2 == 1) ColorFilter.tint(Color(0xFF3355CC)) else null
+                                drawImage(tile, dstOffset = IntOffset(x.toInt(), y.toInt()), dstSize = IntSize(step.toInt(), step.toInt()), colorFilter = tint)
+                                x += step
+                            }
                             y += step
                         }
                     }

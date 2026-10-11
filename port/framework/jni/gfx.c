@@ -1421,10 +1421,29 @@ static void over_run(uint32_t *restrict d, const uint32_t *restrict s, int n, ui
     if (ga == 255) for (int i = 0; i < n; i++) d[i] = over(d[i], s[i]);
     else for (int i = 0; i < n; i++) d[i] = over(d[i], scale_px(s[i], ga));
 }
+/* the same through a colour filter, as icons are tinted (Compose's ColorFilter.tint): cp the filter colour premultiplied,
+ * ca its alpha; mode 5 SRC_IN (the colour where the source is), 9 SRC_ATOP (laid over it), 13 MULTIPLY / MODULATE */
+static void over_run_cf(uint32_t *restrict d, const uint32_t *restrict s, int n, uint32_t ga, int mode, uint32_t cp, uint32_t ca)
+{
+    for (int i = 0; i < n; i++) {
+        uint32_t px = s[i], sa = px >> 24, t;
+        if (mode == 5) t = scale_px(cp, sa);
+        else if (mode == 9) t = scale_px(cp, sa) + scale_px(px, 255 - ca);
+        else {
+            /* each channel of the source times the colour's */
+            uint32_t r = ((px & 255) * (cp & 255) + 127) / 255, g = (((px >> 8) & 255) * ((cp >> 8) & 255) + 127) / 255;
+            uint32_t b = (((px >> 16) & 255) * ((cp >> 16) & 255) + 127) / 255, a = (sa * ca + 127) / 255;
+            t = r | g << 8 | b << 16 | a << 24;
+        }
+        if (ga != 255) t = scale_px(t, ga);
+        d[i] = over(d[i], t);
+    }
+}
 static bool blit_(gcanvas *v, gbitmap *src, float sl, float st, float sr, float sb, float dl, float dt, float dr, float db,
                   const int32_t *p)
 {
-    if (src == v->bm || p[P_CFMODE] >= 0 || p[P_XFER] != 3 || pf(p, P_SHRAD) > 0) { g_bs[BS_PAINT]++; return false; }
+    int cf = p[P_CFMODE];
+    if (src == v->bm || (cf >= 0 && cf != 5 && cf != 9 && cf != 13) || p[P_XFER] != 3 || pf(p, P_SHRAD) > 0) { g_bs[BS_PAINT]++; return false; }
     CGAffineTransform m;
     if (v->layers) { g_bs[BS_LAYER]++; return false; }
     if (v->complex || v->depth >= 256) { g_bs[BS_CLIP]++; return false; }
@@ -1471,8 +1490,14 @@ static bool blit_(gcanvas *v, gbitmap *src, float sl, float st, float sr, float 
     if (iy0 < 0) iy0 = 0;
     if (ix1 > b->w) ix1 = b->w;
     if (iy1 > b->h) iy1 = b->h;
-    for (int j = iy0; j < iy1; j++)
-        over_run((uint32_t *)(b->px + (size_t)j * b->stride) + ix0, img + (size_t)(j - by0) * istride + (ix0 - bx0), ix1 - ix0, ga);
+    uint32_t ca = 0, cp = cf >= 0 ? premul((uint32_t)p[P_CFCOLOR], 1, &ca) : 0;
+    ca = 255 - ca;                          /* premul gave 255 - alpha */
+    for (int j = iy0; j < iy1; j++) {
+        uint32_t *d = (uint32_t *)(b->px + (size_t)j * b->stride) + ix0;
+        const uint32_t *sr0 = img + (size_t)(j - by0) * istride + (ix0 - bx0);
+        if (cf < 0) over_run(d, sr0, ix1 - ix0, ga);
+        else over_run_cf(d, sr0, ix1 - ix0, ga, cf, cp, ca);
+    }
     return true;
 }
 
