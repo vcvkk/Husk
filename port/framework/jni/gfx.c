@@ -1835,15 +1835,19 @@ static void shape(gcanvas *v, CGPathRef p, jobj *paint, int64_t shader)
     if (shader) g_gs_cg++;
     draw_path(cg(v), p, paint_of(paint), (gshader *)(uintptr_t)shader, false);
 }
-NAT(G_cvDrawRect)
+/* HUSK_FRAME_STATS: drawRect by the way it went, with its time */
+enum { DR_FILL, DR_FILL_CG, DR_GRAD, DR_SH_KIND, DR_SH_PAINT, DR_SH_LAYER, DR_PAINT, DR_COUNT };
+static const char *const k_dr_name[DR_COUNT] = { "colour here", "colour to CoreGraphics", "gradient here", "shader not linear",
+    "shader, paint not plain", "shader in a layer or turned", "paint not plain" };
+static int64_t g_dr_n[DR_COUNT], g_dr_ns[DR_COUNT], g_dr_px[DR_COUNT];
+static int g_dr_last_xfer = -1, g_dr_last_cf = -1, g_dr_last_kind = -1;
+static int draw_rect(gcanvas *v, CGRect r, jobj *paint, int64_t shader)
 {
-    (void)self; (void)ret;
-    gcanvas *v = H(gcanvas, 0);
-    if (!v) return true;
-    CGRect r = CGRectMake(a[1].f, a[2].f, a[3].f - a[1].f, a[4].f - a[2].f);
-    const int32_t *p = paint_of(a[5].l);
-    if (!a[6].j && p[P_STYLE] == 0 && p[P_CFMODE] < 0 && pf(p, P_SHRAD) <= 0 && p[P_XFER] == 3) {
-        if (blend_fill(v, r, (uint32_t)p[P_COLOR], (p[P_FLAGS] & PF_AA) != 0)) return true;
+    const int32_t *p = paint_of(paint);
+    bool plain = p[P_STYLE] == 0 && p[P_CFMODE] < 0 && pf(p, P_SHRAD) <= 0 && p[P_XFER] == 3;
+    if (!plain) { g_dr_last_xfer = p[P_XFER]; g_dr_last_cf = p[P_CFMODE]; }
+    if (!shader && plain) {
+        if (blend_fill(v, r, (uint32_t)p[P_COLOR], (p[P_FLAGS] & PF_AA) != 0)) return DR_FILL;
         /* the common case, without a path */
         cv_flush(v);
         CGContextSaveGState(v->c);
@@ -1853,115 +1857,28 @@ NAT(G_cvDrawRect)
         CGContextSetShouldAntialias(v->c, (p[P_FLAGS] & PF_AA) != 0);
         CGContextFillRect(v->c, r);
         CGContextRestoreGState(v->c);
-        return true;
+        return DR_FILL_CG;
     }
-    if (a[6].j && p[P_STYLE] == 0 && p[P_CFMODE] < 0 && pf(p, P_SHRAD) <= 0 && p[P_XFER] == 3
-        && grad_fill(v, r, (gshader *)(uintptr_t)a[6].j, (uint32_t)p[P_COLOR], (p[P_FLAGS] & PF_AA) != 0)) return true;
+    gshader *sh = (gshader *)(uintptr_t)shader;
+    if (sh && plain && grad_fill(v, r, sh, (uint32_t)p[P_COLOR], (p[P_FLAGS] & PF_AA) != 0)) return DR_GRAD;
+    int why = !sh ? DR_PAINT : !plain ? DR_SH_PAINT : sh->kind != SH_LINEAR ? DR_SH_KIND : DR_SH_LAYER;
+    if (sh) g_dr_last_kind = sh->kind;
     CGPathRef path = CGPathCreateWithRect(r, NULL);
-    shape(v, path, a[5].l, a[6].j);
+    shape(v, path, paint, shader);
     CGPathRelease(path);
-    return true;
+    return why;
 }
-/* ---- grad_fill: a rectangle filled with a linear gradient, as blend_fill fills one with a colour (Compose's scrims and
- * fades, Brush.verticalGradient over the whole screen: CoreGraphics draws the gradient and blends it a pixel at a time, some
- * 3 ms a screen). t is affine in device space, so a row is a start and a step; the colours come from a table of 256. */
-static const uint32_t *grad_lut(gshader *s, int alpha)
+NAT(G_cvDrawRect)
 {
-    if (!s->lut) { s->lut = malloc(256 * sizeof(uint32_t)); if (!s->lut) return NULL; s->lut_alpha = -1; }
-    if (s->lut_alpha != alpha) {
-        for (int i = 0; i < 256; i++) { uint32_t inv; s->lut[i] = premul(sweep_at(s, i / 255.0f), alpha / 255.0f, &inv); }
-        s->lut_alpha = alpha;
-    }
-    return s->lut;
-}
-static inline int grad_index(float t, int tile)
-{
-    if (tile == 1) t -= floorf(t);
-    else if (tile == 2) { t = fabsf(t); float w = t - 2 * floorf(t / 2); t = w > 1 ? 2 - w : w; }
-    if (!(t > 0)) return 0;             /* NaN too */
-    if (t >= 1) return 255;
-    return (int)(t * 255 + 0.5f);
-}
-static bool grad_fill(gcanvas *v, CGRect r, gshader *s, uint32_t argb, bool aa)
-{
-    CGAffineTransform m;
-    if (s->kind != SH_LINEAR || !blend_ok(v, &m)) return false;
-    gbitmap *b = v->bm;
-    /* device (x right, y down from the top, pixel centres) to the gradient's space */
-    CGAffineTransform full = CGAffineTransformConcat(s->local, m);
-    full = CGAffineTransformConcat(full, CGAffineTransformMake(1, 0, 0, -1, 0, b->h));
-    if (fabs(full.a * full.d - full.b * full.c) < 1e-12) return false;
-    CGAffineTransform inv = CGAffineTransformInvert(full);
-    float gx = s->x1 - s->x0, gy = s->y1 - s->y0, len2 = gx * gx + gy * gy;
-    if (len2 < 1e-9f) return false;
-    /* t(x, y) = ((inv(x, y)) - p0) . g / |g|^2 = tx * x + ty * y + t0 */
-    float tx = (float)(inv.a * gx + inv.b * gy) / len2, ty = (float)(inv.c * gx + inv.d * gy) / len2;
-    float t0 = (float)((inv.tx - s->x0) * gx + (inv.ty - s->y0) * gy) / len2;
-    int alpha = (int)(argb >> 24);
-    const uint32_t *lut = grad_lut(s, alpha);
-    if (!lut) return false;
-    CGRect d = CGRectStandardize(CGRectApplyAffineTransform(CGRectStandardize(r), m));
-    CGRect clip = clip_user(v);
-    if (CGRectIsNull(clip)) return true;
-    d = CGRectIntersection(d, CGRectStandardize(CGRectApplyAffineTransform(clip, m)));
-    d = CGRectIntersection(d, CGRectMake(0, 0, b->w, b->h));
-    if (CGRectIsNull(d) || d.size.width <= 0 || d.size.height <= 0 || !alpha) return true;
-    double x0 = d.origin.x, x1 = x0 + d.size.width, y0 = b->h - (d.origin.y + d.size.height), y1 = b->h - d.origin.y;
-    if (!aa) { x0 = ceil(x0 - 0.5); x1 = ceil(x1 - 0.5); y0 = ceil(y0 - 0.5); y1 = ceil(y1 - 0.5); }
-    int ix0 = (int)floor(x0), ix1 = (int)ceil(x1), iy0 = (int)floor(y0), iy1 = (int)ceil(y1);
-    if (ix0 < 0) ix0 = 0;
-    if (iy0 < 0) iy0 = 0;
-    if (ix1 > b->w) ix1 = b->w;
-    if (iy1 > b->h) iy1 = b->h;
-    if (ix0 >= ix1 || iy0 >= iy1) return true;
-    int mx0 = ix0, mx1 = ix1, my0 = iy0, my1 = iy1;
-    bool masked = clip_need(v, ix0, ix1, iy0, iy1);
-    if (masked) { if (!clip_box(v, &mx0, &mx1, &my0, &my1)) return true; }
-    else g_cc_on = false;
-    int tile = s->tile;
-    /* the first and last columns' coverage, where a pixel is partly covered */
-    uint32_t cl8 = (uint32_t)lrintf((float)(fmin(ix0 + 1, x1) - fmax(ix0, x0)) * 255);
-    uint32_t cr8 = (uint32_t)lrintf((float)(fmin(ix1, x1) - fmax(ix1 - 1, x0)) * 255);
-    if (cl8 > 255) cl8 = 255;
-    if (cr8 > 255) cr8 = 255;
-    if (ix1 - ix0 == 1 && cr8 < cl8) cl8 = cr8;
-    int fx0 = mx0, fx1 = mx1;               /* the columns wholly covered across */
-    if (cl8 < 255 && ix0 >= mx0) fx0 = ix0 + 1;
-    if (cr8 < 255 && ix1 - 1 < mx1 && ix1 - 1 >= fx0) fx1 = ix1 - 1;
-    /* a gradient along y alone (the usual scrim) is one colour a row */
-    bool rowwise = fabsf(tx) * (float)(ix1 - ix0) < 0.5f / 255;
-    for (int j = my0; j < my1; j++) {
-        float cy = (float)(fmin(j + 1, y1) - fmax(j, y0));
-        if (cy <= 0) continue;
-        uint32_t cy8 = cy >= 0.999f ? 255 : (uint32_t)lrintf(cy * 255);
-        uint32_t *row = (uint32_t *)(b->px + (size_t)j * b->stride);
-        const uint8_t *mk = clip_at(v, mx0, j);
-        const uint8_t *m0 = mk ? mk - mx0 : NULL;
-        float tj = t0 + ty * (j + 0.5f);
-        if (rowwise && !m0) {
-            uint32_t c = lut[grad_index(tj + tx * (mx0 + 0.5f), tile)];
-            if (cy8 != 255) c = scale_px(c, cy8);
-            if (fx1 > fx0) blend_run(row + fx0, fx1 - fx0, c, 255 - (c >> 24));
-        } else {
-            float t = tj + tx * (fx0 + 0.5f);
-            for (int i = fx0; i < fx1; i++, t += tx) {
-                uint32_t c = lut[grad_index(t, tile)];
-                uint32_t k = cy8;
-                if (m0) k = (k * m0[i] + 127) / 255;
-                if (k != 255) c = scale_px(c, k);
-                row[i] = over(row[i], c);
-            }
-        }
-        for (int e = 0; e < 2; e++) {
-            int i = e ? ix1 - 1 : ix0;
-            uint32_t ce = e ? cr8 : cl8;
-            if (ce >= 255 || i < mx0 || i >= mx1 || (e && i == ix0)) continue;
-            uint32_t k = (cy8 * ce + 127) / 255;
-            if (m0) k = (k * m0[i] + 127) / 255;
-            row[i] = over(row[i], scale_px(lut[grad_index(tj + tx * (i + 0.5f), tile)], k));
-        }
-    }
-    g_gs_fast++;
+    (void)self; (void)ret;
+    gcanvas *v = H(gcanvas, 0);
+    if (!v) return true;
+    CGRect r = CGRectMake(a[1].f, a[2].f, a[3].f - a[1].f, a[4].f - a[2].f);
+    int64_t t0 = now_ns();
+    int k = draw_rect(v, r, a[5].l, a[6].j);
+    g_dr_n[k]++; g_dr_ns[k] += now_ns() - t0;
+    CGAffineTransform m = CGContextGetCTM(v->c);
+    g_dr_px[k] += (int64_t)fabs(r.size.width * r.size.height * (m.a * m.d - m.b * m.c));
     return true;
 }
 /* ---- rrect_fill: a rounded rectangle filled as blend_fill fills a rectangle, its corners' coverage from the distance to
@@ -2366,6 +2283,13 @@ NAT(G_blitStats)
     g_tc_hit = g_tc_miss = g_tc_color = g_tc_skip = g_tc_px = 0;
     tl_log_line("FrameStats: shaders per frame: %.1f gradients filled here, %.1f shaded shapes given to CoreGraphics", g_gs_fast / fr, g_gs_cg / fr);
     g_gs_fast = g_gs_cg = 0;
+    char line[1024]; int at = snprintf(line, sizeof(line), "FrameStats: drawRect per frame:");
+    for (int k = 0; k < DR_COUNT; k++) {
+        if (g_dr_n[k] && at < (int)sizeof(line))
+            at += snprintf(line + at, sizeof(line) - at, " %s %.1fx %.2fMpx %.2fms;", k_dr_name[k], g_dr_n[k] / fr, g_dr_px[k] / fr / 1e6, g_dr_ns[k] / fr / 1e6);
+        g_dr_n[k] = g_dr_ns[k] = g_dr_px[k] = 0;
+    }
+    tl_log_line("%s last odd paint: xfer %d, filter mode %d; shader kind %d", line, g_dr_last_xfer, g_dr_last_cf, g_dr_last_kind);
     return true;
 }
 NAT(G_cvDrawBitmap)
