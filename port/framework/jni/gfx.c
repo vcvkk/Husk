@@ -1486,18 +1486,24 @@ static void over_run(uint32_t *restrict d, const uint32_t *restrict s, int n, ui
  * ca its alpha; mode 5 SRC_IN (the colour where the source is), 9 SRC_ATOP (laid over it), 13 MULTIPLY / MODULATE */
 static void over_run_cf(uint32_t *restrict d, const uint32_t *restrict s, int n, uint32_t ga, int mode, uint32_t cp, uint32_t ca)
 {
-    for (int i = 0; i < n; i++) {
-        uint32_t px = s[i], sa = px >> 24, t;
-        if (mode == 5) t = scale_px(cp, sa);
-        else if (mode == 9) t = scale_px(cp, sa) + scale_px(px, 255 - ca);
-        else {
-            /* each channel of the source times the colour's */
-            uint32_t r = ((px & 255) * (cp & 255) + 127) / 255, g = (((px >> 8) & 255) * ((cp >> 8) & 255) + 127) / 255;
-            uint32_t b = (((px >> 16) & 255) * ((cp >> 16) & 255) + 127) / 255, a = (sa * ca + 127) / 255;
-            t = r | g << 8 | b << 16 | a << 24;
+    /* a loop for each mode, the branch outside: they vectorise */
+    if (mode == 5) {
+        if (ga != 255) cp = scale_px(cp, ga);
+        for (int i = 0; i < n; i++) d[i] = over(d[i], scale_px(cp, s[i] >> 24));
+    } else if (mode == 9) {
+        for (int i = 0; i < n; i++) {
+            uint32_t t = scale_px(cp, s[i] >> 24) + scale_px(s[i], 255 - ca);
+            d[i] = over(d[i], ga != 255 ? scale_px(t, ga) : t);
         }
-        if (ga != 255) t = scale_px(t, ga);
-        d[i] = over(d[i], t);
+    } else {
+        for (int i = 0; i < n; i++) {
+            /* each channel of the source times the colour's */
+            uint32_t px = s[i];
+            uint32_t r = ((px & 255) * (cp & 255) + 127) / 255, g = (((px >> 8) & 255) * ((cp >> 8) & 255) + 127) / 255;
+            uint32_t b = (((px >> 16) & 255) * ((cp >> 16) & 255) + 127) / 255, a = ((px >> 24) * ca + 127) / 255;
+            uint32_t t = r | g << 8 | b << 16 | a << 24;
+            d[i] = over(d[i], ga != 255 ? scale_px(t, ga) : t);
+        }
     }
 }
 static bool blit_(gcanvas *v, gbitmap *src, float sl, float st, float sr, float sb, float dl, float dt, float dr, float db,
