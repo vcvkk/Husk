@@ -388,6 +388,11 @@ static void shader_fill(CGContextRef c, const gshader *s, float alpha)
 
 /* ================================================================== canvases */
 
+/* a clip other than rectangles (a path, a difference, a turned rectangle) as Husk's blending sees it: its coverage, a byte a
+ * pixel over the clip's bounds (x0, y0 from the bitmap's top left), shared by the save levels it was set at and above */
+typedef struct cmask { int x0, y0, w, h, refs; uint8_t *m; } cmask;
+static void cmask_release(cmask *k) { if (k && --k->refs == 0) { free(k->m); free(k); } }
+
 typedef struct gcanvas {
     gbitmap *bm;
     CGContextRef c;
@@ -399,6 +404,8 @@ typedef struct gcanvas {
     bool complex;
     uint64_t complex_bits[4];
     int layers;
+    cmask *mask;                    /* the clip's coverage, where it is other than rectangles */
+    cmask *mask_saved[256];         /* as it was at each save level */
 } gcanvas;
 
 static gcanvas *cv_new(gbitmap *b)
@@ -419,7 +426,9 @@ static void cv_free(gcanvas *v)
         if (v->layer_bits[(v->depth - 1) >> 6] & (1ull << ((v->depth - 1) & 63))) CGContextEndTransparencyLayer(v->c);
         CGContextRestoreGState(v->c);
         v->depth--;
+        if (v->depth < 256) { cmask_release(v->mask); v->mask = v->mask_saved[v->depth]; }
     }
+    cmask_release(v->mask);
     CGContextRestoreGState(v->c);
     free(v);
 }
@@ -433,6 +442,8 @@ static int cv_save_mode(gcanvas *v, bool layer, float alpha, CGRect bounds, int 
     if (v->depth < 256) {
         uint64_t bit = 1ull << (v->depth & 63);
         if (v->complex) v->complex_bits[v->depth >> 6] |= bit; else v->complex_bits[v->depth >> 6] &= ~bit;
+        v->mask_saved[v->depth] = v->mask;
+        if (v->mask) v->mask->refs++;
         if (layer) {
             v->layers++;
             v->layer_bits[v->depth >> 6] |= bit;
@@ -454,8 +465,75 @@ static void cv_restore(gcanvas *v)
         uint64_t bit = 1ull << (v->depth & 63);
         if (v->layer_bits[v->depth >> 6] & bit) { CGContextEndTransparencyLayer(v->c); v->layers--; }
         v->complex = (v->complex_bits[v->depth >> 6] & bit) != 0;
+        cmask_release(v->mask);
+        v->mask = v->mask_saved[v->depth];
     }
     CGContextRestoreGState(v->c);
+}
+
+/* After the CoreGraphics clip took a path (user space), the mask takes it too: its coverage times the mask's so far (or the
+ * coverage left out of it, for a difference). Where that cannot be, blending leaves the canvas to CoreGraphics (complex). */
+static void clip_mask_add(gcanvas *v, CGPathRef path, bool even_odd, bool difference)
+{
+    if (v->depth >= 256) { v->complex = true; return; }
+    gbitmap *b = v->bm;
+    CGAffineTransform m = CGContextGetCTM(v->c);
+    CGRect cb = CGContextGetClipBoundingBox(v->c);
+    cmask *k = calloc(1, sizeof *k);
+    if (!k) { v->complex = true; return; }
+    k->refs = 1;
+    if (!CGRectIsNull(cb)) {
+        CGRect d = CGRectIntersection(CGRectStandardize(CGRectApplyAffineTransform(cb, m)), CGRectMake(0, 0, b->w, b->h));
+        if (!CGRectIsNull(d) && d.size.width > 0 && d.size.height > 0) {
+            int dx0 = (int)floor(d.origin.x), dy0 = (int)floor(d.origin.y);
+            int dx1 = (int)ceil(d.origin.x + d.size.width), dy1 = (int)ceil(d.origin.y + d.size.height);
+            k->x0 = dx0; k->y0 = b->h - dy1; k->w = dx1 - dx0; k->h = dy1 - dy0;
+        }
+    }
+    if (k->w > 0 && k->h > 0) {
+        k->m = calloc((size_t)k->w * k->h, 1);
+        CGContextRef mc = k->m ? CGBitmapContextCreate(k->m, (size_t)k->w, (size_t)k->h, 8, (size_t)k->w, NULL, (CGBitmapInfo)kCGImageAlphaOnly) : NULL;
+        if (!mc) { free(k->m); free(k); v->complex = true; return; }
+        CGContextConcatCTM(mc, CGAffineTransformConcat(m, CGAffineTransformMakeTranslation(-k->x0, -(b->h - k->y0 - k->h))));
+        CGContextSetGrayFillColor(mc, 0, 1);
+        CGContextAddPath(mc, path);
+        if (even_odd) CGContextEOFillPath(mc); else CGContextFillPath(mc);
+        CGContextRelease(mc);
+        /* with what was there: the old mask, or (rectangles only) all of the bounds */
+        cmask *o = v->mask;
+        for (int y = 0; y < k->h; y++) {
+            uint8_t *r = k->m + (size_t)y * k->w;
+            int gy = k->y0 + y;
+            for (int x = 0; x < k->w; x++) {
+                uint32_t c = difference ? 255u - r[x] : r[x], prev = 255;
+                if (o) {
+                    int gx = k->x0 + x;
+                    prev = gx >= o->x0 && gx < o->x0 + o->w && gy >= o->y0 && gy < o->y0 + o->h ? o->m[(size_t)(gy - o->y0) * o->w + (gx - o->x0)] : 0;
+                }
+                r[x] = (uint8_t)((c * prev + 127) / 255);
+            }
+        }
+    }
+    cmask_release(v->mask);
+    v->mask = k;
+}
+/* the rows and columns the clip's mask leaves to draw (all, without one); false when none */
+static inline bool clip_box(const gcanvas *v, int *x0, int *x1, int *y0, int *y1)
+{
+    const cmask *k = v->mask;
+    if (k) {
+        if (*x0 < k->x0) *x0 = k->x0;
+        if (*y0 < k->y0) *y0 = k->y0;
+        if (*x1 > k->x0 + k->w) *x1 = k->x0 + k->w;
+        if (*y1 > k->y0 + k->h) *y1 = k->y0 + k->h;
+    }
+    return *x0 < *x1 && *y0 < *y1;
+}
+/* the mask at (x, y), inside clip_box's; NULL without a mask */
+static inline const uint8_t *clip_at(const gcanvas *v, int x, int y)
+{
+    const cmask *k = v->mask;
+    return k ? k->m + (size_t)(y - k->y0) * k->w + (x - k->x0) : NULL;
 }
 
 static inline uint32_t over(uint32_t d, uint32_t s)
@@ -534,6 +612,23 @@ static bool blend_fill(gcanvas *v, CGRect r, uint32_t argb, bool aa)
         if (cr < 0.999f) { re = true; fx1--; }
     }
     uint32_t inv_full, s_full = premul(argb, 1, &inv_full);
+    if (v->mask) {
+        /* through the clip's mask: each pixel's coverage times the mask's */
+        int mx0 = ix0, mx1 = ix1, my0 = iy0, my1 = iy1;
+        if (!clip_box(v, &mx0, &mx1, &my0, &my1)) return true;
+        for (int j = my0; j < my1; j++) {
+            float cy = (float)(fmin(j + 1, y1) - fmax(j, y0));
+            if (cy <= 0) continue;
+            uint32_t *row = (uint32_t *)(b->px + (size_t)j * b->stride);
+            const uint8_t *mk = clip_at(v, mx0, j);
+            for (int i = mx0; i < mx1; i++) {
+                float cx = (le && i == ix0) ? cl : (re && i == ix1 - 1) ? cr : 1;
+                uint32_t c = ((uint32_t)lrintf(cy * cx * 255) * mk[i - mx0] + 127) / 255;
+                row[i] = over(row[i], scale_px(s_full, c));
+            }
+        }
+        return true;
+    }
     for (int j = iy0; j < iy1; j++) {
         float cy = (float)(fmin(j + 1, y1) - fmax(j, y0));
         if (cy <= 0) continue;
@@ -593,6 +688,16 @@ static bool mask_draw(gcanvas *v, CGPathRef path, const int32_t *p, bool even_od
     /* the mask's rows from the top, as the bitmap's: row r is the bitmap's row (h - dy1) + r */
     uint32_t inv, s_full = premul(argb, 1, &inv);
     int top = b->h - dy1;
+    if (v->mask) {
+        int mx0 = dx0, mx1 = dx0 + W, my0 = top, my1 = top + H;
+        if (!clip_box(v, &mx0, &mx1, &my0, &my1)) return true;
+        for (int j = my0; j < my1; j++) {
+            const uint8_t *mk = g_mask + (size_t)(j - top) * W + (mx0 - dx0), *ck = clip_at(v, mx0, j);
+            uint32_t *d = (uint32_t *)(b->px + (size_t)j * b->stride) + mx0;
+            for (int i = 0; i < mx1 - mx0; i++) d[i] = over(d[i], scale_px(s_full, (mk[i] * (uint32_t)ck[i] + 127) / 255));
+        }
+        return true;
+    }
     for (int r = 0; r < H; r++) {
         const uint8_t *mk = g_mask + (size_t)r * W;
         uint32_t *d = (uint32_t *)(b->px + (size_t)(top + r) * b->stride) + dx0;
@@ -1126,13 +1231,14 @@ NAT(G_cvClipRect)
     if (!v) return true;
     CGRect r = CGRectMake(a[1].f, a[2].f, a[3].f - a[1].f, a[4].f - a[2].f);
     CGAffineTransform m = CGContextGetCTM(v->c);
-    if (a[5].i == 0 || fabs(m.b) > 1e-6 || fabs(m.c) > 1e-6) v->complex = true;
+    bool shaped = a[5].i == 0 || fabs(m.b) > 1e-6 || fabs(m.c) > 1e-6;
     if (a[5].i == 0) {
         CGRect all = CGContextGetClipBoundingBox(v->c);
         CGContextAddRect(v->c, CGRectInset(all, -1, -1));
         CGContextAddRect(v->c, r);
         CGContextEOClip(v->c);
     } else CGContextClipToRect(v->c, r);
+    if (shaped) { CGPathRef rp = CGPathCreateWithRect(r, NULL); clip_mask_add(v, rp, false, a[5].i == 0); CGPathRelease(rp); }
     *ret = Ii(!CGRectIsEmpty(CGContextGetClipBoundingBox(v->c)));
     return true;
 }
@@ -1144,7 +1250,6 @@ NAT(G_cvClipPath)
     *ret = Ii(1);
     if (!v || !f) return true;
     CGPathRef p = build_path(f, a[2].i);
-    v->complex = true;
     if (a[4].i == 0) {
         CGRect all = CGContextGetClipBoundingBox(v->c);
         CGContextAddRect(v->c, CGRectInset(all, -1, -1));
@@ -1154,6 +1259,7 @@ NAT(G_cvClipPath)
         CGContextAddPath(v->c, p);
         if (a[3].i == 1) CGContextEOClip(v->c); else CGContextClip(v->c);
     }
+    clip_mask_add(v, p, a[3].i == 1, a[4].i == 0);
     CGPathRelease(p);
     *ret = Ii(!CGRectIsEmpty(CGContextGetClipBoundingBox(v->c)));
     return true;
@@ -1265,6 +1371,20 @@ static bool rrect_fill(gcanvas *v, CGRect r, float rx, float ry, uint32_t argb, 
     if (rxs > ix1) rxs = ix1;
     if (lx > rxs) lx = rxs = ix1;
     uint32_t inv_full, s_full = premul(argb, 1, &inv_full);
+    if (v->mask) {
+        int mx0 = ix0, mx1 = ix1, my0 = iy0, my1 = iy1;
+        if (!clip_box(v, &mx0, &mx1, &my0, &my1)) return true;
+        for (int j = my0; j < my1; j++) {
+            uint32_t *row = (uint32_t *)(b->px + (size_t)j * b->stride);
+            const uint8_t *mk = clip_at(v, mx0, j);
+            for (int i = mx0; i < mx1; i++) {
+                float c = rrect_cover(i + 0.5f, j + 0.5f, x0, y0, x1, y1, srx, sry);
+                if (!aa) c = c >= 0.5f ? 1 : 0;
+                row[i] = over(row[i], scale_px(s_full, ((uint32_t)lrintf(c * 255) * mk[i - mx0] + 127) / 255));
+            }
+        }
+        return true;
+    }
     for (int j = iy0; j < iy1; j++) {
         uint32_t *row = (uint32_t *)(b->px + (size_t)j * b->stride);
         float py = j + 0.5f;
@@ -1559,6 +1679,22 @@ static bool blit_(gcanvas *v, gbitmap *src, float sl, float st, float sr, float 
     if (iy1 > b->h) iy1 = b->h;
     uint32_t ca = 0, cp = cf >= 0 ? premul((uint32_t)p[P_CFCOLOR], 1, &ca) : 0;
     ca = 255 - ca;                          /* premul gave 255 - alpha */
+    if (v->mask) {
+        if (!clip_box(v, &ix0, &ix1, &iy0, &iy1)) return true;
+        uint32_t *tmp = malloc((size_t)(ix1 - ix0) * 4);
+        if (!tmp) return true;
+        for (int j = iy0; j < iy1; j++) {
+            /* the row as it would blend, then each pixel through the mask */
+            const uint32_t *sr0 = img + (size_t)(j - by0) * istride + (ix0 - bx0);
+            const uint8_t *mk = clip_at(v, ix0, j);
+            uint32_t *d = (uint32_t *)(b->px + (size_t)j * b->stride) + ix0;
+            for (int i = 0; i < ix1 - ix0; i++) tmp[i] = 0;
+            if (cf < 0) over_run(tmp, sr0, ix1 - ix0, ga); else over_run_cf(tmp, sr0, ix1 - ix0, ga, cf, cp, ca);
+            for (int i = 0; i < ix1 - ix0; i++) d[i] = over(d[i], scale_px(tmp[i], mk[i]));
+        }
+        free(tmp);
+        return true;
+    }
     for (int j = iy0; j < iy1; j++) {
         uint32_t *d = (uint32_t *)(b->px + (size_t)j * b->stride) + ix0;
         const uint32_t *sr0 = img + (size_t)(j - by0) * istride + (ix0 - bx0);
