@@ -37,6 +37,7 @@ jobs:
           set +e
           mkdir -p build/frames
           export HUSK_FRAME_STATS=1
+          unset JAVA_HOME             # as on a phone: wolfSSL takes the runtime's certificates, not the runner's JDK's (PKCS12)
           perl -e 'alarm shift; exec @ARGV' $(( ${{ env.SECONDS }} + 60 )) lldb --batch \
             -o 'process handle SIGSEGV -s false -p true -n false' -o 'process handle SIGBUS -s false -p true -n false' \
             -o 'settings set target.process.stop-on-exec false' \

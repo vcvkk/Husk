@@ -1,0 +1,20 @@
+diff --git a/art/runtime/oat_file_assistant.cc b/art/runtime/oat_file_assistant.cc
+index 8645ef12..e70e942e 100644
+--- a/art/runtime/oat_file_assistant.cc
++++ b/art/runtime/oat_file_assistant.cc
+@@ -207,7 +207,14 @@ bool OatFileAssistant::IsUpToDate() {
+ std::unique_ptr<OatFile> OatFileAssistant::GetBestOatFile() {
+   // framework-res.apk contains no dex files.
+   bool is_framework_res = dex_location_.compare(dex_location_.size() - (sizeof("framework-res.apk")-1), sizeof("framework-res.apk")-1, "framework-res.apk") == 0;
+-  if (!IsUpToDate() && !is_framework_res) {
++#if defined(__APPLE__)
++  // No dex2oat to start: iOS lets an app start no process (a fork there kills it), and macOS ships none. A dex file
++  // without compiled code (one a class loader opens at run time) runs interpreted.
++  constexpr bool kCanCompile = false;
++#else
++  constexpr bool kCanCompile = true;
++#endif
++  if (kCanCompile && !IsUpToDate() && !is_framework_res) {
+     // Compile the dex file.
+     std::vector<std::string> arg_vector;
+ 
