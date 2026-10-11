@@ -36,8 +36,23 @@ if [ ! -f "$P/lib/libwolfssl.a" ]; then
         && make -s -j8 > /dev/null && make -s install > /dev/null)
 fi
 
+# art_standalone's wolfssljni logs through Android's liblog: to stderr here, as ART's own log goes
+cat > "$WORK/android_log.c" <<'EOF2'
+#include <stdarg.h>
+#include <stdio.h>
+int __android_log_print(int prio, const char *tag, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    fprintf(stderr, "%s: ", tag);
+    int n = vfprintf(stderr, fmt, ap);
+    va_end(ap);
+    (void)prio;
+    return n;
+}
+EOF2
 objs=()
-for f in "$SRC"/native/*.c; do
+for f in "$SRC"/native/*.c "$WORK/android_log.c"; do
     o="$WORK/$(basename "$f" .c).o"
     "$CC" $CFLAGS -Wno-incompatible-pointer-types -Wno-deprecated-declarations -I"$P/include" -I"$JNI" \
         -I"$SRC/native" -c "$f" -o "$o"
