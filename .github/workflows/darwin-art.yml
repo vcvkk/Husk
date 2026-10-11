@@ -601,7 +601,11 @@ jobs:
           set +e
           export HUSK_FRAME_STATS=1   # FrameStats lines: where a frame's time goes
           perl -e 'alarm shift; exec @ARGV' 120 build/fw/mac-host --art "$PWD/build/app/boot" --apk "$PWD/build/app/app/base.apk" --fwres "$PWD/build/app/app/framework-res.apk" \
-            --seconds 15 --frames build/frames --tap 400,760@3 --type "Привет 👋@5" --tap 540,1300@8 > build/app-run.log 2>&1
+            --seconds 15 --frames build/frames --tap 400,760@3 --type "Привет 👋@5" --tap 540,1300@8 > build/app-run.log 2>&1 &
+          host=$!
+          # a CPU profile while it animates: where a frame's time goes, by function
+          sleep 9; sample $host 4 -mayDie -file build/sample.txt > /dev/null 2>&1
+          wait $host
           status=$?
           echo "mac-host exit $status"
           tr -d '\000' < build/app-run.log | grep -av 'not in a known location\|Overlapping/invalid range\|FrameStats' | tail -150
@@ -615,6 +619,7 @@ jobs:
           path: |
             build/frames
             build/app-run.log
+            build/sample.txt
           if-no-files-found: ignore
 
   # the Compose app as an iOS app: unsigned for a sideloading tool to sign
