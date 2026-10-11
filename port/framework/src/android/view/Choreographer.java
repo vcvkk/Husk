@@ -45,6 +45,7 @@ public final class Choreographer {
         if (mScheduled) return;
         mScheduled = true;
         long now = System.nanoTime(), next = Math.max(now, mLastFrame + FRAME_NS);
+        mDue = next;
         mHandler.postDelayed(mDoFrame, Math.max(0, (next - now) / 1_000_000L));
     }
     public void postCallback(int type, Runnable r, Object token) { add(type, r, token, 0); }
@@ -60,11 +61,12 @@ public final class Choreographer {
 
     // HUSK_FRAME_STATS: the frames' period and what each kind of callback takes, every 2 s in the log
     private static final boolean STATS = System.getenv("HUSK_FRAME_STATS") != null;
-    private long mStatStart, mStatFrames, mStatPrev, mStatGap, mStatGapMax, mStatTotal;
+    private long mStatStart, mStatFrames, mStatPrev, mStatGap, mStatGapMax, mStatTotal, mStatLate, mStatLateMax, mDue;
     private final long[] mStatType = new long[5];
     private void doFrame() {
         long now = System.nanoTime();
         if (STATS && this == sMain) {
+            if (mDue != 0) { mStatLate += now - mDue; mStatLateMax = Math.max(mStatLateMax, now - mDue); }
             if (mStatPrev != 0) { long g = now - mStatPrev; mStatGap += g; mStatGapMax = Math.max(mStatGapMax, g); }
             mStatPrev = now;
         }
@@ -96,8 +98,9 @@ public final class Choreographer {
                 android.util.Log.i("FrameStats", String.format(java.util.Locale.ROOT,
                     "choreographer: %d frames, every %.1f ms (longest gap %.1f), each %.2f ms: input %.2f, animation %.2f, traversal %.2f",
                     mStatFrames, mStatFrames > 1 ? mStatGap / (f - 1) / ms : 0, mStatGapMax / ms, mStatTotal / f / ms,
-                    mStatType[0] / f / ms, mStatType[1] / f / ms, mStatType[3] / f / ms));
-                mStatStart = end; mStatFrames = mStatGap = mStatGapMax = mStatTotal = 0; java.util.Arrays.fill(mStatType, 0);
+                    mStatType[0] / f / ms, mStatType[1] / f / ms, mStatType[3] / f / ms)
+                    + String.format(java.util.Locale.ROOT, "; ran %.1f ms after due (worst %.1f)", mStatLate / f / ms, mStatLateMax / ms));
+                mStatStart = end; mStatFrames = mStatGap = mStatGapMax = mStatTotal = mStatLate = mStatLateMax = 0; java.util.Arrays.fill(mStatType, 0);
             }
         }
         synchronized (this) {

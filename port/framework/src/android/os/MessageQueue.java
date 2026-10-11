@@ -35,6 +35,9 @@ public final class MessageQueue {
     synchronized boolean hasAny(Handler h) { for (Message p = head; p != null; p = p.next) if (p.target == h) return true; return false; }
     synchronized void quit() { quitting = true; notifyAll(); }
 
+    // HUSK_FRAME_STATS: the main thread's timed waits, asked for and slept (Looper's line prints them)
+    static final boolean STATS = System.getenv("HUSK_FRAME_STATS") != null;
+    static long sWaits, sAsked, sSlept, sOver;
     private boolean mNativeLooper;
     Message next(boolean main) {
         for (;;) {
@@ -46,7 +49,9 @@ public final class MessageQueue {
                 if (head != null && head.when <= now) { Message m = head; head = m.next; m.next = null; return m; }
                 long wait = head == null ? 8 : Math.min(8, head.when - now);
                 if (!main) wait = head == null ? (mNativeLooper ? 8 : 0) : Math.max(1, mNativeLooper ? Math.min(8, head.when - now) : head.when - now);
+                long w0 = STATS && main ? System.nanoTime() : 0;
                 try { if (wait <= 0) wait(); else wait(wait); } catch (InterruptedException e) { return null; }
+                if (STATS && main && wait > 0) { long got = System.nanoTime() - w0; sWaits++; sAsked += wait * 1_000_000L; sSlept += got; sOver = Math.max(sOver, got - wait * 1_000_000L); }
             }
         }
     }

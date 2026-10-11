@@ -39,7 +39,10 @@ public final class Looper {
         if (now - sStart >= 2_000_000_000L) {
             android.util.Log.i("FrameStats", String.format(java.util.Locale.ROOT,
                 "main thread: %d messages, running %.0f ms and waiting/polling %.0f ms of %.0f; slowest %.1f ms (%s)",
-                sCount, sRun / 1e6, sWait / 1e6, (now - sStart) / 1e6, sSlowest / 1e6, sSlowestWhat));
+                sCount, sRun / 1e6, sWait / 1e6, (now - sStart) / 1e6, sSlowest / 1e6, sSlowestWhat)
+                + String.format(java.util.Locale.ROOT, "; %d timed waits, asked %.0f ms, slept %.0f ms, worst over %.1f ms",
+                    MessageQueue.sWaits, MessageQueue.sAsked / 1e6, MessageQueue.sSlept / 1e6, MessageQueue.sOver / 1e6));
+            MessageQueue.sWaits = MessageQueue.sAsked = MessageQueue.sSlept = MessageQueue.sOver = 0;
             sStart = now; sWait = sRun = sCount = sSlowest = 0; sSlowestWhat = null;
         }
     }
