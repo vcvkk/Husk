@@ -58,8 +58,16 @@ public final class Choreographer {
         for (int i = q.size() - 1; i >= 0; i--) { Object[] e = q.get(i); if ((cb == null || e[0] == cb) && (token == null || e[1] == token)) q.remove(i); }
     }
 
+    // HUSK_FRAME_STATS: the frames' period and what each kind of callback takes, every 2 s in the log
+    private static final boolean STATS = System.getenv("HUSK_FRAME_STATS") != null;
+    private long mStatStart, mStatFrames, mStatPrev, mStatGap, mStatGapMax, mStatTotal;
+    private final long[] mStatType = new long[5];
     private void doFrame() {
         long now = System.nanoTime();
+        if (STATS && this == sMain) {
+            if (mStatPrev != 0) { long g = now - mStatPrev; mStatGap += g; mStatGapMax = Math.max(mStatGapMax, g); }
+            mStatPrev = now;
+        }
         synchronized (this) { mScheduled = false; }
         mLastFrame = now;
         boolean later = false;
@@ -69,9 +77,24 @@ public final class Choreographer {
                 ArrayList<Object[]> q = mQueues[type];
                 for (int i = 0; i < q.size(); ) { Object[] e = q.get(i); if ((Long) e[2] <= now) { run.add(e); q.remove(i); } else { i++; later = true; } }
             }
+            long t0 = STATS ? System.nanoTime() : 0;
             for (Object[] e : run) {
                 if (e[0] instanceof FrameCallback) ((FrameCallback) e[0]).doFrame(now);
                 else ((Runnable) e[0]).run();
+            }
+            if (STATS) mStatType[type] += System.nanoTime() - t0;
+        }
+        if (STATS && this == sMain) {
+            long end = System.nanoTime();
+            mStatFrames++; mStatTotal += end - now;
+            if (mStatStart == 0) mStatStart = now;
+            if (end - mStatStart >= 2_000_000_000L) {
+                double f = mStatFrames, ms = 1e6;
+                android.util.Log.i("FrameStats", String.format(java.util.Locale.ROOT,
+                    "choreographer: %d frames, every %.1f ms (longest gap %.1f), each %.2f ms: input %.2f, animation %.2f, traversal %.2f",
+                    mStatFrames, mStatFrames > 1 ? mStatGap / (f - 1) / ms : 0, mStatGapMax / ms, mStatTotal / f / ms,
+                    mStatType[0] / f / ms, mStatType[1] / f / ms, mStatType[3] / f / ms));
+                mStatStart = end; mStatFrames = mStatGap = mStatGapMax = mStatTotal = 0; java.util.Arrays.fill(mStatType, 0);
             }
         }
         synchronized (this) {
