@@ -5,6 +5,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Button
@@ -48,9 +50,10 @@ class MainActivity : ComponentActivity() {
                     }
                     // a tap opens a bottom sheet in its own window, taller than half the screen, as DepCalc's update sheet
                     if (taps > 0) ModalBottomSheet(onDismissRequest = {}) {
-                        Column(Modifier.padding(24.dp)) {
+                        // taller than the screen: the sheet opens half way, the rest below to drag or scroll up
+                        Column(Modifier.verticalScroll(rememberScrollState()).padding(24.dp)) {
                             Text("Bottom sheet", style = MaterialTheme.typography.headlineSmall)
-                            for (i in 1..24) Text("line $i of the sheet", style = MaterialTheme.typography.bodyLarge)
+                            for (i in 1..60) Text("line $i of the sheet", style = MaterialTheme.typography.bodyLarge)
                         }
                     }
                 } }
