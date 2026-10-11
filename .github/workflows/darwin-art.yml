@@ -596,6 +596,8 @@ jobs:
           for f in build/app/boot/arm64/*.dylib build/app/app/oat/arm64/*.dylib; do codesign -s - -f "$f"; done
       - name: Natives and the test host
         run: port/framework/build-natives.sh macos build/fw build/darwin/include/nativehelper "$PWD/build/darwin/lib"
+      - name: CoreGraphics pixel formats
+        run: clang -O2 -o build/cg-bench port/framework/host/cg-bench.c -framework CoreGraphics && build/cg-bench
       - name: Run the app
         run: |
           set +e
