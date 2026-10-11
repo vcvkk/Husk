@@ -10,7 +10,7 @@ if [ -x "$PREFIX/bin/dex2oat" ]; then
     echo "ART from the cache: $PREFIX"
 else
     export PATH=/usr/lib/ccache:$PATH CCACHE_DIR=~/.cache/ccache
-    export CCACHE_SLOPPINESS=include_file_mtime,include_file_ctime,time_macros
+    export CCACHE_SLOPPINESS=include_file_mtime,include_file_ctime,time_macros CCACHE_MAXSIZE=6G
     ART_INSTALL=1 PREFIX="$PREFIX" "$ROOT/port/art/build.sh"
     sudo chown -R "$(id -u):$(id -g)" "$PREFIX"
     ccache -s | head -8 || true

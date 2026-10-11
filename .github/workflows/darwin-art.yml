@@ -246,6 +246,12 @@ jobs:
       - name: ART
         if: steps.out.outputs.cache-hit != 'true'
         run: port/art/ci-install.sh
+      # the compiled objects, for the next build of ART: a patch changes a few files, the rest come from here
+      - uses: actions/cache/save@v4
+        if: (steps.out.outputs.cache-hit != 'true') && steps.prefix.outputs.cache-hit != 'true'
+        with:
+          path: ~/.cache/ccache
+          key: ccache-${{ runner.arch }}-${{ github.sha }}
       - name: Boot image and Hello, for macOS and iOS
         if: steps.out.outputs.cache-hit != 'true'
         run: port/art/ci-boot.sh
@@ -508,7 +514,8 @@ jobs:
 
   # the framework in a boot image, and the app compiled against it (port/framework/ci-app.sh)
   app-boot:
-    needs: apk
+    # after boot: ART built once, there, and taken from the cache here
+    needs: [apk, boot]
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 150
     steps:
@@ -554,6 +561,12 @@ jobs:
       - name: ART
         if: steps.out.outputs.cache-hit != 'true'
         run: port/art/ci-install.sh
+      # the compiled objects, for the next build of ART: a patch changes a few files, the rest come from here
+      - uses: actions/cache/save@v4
+        if: (steps.out.outputs.cache-hit != 'true') && steps.prefix.outputs.cache-hit != 'true'
+        with:
+          path: ~/.cache/ccache
+          key: ccache-${{ runner.arch }}-${{ github.sha }}
       - name: Framework, boot image, the app
         if: steps.out.outputs.cache-hit != 'true'
         run: port/framework/ci-app.sh build/apk/tests/compose-hello/app/build/outputs/apk/release/app-release.apk build/app build/apk/build/framework-res.apk
