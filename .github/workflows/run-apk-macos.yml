@@ -2,14 +2,13 @@ name: An APK on macOS
 
 # Runs an app other than the test app on the macOS test host, under lldb so a crash leaves its
 # backtrace: the runtime and boot image come from a run of "ART runtime on Darwin", the app's
-# compiled code (an app/ folder as macos.tgz has it, packed as a .tgz) from a URL.
+# compiled code (an app/ folder as macos.tgz has it, packed as a .tgz) from a URL. tests/run-apk.env says
+# which: RUN_ID, APP_URL, SECONDS; a push changing it runs this.
 
 on:
-  workflow_dispatch:
-    inputs:
-      run_id: { description: 'run of "ART runtime on Darwin" to take the runtime from', required: true }
-      app_url: { description: 'URL of a .tgz holding app/ (base.apk, framework-res.apk, oat/arm64/*)', required: true }
-      seconds: { description: 'how long to run it', default: '25' }
+  push:
+    branches: [husk-port]
+    paths: ['tests/run-apk.env']
 
 jobs:
   run:
@@ -17,16 +16,18 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: What to run
+        run: cat tests/run-apk.env >> "$GITHUB_ENV"
       - uses: actions/download-artifact@v4
-        with: { name: darwin-runtime, path: build, run-id: '${{ inputs.run_id }}', github-token: '${{ github.token }}' }
+        with: { name: darwin-runtime, path: build, run-id: '${{ env.RUN_ID }}', github-token: '${{ github.token }}' }
       - uses: actions/download-artifact@v4
-        with: { name: app-macos, path: build, run-id: '${{ inputs.run_id }}', github-token: '${{ github.token }}' }
+        with: { name: app-macos, path: build, run-id: '${{ env.RUN_ID }}', github-token: '${{ github.token }}' }
       - name: Unpack, the app in place of the test app, sign the compiled code
         run: |
           brew install lz4 xz icu4c openssl@3 epoll-shim > /dev/null 2>&1 || true
           tar -xzf build/darwin-runtime.tgz -C build
           mkdir -p build/app && tar -xzf build/macos.tgz -C build/app
-          rm -rf build/app/app && curl -sSL "${{ inputs.app_url }}" -o build/app.tgz && tar -xzf build/app.tgz -C build/app
+          rm -rf build/app/app && curl -sSL "${{ env.APP_URL }}" -o build/app.tgz && tar -xzf build/app.tgz -C build/app
           ls -la build/app/app build/app/app/oat/arm64
           for f in build/app/boot/arm64/*.dylib build/app/app/oat/arm64/*.dylib; do codesign -s - -f "$f"; done
       - name: Natives and the test host
@@ -36,12 +37,12 @@ jobs:
           set +e
           mkdir -p build/frames
           export HUSK_FRAME_STATS=1
-          perl -e 'alarm shift; exec @ARGV' $(( ${{ inputs.seconds }} + 60 )) lldb --batch \
+          perl -e 'alarm shift; exec @ARGV' $(( ${{ env.SECONDS }} + 60 )) lldb --batch \
             -o 'process handle SIGSEGV -s false -p true -n false' -o 'process handle SIGBUS -s false -p true -n false' \
             -o 'settings set target.process.stop-on-exec false' \
             -o run -o 'thread backtrace all' -o 'register read' \
             -- build/fw/mac-host --art "$PWD/build/app/boot" --apk "$PWD/build/app/app/base.apk" --fwres "$PWD/build/app/app/framework-res.apk" \
-            --seconds ${{ inputs.seconds }} --frames build/frames > build/app-run.log 2>&1
+            --seconds ${{ env.SECONDS }} --frames build/frames > build/app-run.log 2>&1
           echo "exit $?"
           tr -d '\000' < build/app-run.log | grep -av 'not in a known location\|Overlapping/invalid range\|FrameStats' | tail -250
           ls ~/Library/Logs/DiagnosticReports 2>/dev/null | tail
