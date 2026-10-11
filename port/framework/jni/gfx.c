@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
-/* From Husk's main line (Leviidev/Husk src/translation-layer-next/husk-tl-dvm-graphics.c at 5ab4f00), as
+/* From Husk's main line (Leviidev/Husk src/translation-layer-next/husk-tl-dvm-graphics.c at 2425372), as
  * it is but for its includes: its natives run on JNI here (shim.h, gen-jni.py writes their JNI methods from
  * k_gfx). */
 /*
@@ -415,7 +415,11 @@ static void cv_free(gcanvas *v)
     CGContextRestoreGState(v->c);
     free(v);
 }
-static int cv_save(gcanvas *v, bool layer, float alpha, CGRect bounds)
+static CGBlendMode blend_of(int mode);
+static int cv_save_mode(gcanvas *v, bool layer, float alpha, CGRect bounds, int mode);
+static int cv_save(gcanvas *v, bool layer, float alpha, CGRect bounds) { return cv_save_mode(v, layer, alpha, bounds, 3); }
+/* a layer is composited on restore with the alpha and blend mode set when it began */
+static int cv_save_mode(gcanvas *v, bool layer, float alpha, CGRect bounds, int mode)
 {
     CGContextSaveGState(v->c);
     if (v->depth < 256) {
@@ -423,9 +427,11 @@ static int cv_save(gcanvas *v, bool layer, float alpha, CGRect bounds)
         if (layer) {
             v->layer_bits[v->depth >> 6] |= bit;
             CGContextSetAlpha(v->c, alpha);
+            CGContextSetBlendMode(v->c, blend_of(mode));
             if (bounds.size.width > 0 && bounds.size.height > 0) CGContextBeginTransparencyLayerWithRect(v->c, bounds, NULL);
             else CGContextBeginTransparencyLayer(v->c, NULL);
             CGContextSetAlpha(v->c, 1);
+            CGContextSetBlendMode(v->c, kCGBlendModeNormal);
         } else v->layer_bits[v->depth >> 6] &= ~bit;
     }
     return ++v->depth;
@@ -491,7 +497,12 @@ static bool paint_begin(CGContextRef c, const int32_t *p, bool *layered)
     } else CGContextSetBlendMode(c, blend_of(p[P_XFER]));
     return true;
 }
-static void paint_end(CGContextRef c, const int32_t *p, bool layered, CGRect area)
+/* What was drawn, as a clip: MULTIPLY's filter colour is laid only over it (Android keeps the drawing's alpha, Sa*Da; CoreGraphics's
+   multiply would fill the whole area -- Telegram's tinted wordmark came out a solid block). */
+typedef void (*clip_fn)(CGContextRef c, const void *ctx);
+static void paint_end_clip(CGContextRef c, const int32_t *p, bool layered, CGRect area, clip_fn clip, const void *ctx);
+static void paint_end(CGContextRef c, const int32_t *p, bool layered, CGRect area) { paint_end_clip(c, p, layered, area, NULL, NULL); }
+static void paint_end_clip(CGContextRef c, const int32_t *p, bool layered, CGRect area, clip_fn clip, const void *ctx)
 {
     if (layered) {
         CGColorRef fc = color_of((uint32_t)p[P_CFCOLOR], 1);
@@ -500,13 +511,36 @@ static void paint_end(CGContextRef c, const int32_t *p, bool layered, CGRect are
         CGContextSetShadowWithColor(c, CGSizeZero, 0, NULL);
         int m = p[P_CFMODE];
         CGContextSetBlendMode(c, m == 3 ? kCGBlendModeNormal : blend_of(m));
-        CGContextFillRect(c, CGRectInset(area, -2, -2));
-        if (m == 13) {                                  /* MULTIPLY keeps the drawing's own alpha */
-            CGContextSetBlendMode(c, kCGBlendModeDestinationIn);
-        }
+        if (m == 13 && clip) { CGContextSaveGState(c); clip(c, ctx); CGContextFillRect(c, CGRectInset(area, -2, -2)); CGContextRestoreGState(c); }
+        else CGContextFillRect(c, CGRectInset(area, -2, -2));
         CGContextEndTransparencyLayer(c);
     }
     CGContextRestoreGState(c);
+}
+
+struct path_clip { CGPathRef path; bool even_odd; int style; };
+static void clip_path(CGContextRef c, const void *ctx)
+{
+    const struct path_clip *pc = ctx;
+    CGContextAddPath(c, pc->path);
+    if (pc->style == 1) { CGContextReplacePathWithStrokedPath(c); CGContextClip(c); }
+    else if (pc->even_odd) CGContextEOClip(c); else CGContextClip(c);
+}
+struct text_clip { CTLineRef line; CGFloat x, y; };
+static void clip_text(CGContextRef c, const void *ctx)
+{
+    const struct text_clip *tc = ctx;
+    CGContextSetTextDrawingMode(c, kCGTextClip);
+    CGContextSetTextPosition(c, tc->x, tc->y);
+    CTLineDraw(tc->line, c);
+}
+struct image_clip { CGImageRef img; CGAffineTransform t; CGRect r; };
+static void clip_image(CGContextRef c, const void *ctx)
+{
+    const struct image_clip *ic = ctx;
+    CGContextConcatCTM(c, ic->t);
+    CGContextClipToMask(c, ic->r, ic->img);
+    CGContextConcatCTM(c, CGAffineTransformInvert(ic->t));
 }
 
 /* Draw the path now in the context with this paint (fill, stroke or both; through the shader when there is one). */
@@ -516,6 +550,7 @@ static void draw_path(CGContextRef c, CGPathRef path, const int32_t *p, gshader 
     if (!paint_begin(c, p, &layered)) return;
     int style = p[P_STYLE];
     float alpha = (float)((uint32_t)p[P_COLOR] >> 24) / 255.0f;
+    struct path_clip pc = { path, even_odd, style };
     CGRect area = CGPathGetBoundingBox(path);
     area = CGRectInset(area, -pf(p, P_STROKE), -pf(p, P_STROKE));
     if (sh) {
@@ -535,7 +570,7 @@ static void draw_path(CGContextRef c, CGPathRef path, const int32_t *p, gshader 
         CGContextAddPath(c, path);
         CGContextDrawPath(c, style == 1 ? kCGPathStroke : style == 2 ? (even_odd ? kCGPathEOFillStroke : kCGPathFillStroke) : (even_odd ? kCGPathEOFill : kCGPathFill));
     }
-    paint_end(c, p, layered, area);
+    paint_end_clip(c, p, layered, area, clip_path, &pc);
 }
 
 /* ---- Path, as husk.Gfx streams it: op codes and their floats */
@@ -695,7 +730,8 @@ static void draw_text(gcanvas *v, jobj *s, int start, int end, float x, float y,
             if (p[P_FLAGS] & PF_UNDERLINE) CGContextFillRect(c, CGRectMake(x, y + ts / 9, w, th));
             if (p[P_FLAGS] & PF_STRIKE) CGContextFillRect(c, CGRectMake(x, y - ts * 0.3f, w, th));
         }
-        paint_end(c, p, layered, area);
+        struct text_clip tcl = { line, x, y };
+        paint_end_clip(c, p, layered, area, clip_text, &tcl);
     }
     CFRelease(line);
 }
@@ -875,6 +911,14 @@ NAT(G_cvSaveLayer)
     gcanvas *v = H(gcanvas, 0);
     CGRect r = CGRectMake(a[1].f, a[2].f, a[3].f - a[1].f, a[4].f - a[2].f);
     *ret = Ii(v ? cv_save(v, true, a[5].i / 255.0f, r) : 1);
+    return true;
+}
+NAT(G_cvSaveLayerMode)
+{
+    (void)self;
+    gcanvas *v = H(gcanvas, 0);
+    CGRect r = CGRectMake(a[1].f, a[2].f, a[3].f - a[1].f, a[4].f - a[2].f);
+    *ret = Ii(v ? cv_save_mode(v, true, a[5].i / 255.0f, r, a[6].i) : 1);
     return true;
 }
 NAT(G_cvRestore) { (void)self; (void)ret; gcanvas *v = H(gcanvas, 0); if (v) cv_restore(v); return true; }
@@ -1100,7 +1144,8 @@ NAT(G_cvDrawBitmap)
         CGContextTranslateCTM(c, dl, db); CGContextScaleCTM(c, 1, -1);
         CGContextDrawImage(c, CGRectMake(0, 0, dr - dl, db - dt), img);
         CGContextRestoreGState(c);
-        paint_end(c, q, layered, CGRectMake(dl, dt, dr - dl, db - dt));
+        struct image_clip icl = { img, CGAffineTransformMake(1, 0, 0, -1, dl, db), CGRectMake(0, 0, dr - dl, db - dt) };
+        paint_end_clip(c, q, layered, CGRectMake(dl, dt, dr - dl, db - dt), clip_image, &icl);
     }
     if (img && !whole) CGImageRelease(img);
     CGImageRelease(full);
@@ -1125,7 +1170,8 @@ NAT(G_cvDrawBitmapM)
         CGContextTranslateCTM(c, 0, b->h); CGContextScaleCTM(c, 1, -1);
         CGContextDrawImage(c, CGRectMake(0, 0, b->w, b->h), img);
         CGContextRestoreGState(c);
-        paint_end(c, q, layered, CGRectApplyAffineTransform(CGRectMake(0, 0, b->w, b->h), CGAffineTransformMake(m[0], m[3], m[1], m[4], m[2], m[5])));
+        struct image_clip icl = { img, CGAffineTransformConcat(CGAffineTransformMake(1, 0, 0, -1, 0, b->h), CGAffineTransformMake(m[0], m[3], m[1], m[4], m[2], m[5])), CGRectMake(0, 0, b->w, b->h) };
+        paint_end_clip(c, q, layered, CGRectApplyAffineTransform(CGRectMake(0, 0, b->w, b->h), CGAffineTransformMake(m[0], m[3], m[1], m[4], m[2], m[5])), clip_image, &icl);
     }
     CGImageRelease(img);
     return true;
@@ -1432,7 +1478,7 @@ static const struct { const char *name, *sig; dvm_native_fn fn; } k_gfx[] = {
     { "cvNew", "(J)J", G_cvNew },
     { "cvFree", "(J)V", G_cvFree },
     { "cvSave", "(J)I", G_cvSave },
-    { "cvSaveLayer", "(JFFFFI)I", G_cvSaveLayer },
+    { "cvSaveLayer", "(JFFFFI)I", G_cvSaveLayer }, { "cvSaveLayerMode", "(JFFFFII)I", G_cvSaveLayerMode },
     { "cvRestore", "(J)V", G_cvRestore },
     { "cvRestoreTo", "(JI)V", G_cvRestoreTo },
     { "cvSaveCount", "(J)I", G_cvSaveCount },

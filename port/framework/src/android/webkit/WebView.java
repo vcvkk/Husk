@@ -124,8 +124,8 @@ public class WebView extends AbsoluteLayout implements android.view.ViewTreeObse
     public static android.content.pm.PackageInfo getCurrentWebViewPackage() {
         android.content.pm.PackageInfo p = new android.content.pm.PackageInfo();
         p.packageName = "com.google.android.webview";
-        p.versionName = "124.0.6367.179";
-        p.versionCode = 636717900;
+        p.versionName = "140.0.7339.207";
+        p.versionCode = 733920700;
         p.applicationInfo = new android.content.pm.ApplicationInfo();
         p.applicationInfo.packageName = p.packageName;
         p.applicationInfo.enabled = true;
@@ -163,11 +163,14 @@ public class WebView extends AbsoluteLayout implements android.view.ViewTreeObse
     @Override public void setBackgroundColor(int color) { if (!mDestroyed) husk.Web.background(mId, color); }
 
     // ---- loading
-    public void loadUrl(String url) { loadUrl(url, null); }
-    public void loadUrl(String url, Map<String, String> additionalHttpHeaders) {
+    /* both overloads go to one private implementation, as Android's provider does: an app's subclass overriding one of them and
+       calling super from it (Amazon's MASHWebView) would otherwise come back to itself */
+    public void loadUrl(String url) { load(url, null); }
+    public void loadUrl(String url, Map<String, String> additionalHttpHeaders) { load(url, additionalHttpHeaders); }
+    private void load(String url, Map<String, String> additionalHttpHeaders) {
         if (mDestroyed || url == null) return;
         Log.d(TAG, "loadUrl " + url);
-        if (url.startsWith("javascript:")) { evaluateJavascript(Uri.decode(url.substring(11)), null); return; }
+        if (url.startsWith("javascript:")) { eval(Uri.decode(url.substring(11)), null); return; }
         url = normalize(url);
         if (mOriginalUrl == null) mOriginalUrl = url;
         mUrl = url;
@@ -213,7 +216,8 @@ public class WebView extends AbsoluteLayout implements android.view.ViewTreeObse
         mUrl = historyUrl != null ? historyUrl : base != null ? base : "about:blank";
         husk.Web.loadData(mId, bytes, mimeType == null || mimeType.isEmpty() ? "text/html" : mimeType, "utf-8", base == null ? null : toHost(base));
     }
-    public void evaluateJavascript(String script, ValueCallback<String> resultCallback) {
+    public void evaluateJavascript(String script, ValueCallback<String> resultCallback) { eval(script, resultCallback); }
+    private void eval(String script, ValueCallback<String> resultCallback) {
         if (mDestroyed || script == null) return;
         int cb = 0;
         if (resultCallback != null) synchronized (mEvalCallbacks) { cb = mNextCallback++; mEvalCallbacks.put(cb, resultCallback); }
@@ -227,8 +231,8 @@ public class WebView extends AbsoluteLayout implements android.view.ViewTreeObse
     public void goForward() { if (!mDestroyed) husk.Web.go(mId, 1); }
     public boolean canGoBackOrForward(int steps) { return steps == 0 || (steps < 0 ? steps == -1 && mCanBack : steps == 1 && mCanForward); }
     public void goBackOrForward(int steps) { if (steps < 0) for (int i = 0; i < -steps; i++) goBack(); else for (int i = 0; i < steps; i++) goForward(); }
-    public boolean pageUp(boolean top) { evaluateJavascript(top ? "window.scrollTo(0,0)" : "window.scrollBy(0,-window.innerHeight/2)", null); return true; }
-    public boolean pageDown(boolean bottom) { evaluateJavascript(bottom ? "window.scrollTo(0,document.body.scrollHeight)" : "window.scrollBy(0,window.innerHeight/2)", null); return true; }
+    public boolean pageUp(boolean top) { eval(top ? "window.scrollTo(0,0)" : "window.scrollBy(0,-window.innerHeight/2)", null); return true; }
+    public boolean pageDown(boolean bottom) { eval(bottom ? "window.scrollTo(0,document.body.scrollHeight)" : "window.scrollBy(0,window.innerHeight/2)", null); return true; }
     public void clearHistory() { mHistory.clear(); }
     public void clearCache(boolean includeDiskFiles) {}
     public void clearFormData() {}
@@ -298,7 +302,7 @@ public class WebView extends AbsoluteLayout implements android.view.ViewTreeObse
     public void postVisualStateCallback(long requestId, VisualStateCallback callback) { mHandler.post(() -> callback.onComplete(requestId)); }
     public WebMessagePort[] createWebMessageChannel() { return new WebMessagePort[0]; }
     public void postWebMessage(WebMessage message, Uri targetOrigin) {
-        evaluateJavascript("window.dispatchEvent(new MessageEvent('message',{data:" + JSONObject.quote(message.getData()) + "}))", null);
+        eval("window.dispatchEvent(new MessageEvent('message',{data:" + JSONObject.quote(message.getData()) + "}))", null);
     }
     public WebBackForwardList copyBackForwardList() {
         final String url = mUrl;
@@ -340,7 +344,7 @@ public class WebView extends AbsoluteLayout implements android.view.ViewTreeObse
     }
     public void removeJavascriptInterface(String name) {
         synchronized (mInterfaces) { mInterfaces.remove(name); }
-        evaluateJavascript("try{delete window[" + JSONObject.quote(name) + "]}catch(e){}", null);
+        eval("try{delete window[" + JSONObject.quote(name) + "]}catch(e){}", null);
     }
     private static boolean annotationsRequired() { return husk.Manifest.targetSdk >= 17; }
     private static Boolean sAnnotationsWork;
@@ -718,6 +722,28 @@ public class WebView extends AbsoluteLayout implements android.view.ViewTreeObse
         public int getType() { return mType; }
         public String getExtra() { return mExtra; }
     }
+    // ---- generated by tools/compat/fillmembers.py: the platform's members this class does not write (signatures only)
+    public void debugDump() {}
+    public void dispatchCreateViewTranslationRequest(java.util.Map p0, int[] p1, android.view.translation.TranslationCapability p2, java.util.List p3) {}
+    public void dumpViewHierarchyWithProperties(java.io.BufferedWriter p0, int p1) {}
+    public void emulateShiftHeld() {}
+    protected void encodeProperties(android.view.ViewHierarchyEncoder p0) {}
+    public android.view.View findHierarchyView(java.lang.String p0, int p1) { return null; }
+    public boolean isVisibleToUserForAutofill(int p0) { return false; }
+    public void onActivityResult(int p0, int p1, android.content.Intent p2) {}
+    public void onCreateVirtualViewTranslationRequests(long[] p0, int[] p1, java.util.function.Consumer p2) {}
+    protected void onDetachedFromWindowInternal() {}
+    protected void onDrawVerticalScrollBar(android.graphics.Canvas p0, android.graphics.drawable.Drawable p1, int p2, int p3, int p4, int p5) {}
+    public void onInitializeAccessibilityEventInternal(android.view.accessibility.AccessibilityEvent p0) {}
+    public void onInitializeAccessibilityNodeInfoInternal(android.view.accessibility.AccessibilityNodeInfo p0) {}
+    public void onMovedToDisplay(int p0, android.content.res.Configuration p1) {}
+    public void onProvideAutofillVirtualStructure(android.view.ViewStructure p0, int p1) {}
+    public void onProvideContentCaptureStructure(android.view.ViewStructure p0, int p1) {}
+    public void onProvideVirtualStructure(android.view.ViewStructure p0) {}
+    public void onVirtualViewTranslationResponses(android.util.LongSparseArray p0) {}
+    public boolean performAccessibilityActionInternal(int p0, android.os.Bundle p1) { return false; }
+    public void refreshPlugins(boolean p0) {}
+    // ---- end of generated members
     // ---- generated by tools/compat/genstubs.py: the platform's nested classes this class does not write
     public static final class InspectionCompanion implements android.view.inspector.InspectionCompanion {
         private final java.util.HashMap<String, Object> huskProps = new java.util.HashMap<>();
@@ -756,26 +782,4 @@ public class WebView extends AbsoluteLayout implements android.view.ViewTreeObse
         PrivateAccess() { this((android.webkit.WebView) null); }
     }
     // ---- end of generated nested classes
-    // ---- generated by tools/compat/fillmembers.py: the platform's members this class does not write (signatures only)
-    public void debugDump() {}
-    public void dispatchCreateViewTranslationRequest(java.util.Map p0, int[] p1, android.view.translation.TranslationCapability p2, java.util.List p3) {}
-    public void dumpViewHierarchyWithProperties(java.io.BufferedWriter p0, int p1) {}
-    public void emulateShiftHeld() {}
-    protected void encodeProperties(android.view.ViewHierarchyEncoder p0) {}
-    public android.view.View findHierarchyView(java.lang.String p0, int p1) { return null; }
-    public boolean isVisibleToUserForAutofill(int p0) { return false; }
-    public void onActivityResult(int p0, int p1, android.content.Intent p2) {}
-    public void onCreateVirtualViewTranslationRequests(long[] p0, int[] p1, java.util.function.Consumer p2) {}
-    protected void onDetachedFromWindowInternal() {}
-    protected void onDrawVerticalScrollBar(android.graphics.Canvas p0, android.graphics.drawable.Drawable p1, int p2, int p3, int p4, int p5) {}
-    public void onInitializeAccessibilityEventInternal(android.view.accessibility.AccessibilityEvent p0) {}
-    public void onInitializeAccessibilityNodeInfoInternal(android.view.accessibility.AccessibilityNodeInfo p0) {}
-    public void onMovedToDisplay(int p0, android.content.res.Configuration p1) {}
-    public void onProvideAutofillVirtualStructure(android.view.ViewStructure p0, int p1) {}
-    public void onProvideContentCaptureStructure(android.view.ViewStructure p0, int p1) {}
-    public void onProvideVirtualStructure(android.view.ViewStructure p0) {}
-    public void onVirtualViewTranslationResponses(android.util.LongSparseArray p0) {}
-    public boolean performAccessibilityActionInternal(int p0, android.os.Bundle p1) { return false; }
-    public void refreshPlugins(boolean p0) {}
-    // ---- end of generated members
 }

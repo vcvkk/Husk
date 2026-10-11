@@ -169,11 +169,18 @@ static jbyteArray read_entry(JNIEnv *env, const zip *z, const char *name)
     return a;
 }
 
+
+/* an asset's entry; "/lib/x.so" is a file from the APK's root instead (openNonAssetFd), which asset names never start with */
+static void asset_name(char *n, size_t cap, const char *p)
+{
+    if (p && p[0] == '/') snprintf(n, cap, "%s", p + 1); else snprintf(n, cap, "assets/%s", p ? p : "");
+}
+
 static jbyteArray N_readAsset(JNIEnv *env, jclass c, jstring path)
 {
     (void)c;
     jbyteArray r = NULL;
-    UTF(env, path, p, { char n[1024]; snprintf(n, sizeof n, "assets/%s", p ? p : ""); r = read_entry(env, &A.apk, n); });
+    UTF(env, path, p, { char n[1024]; asset_name(n, sizeof n, p); r = read_entry(env, &A.apk, n); });
     return r;
 }
 
@@ -214,14 +221,14 @@ static jlong N_assetFd(JNIEnv *env, jclass c, jstring path)
 {
     (void)c;
     jlong r = -1;
-    UTF(env, path, p, { char n[1024]; snprintf(n, sizeof n, "assets/%s", p ? p : ""); r = entry_fd(&A.apk, A.cfg.apk, n); });
+    UTF(env, path, p, { char n[1024]; asset_name(n, sizeof n, p); r = entry_fd(&A.apk, A.cfg.apk, n); });
     return r;
 }
 static jlong N_assetLength(JNIEnv *env, jclass c, jstring path)
 {
     (void)c;
     jlong r = -1;
-    UTF(env, path, p, { char n[1024]; snprintf(n, sizeof n, "assets/%s", p ? p : ""); const zentry *e = zip_find(&A.apk, n); r = e ? (jlong)e->usize : -1; });
+    UTF(env, path, p, { char n[1024]; asset_name(n, sizeof n, p); const zentry *e = zip_find(&A.apk, n); r = e ? (jlong)e->usize : -1; });
     return r;
 }
 static jbyteArray N_readApkFile(JNIEnv *env, jclass c, jint apk, jstring name)

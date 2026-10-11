@@ -47,6 +47,9 @@ public final class AppRunner {
         KeyStoreProvider.install();
         Looper.prepareMainLooper();
         sHandler = new Handler(Looper.getMainLooper());
+        /* as RuntimeInit: there is always a default handler (apps wrap it and call through). Android's kills the app; this one
+           reports the exception and lets the thread end, as Husk did before. */
+        if (Thread.getDefaultUncaughtExceptionHandler() == null) Thread.setDefaultUncaughtExceptionHandler(new UncaughtLogger());
         Manifest.read();
         installClassLoader();
         ContextImpl base = ContextImpl.app();
@@ -64,15 +67,29 @@ public final class AppRunner {
         app.onCreate();
         Manifest.Component launcher = Manifest.activity(activityClass);
         Intent main = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
-        main.setComponent(new ComponentName(Native.packageName(), activityClass));
+        // started through the launcher's alias, the activity's component is the alias (Android compares that, not the class, when
+        // the app later starts the target by name: LinkedIn's MainActivity starts a new one of itself and finishes)
+        Manifest.Component entry = Manifest.launcher();
+        String startedAs = entry != null && "activity-alias".equals(entry.kind) && activityClass.equals(entry.parentActivity) ? entry.name : activityClass;
+        main.setComponent(new ComponentName(Native.packageName(), startedAs));
         main.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         launch(activityClass, main, null, -1, launcher);
         Looper.loop();
     }
     public static Application application() { return sApp; }
+    static final class UncaughtLogger implements Thread.UncaughtExceptionHandler {
+        public void uncaughtException(Thread t, Throwable e) {
+            android.util.Log.e("AndroidRuntime", "FATAL EXCEPTION: " + t.getName(), e);
+            if (t == Looper.getMainLooper().getThread()) { if (e instanceof RuntimeException) throw (RuntimeException) e; if (e instanceof Error) throw (Error) e; throw new RuntimeException(e); }
+        }
+    }
 
     private static void installProviders(Application app) {
-        for (Manifest.Component p : Manifest.providers) {
+        /* as ActivityThread: providers with a higher initOrder first (Reddit builds its object graph in one that the startup
+           initializers then wait for), the rest in manifest order */
+        java.util.ArrayList<Manifest.Component> ordered = new java.util.ArrayList<>(Manifest.providers);
+        java.util.Collections.sort(ordered, (x, y) -> Integer.compare(y.initOrder, x.initOrder));
+        for (Manifest.Component p : ordered) {
             if (!p.enabled) continue;
             try {
                 ContentProvider cp = (ContentProvider) Class.forName(p.name, true, classLoader()).newInstance();
@@ -95,6 +112,7 @@ public final class AppRunner {
         return Native.packageName();
     }
     static Activity launch(String cls, Intent intent, Activity caller, int request, Manifest.Component info) throws Exception {
+        android.util.Log.d("Husk", "launch " + cls);
         Activity prev = top();
         Activity a = (Activity) Class.forName(cls, true, classLoader()).newInstance();
         ContextImpl base = ContextImpl.forActivity();
@@ -110,9 +128,15 @@ public final class AppRunner {
         }
         return a;
     }
+    /** The component an activity was started as: its class, or the alias it was reached through. */
+    private static String startedAs(Activity a) {
+        Intent i = a.getIntent();
+        return i != null && i.getComponent() != null ? i.getComponent().getClassName() : a.getClass().getName();
+    }
     /** Context.startActivity: an activity of the app's own, or something the host can open (a web page, mail, the store). */
     public static void startActivity(Context from, Intent i, int request, Bundle opts) {
         Manifest.Component c = Manifest.resolve(i);
+        android.util.Log.d("Husk", "startActivity " + i + (c != null ? " -> " + c.name : " (not an activity of this app)"));
         if (c != null) {
             final Activity caller = from instanceof Activity ? (Activity) from : top();
             final Intent intent = new Intent(i);
@@ -120,7 +144,7 @@ public final class AppRunner {
             sHandler.post(() -> {
                 try {
                     if ((intent.getFlags() & Intent.FLAG_ACTIVITY_CLEAR_TOP) != 0) {
-                        for (int k = sStack.size() - 1; k >= 0; k--) if (sStack.get(k).getClass().getName().equals(c.name)) {
+                        for (int k = sStack.size() - 1; k >= 0; k--) if (startedAs(sStack.get(k)).equals(intent.getComponent().getClassName())) {
                             Activity existing = sStack.get(k);
                             while (top() != existing) finishNow(top(), false);
                             existing.setIntent(intent);
@@ -131,7 +155,7 @@ public final class AppRunner {
                     }
                     if ((intent.getFlags() & 0x20000000 /* SINGLE_TOP */) != 0 || c.launchMode == 1) {
                         Activity t = top();
-                        if (t != null && t.getClass().getName().equals(c.name)) { t.setIntent(intent); return; }
+                        if (t != null && !t.isFinishing() && startedAs(t).equals(intent.getComponent().getClassName())) { t.huskNewIntent(intent); return; }
                     }
                     launch(c.name, intent, caller, request, c);
                 } catch (Throwable t) {
@@ -156,11 +180,22 @@ public final class AppRunner {
             return;
         }
         if ("android.intent.action.CHOOSER".equals(action)) { Intent inner = i.getParcelableExtra("android.intent.extra.INTENT"); if (inner != null) startActivity(from, inner, request, opts); return; }
+        /* a screen of the system's (the account chooser, Settings pages, the permission dialog): Husk has none of them -- asked for a
+           result, the caller hears the user backed out, as it would on a phone; otherwise nothing opens */
+        String pkg = i.getComponent() != null ? i.getComponent().getPackageName() : i.getPackage();
+        boolean system = "android".equals(pkg) || "com.android.settings".equals(pkg) || "com.android.permissioncontroller".equals(pkg)
+            || (action != null && (action.startsWith("android.settings.") || action.startsWith("android.provider.Settings")));
+        if (system) {
+            final Activity caller = from instanceof Activity ? (Activity) from : top();
+            if (request >= 0 && caller != null) sHandler.post(() -> caller.huskActivityResult(request, Activity.RESULT_CANCELED, null));
+            return;
+        }
         throw new ActivityNotFoundException("No Activity found to handle " + i);
     }
     /** Activity.finish: the one below comes back (with the result when it asked for one). */
     public static void finish(Activity a) { sHandler.post(() -> finishNow(a, true)); }
     private static void finishNow(Activity a, boolean resumeBelow) {
+        android.util.Log.d("Husk", "finish " + a.getClass().getName());
         int idx = sStack.indexOf(a);
         if (idx < 0) return;
         boolean wasTop = idx == sStack.size() - 1;
@@ -181,6 +216,14 @@ public final class AppRunner {
         if (sStack.isEmpty()) sHandler.post(() -> { if (sStack.isEmpty()) Native.exit(); });
     }
     public static void finishAll() { sHandler.post(() -> { while (!sStack.isEmpty()) finishNow(top(), false); }); }
+    /** Activity.finishAffinity(): the activity and those under it in the task go; activities it started, above it, stay. */
+    public static void finishAffinity(Activity a) {
+        sHandler.post(() -> {
+            int i = sStack.indexOf(a);
+            if (i < 0) return;
+            for (int k = i; k >= 0; k--) if (k < sStack.size()) finishNow(sStack.get(k), sStack.size() - 1 == k);
+        });
+    }
     public static void recreate(Activity a) {
         sHandler.post(() -> {
             int idx = sStack.indexOf(a);

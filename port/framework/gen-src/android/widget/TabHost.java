@@ -14,7 +14,6 @@ public class TabHost extends android.widget.FrameLayout implements android.view.
     public void clearAllTabs() {}
     public boolean dispatchKeyEvent(android.view.KeyEvent p0) { return false; }
     public void dispatchWindowFocusChanged(boolean p0) {}
-    public java.lang.CharSequence getAccessibilityClassName() { return (java.lang.CharSequence) huskProps.get("AccessibilityClassName"); }
     public int getCurrentTab() { return (huskProps.get("CurrentTab") instanceof Integer ? (Integer) huskProps.get("CurrentTab") : 0); }
     public java.lang.String getCurrentTabTag() { return (java.lang.String) huskProps.get("CurrentTabTag"); }
     public android.view.View getCurrentTabView() { return (android.view.View) huskProps.get("CurrentTabView"); }

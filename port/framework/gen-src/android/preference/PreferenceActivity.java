@@ -25,26 +25,16 @@ public abstract class PreferenceActivity extends android.app.ListActivity implem
     public boolean isMultiPane() { return (huskProps.get("MultiPane") instanceof Boolean ? (Boolean) huskProps.get("MultiPane") : false); }
     protected boolean isValidFragment(java.lang.String p0) { return false; }
     public void loadHeadersFromResource(int p0, java.util.List p1) {}
-    public void onActivityResult(int p0, int p1, android.content.Intent p2) {}
-    public void onBackPressed() {}
     public void onBuildHeaders(java.util.List p0) {}
     public android.content.Intent onBuildStartFragmentIntent(java.lang.String p0, android.os.Bundle p1, int p2, int p3) { return null; }
-    public void onContentChanged() {}
-    public void onCreate(android.os.Bundle p0) {}
-    public void onDestroy() {}
     public android.preference.PreferenceActivity.Header onGetInitialHeader() { return null; }
     public android.preference.PreferenceActivity.Header onGetNewHeader() { return null; }
     public void onHeaderClick(android.preference.PreferenceActivity.Header p0, int p1) {}
     public boolean onIsHidingHeaders() { return false; }
     public boolean onIsMultiPane() { return false; }
     public void onListItemClick(android.widget.ListView p0, android.view.View p1, int p2, long p3) {}
-    public void onNewIntent(android.content.Intent p0) {}
-    public boolean onOptionsItemSelected(android.view.MenuItem p0) { return false; }
     public boolean onPreferenceStartFragment(android.preference.PreferenceFragment p0, android.preference.Preference p1) { return false; }
     public boolean onPreferenceTreeClick(android.preference.PreferenceScreen p0, android.preference.Preference p1) { return false; }
-    public void onRestoreInstanceState(android.os.Bundle p0) {}
-    public void onSaveInstanceState(android.os.Bundle p0) {}
-    public void onStop() {}
     public void setListFooter(android.view.View p0) { huskProps.put("ListFooter", p0); }
     public void setParentTitle(java.lang.CharSequence p0, java.lang.CharSequence p1, android.view.View.OnClickListener p2) {}
     public void setPreferenceScreen(android.preference.PreferenceScreen p0) { huskProps.put("PreferenceScreen", p0); }

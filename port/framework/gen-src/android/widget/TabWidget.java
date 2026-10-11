@@ -12,7 +12,6 @@ public class TabWidget extends android.widget.LinearLayout implements android.vi
     public void childDrawableStateChanged(android.view.View p0) {}
     public void dispatchDraw(android.graphics.Canvas p0) {}
     public void focusCurrentTab(int p0) {}
-    public java.lang.CharSequence getAccessibilityClassName() { return (java.lang.CharSequence) huskProps.get("AccessibilityClassName"); }
     public int getChildDrawingOrder(int p0, int p1) { return 0; }
     public android.view.View getChildTabViewAt(int p0) { return null; }
     public android.graphics.drawable.Drawable getLeftStripDrawable() { return (android.graphics.drawable.Drawable) huskProps.get("LeftStripDrawable"); }
@@ -26,7 +25,6 @@ public class TabWidget extends android.widget.LinearLayout implements android.vi
     public void removeAllViews() {}
     public void setCurrentTab(int p0) { huskProps.put("CurrentTab", Integer.valueOf(p0)); }
     public void setDividerDrawable(int p0) { huskProps.put("DividerDrawable", Integer.valueOf(p0)); }
-    public void setDividerDrawable(android.graphics.drawable.Drawable p0) { huskProps.put("DividerDrawable", p0); }
     public void setEnabled(boolean p0) { huskProps.put("Enabled", Boolean.valueOf(p0)); }
     public void setLeftStripDrawable(int p0) { huskProps.put("LeftStripDrawable", Integer.valueOf(p0)); }
     public void setLeftStripDrawable(android.graphics.drawable.Drawable p0) { huskProps.put("LeftStripDrawable", p0); }
