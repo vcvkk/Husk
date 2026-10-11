@@ -4,7 +4,7 @@
 #
 #   port/framework/build.sh OUT.jar
 #
-# The framework is Husk's main line's (Leviidev/Husk src/java-framework, at 0ddc2a3):
+# The framework is Husk's main line's (Leviidev/Husk src/java-framework, at 4334bf4):
 # Activity, View, resources, a Canvas over CoreGraphics and CoreText and the rest in
 # Java, whose natives are port/framework/jni (JNI here, for ART). It compiles with javac
 # against the JDK, with stubs/ for what libcore has and the JDK does not, then d8.

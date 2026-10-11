@@ -52,6 +52,7 @@ const char *tl_jni_string(jobj *s);                          /* UTF-8 */
 const uint16_t *tl_dvm_string_chars(jobj *s, int32_t *len);  /* UTF-16 */
 jobj *tl_jni_new_prim_array(char elem, uint32_t len);
 jobj *tl_jni_wrap(jobject ref);                              /* a reference the native made, to return */
+jobj *tl_jni_new_string(const char *utf8);                   /* a new Java string, to return */
 jvalue tl_jni_get_field(jobj *o, const char *name, const char *sig);
 bool tl_jni_pending(void);
 void tl_jni_clear(void);

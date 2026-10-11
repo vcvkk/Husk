@@ -167,6 +167,12 @@ jobj *tl_jni_wrap(jobject ref)
     return o;
 }
 
+jobj *tl_jni_new_string(const char *utf8)
+{
+    JNIEnv *env = shim_env();
+    return env && utf8 ? tl_jni_wrap((*env)->NewStringUTF(env, utf8)) : NULL;
+}
+
 jobj *tl_jni_new_prim_array(char elem, uint32_t len)
 {
     jobj *o = new_jobj();
