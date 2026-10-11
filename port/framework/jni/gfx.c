@@ -52,6 +52,7 @@ typedef struct gbitmap {
     size_t stride;
     uint8_t *px;
     CGContextRef ctx;               /* drawn into by a Canvas; also how its pixels become a CGImage */
+    struct gscache *cache;          /* blit: the bitmap scaled for its last size drawn */
 } gbitmap;
 
 static CGColorSpaceRef rgb(void)
@@ -103,10 +104,12 @@ int tl_AndroidBitmap_lockPixels(void *env, void *bitmap, void **addr)
 int tl_AndroidBitmap_unlockPixels(void *env, void *bitmap) { (void)env; return bm_of_java(bitmap) ? 0 : -1; }
 int32_t tl_AndroidBitmap_getDataSpace(void *env, void *bitmap) { (void)env; (void)bitmap; return 142671872; /* ADATASPACE_SRGB */ }
 
+static void bm_cache_free(gbitmap *b);
 static void bm_free(gbitmap *b)
 {
     if (!b) return;
     CGContextRelease(b->ctx);
+    bm_cache_free(b);
     free(b->px);
     free(b);
 }
@@ -1308,9 +1311,7 @@ static inline uint32_t bilerp(uint32_t p00, uint32_t p10, uint32_t p01, uint32_t
 }
 static inline uint32_t over(uint32_t d, uint32_t s)
 {
-    uint32_t inv = 255 - (s >> 24);
-    if (inv == 0) return s;
-    if (inv == 255) return d;
+    uint32_t inv = 255 - (s >> 24);       /* no branches: inv 0 gives s, 255 gives d, and the loop vectorises */
     uint32_t rb = (d & 0x00FF00FFu) * inv + 0x00800080u, ag = ((d >> 8) & 0x00FF00FFu) * inv + 0x00800080u;
     rb = ((rb + ((rb >> 8) & 0x00FF00FFu)) >> 8) & 0x00FF00FFu;
     ag = (ag + ((ag >> 8) & 0x00FF00FFu)) & 0xFF00FF00u;
@@ -1337,6 +1338,89 @@ static bool blit(gcanvas *v, gbitmap *src, float sl, float st, float sr, float s
     if (r) { g_bs[BS_HERE]++; g_bs[BS_NS] += now_ns() - t0; }
     return r;
 }
+/* a bitmap scaled once, kept for the next draws of it at that size (a tiled wallpaper draws one tile tens of times a frame,
+ * every frame): its pixels checked again, by a hash, once a frame */
+typedef struct gscache {
+    float sl, st, sr, sb;
+    int w, h;
+    bool flipx, flipy, filter;
+    uint64_t hash, frame;
+    uint32_t *px;
+} gscache;
+static uint64_t g_frame = 1;          /* frames presented (G_present) */
+static void bm_cache_free(gbitmap *b) { if (b->cache) { free(b->cache->px); free(b->cache); b->cache = NULL; } }
+static uint64_t src_hash(const gbitmap *s, int x0, int y0, int x1, int y1)
+{
+    uint64_t h = 0xcbf29ce484222325ull;
+    for (int y = y0; y < y1; y++) {
+        const uint32_t *r = (const uint32_t *)(s->px + (size_t)y * s->stride);
+        uint64_t a = 0, b = 0;
+        for (int x = x0; x < x1; x++) { a += r[x]; b ^= (uint64_t)r[x] << (x & 31); }
+        h = (h ^ a) * 0x100000001b3ull; h = (h ^ b) * 0x100000001b3ull;
+    }
+    return h;
+}
+/* source pixels for the destination's W x H, bilinear or nearest; NULL without memory */
+static const uint32_t *scaled(gbitmap *src, float sl, float st, float sr, float sb, int W, int H, bool flipx, bool flipy, bool filter)
+{
+    int hx0 = (int)floor(sl), hy0 = (int)floor(st), hx1 = (int)ceil(sr), hy1 = (int)ceil(sb);
+    if (hx0 < 0) hx0 = 0;
+    if (hy0 < 0) hy0 = 0;
+    if (hx1 > src->w) hx1 = src->w;
+    if (hy1 > src->h) hy1 = src->h;
+    gscache *k = src->cache;
+    bool same = k && k->sl == sl && k->st == st && k->sr == sr && k->sb == sb && k->w == W && k->h == H
+             && k->flipx == flipx && k->flipy == flipy && k->filter == filter;
+    if (same && k->frame == g_frame) return k->px;
+    uint64_t hash = src_hash(src, hx0, hy0, hx1, hy1);
+    if (same && k->hash == hash) { k->frame = g_frame; return k->px; }
+    if (!k) { k = src->cache = calloc(1, sizeof *k); if (!k) return NULL; }
+    if (k->w * k->h != W * H || !k->px) { free(k->px); k->px = malloc((size_t)W * H * 4); if (!k->px) { k->w = k->h = 0; return NULL; } }
+    k->sl = sl; k->st = st; k->sr = sr; k->sb = sb; k->w = W; k->h = H; k->flipx = flipx; k->flipy = flipy; k->filter = filter;
+    k->hash = hash; k->frame = g_frame;
+    double kx = (sr - sl) / W, ky = (sb - st) / H;
+    int smaxx = src->w - 1, smaxy = src->h - 1;
+    int32_t *xi = malloc((size_t)W * sizeof *xi);
+    uint8_t *xf = malloc((size_t)W);
+    if (!xi || !xf) { free(xi); free(xf); return NULL; }
+    for (int c = 0; c < W; c++) {
+        double sx = sl + ((flipx ? W - 1 - c : c) + 0.5) * kx;
+        if (!filter) { int x = (int)floor(sx); xi[c] = x < 0 ? 0 : x > smaxx ? smaxx : x; xf[c] = 0; continue; }
+        double f = sx - 0.5, fl = floor(f);
+        int x = (int)fl; uint32_t w = (uint32_t)lrint((f - fl) * 256);
+        if (w >= 256) { x++; w = 0; }
+        if (x < 0) { x = 0; w = 0; }
+        if (x >= smaxx) { x = smaxx; w = 0; }
+        xi[c] = x; xf[c] = (uint8_t)w;
+    }
+    for (int r = 0; r < H; r++) {
+        double sy = st + ((flipy ? H - 1 - r : r) + 0.5) * ky;
+        int y0; uint32_t fy = 0;
+        if (!filter) { y0 = (int)floor(sy); y0 = y0 < 0 ? 0 : y0 > smaxy ? smaxy : y0; }
+        else {
+            double f = sy - 0.5, fl = floor(f);
+            y0 = (int)fl; fy = (uint32_t)lrint((f - fl) * 256);
+            if (fy >= 256) { y0++; fy = 0; }
+            if (y0 < 0) { y0 = 0; fy = 0; }
+            if (y0 >= smaxy) { y0 = smaxy; fy = 0; }
+        }
+        const uint32_t *s0 = (const uint32_t *)(src->px + (size_t)y0 * src->stride);
+        const uint32_t *s1 = (const uint32_t *)(src->px + (size_t)(fy ? y0 + 1 : y0) * src->stride);
+        uint32_t *o = k->px + (size_t)r * W;
+        for (int c = 0; c < W; c++) {
+            int x = xi[c], x1 = xf[c] ? x + 1 : x;
+            o[c] = (!xf[c] && !fy) ? s0[x] : bilerp(s0[x], s0[x1], s1[x], s1[x1], xf[c], fy);
+        }
+    }
+    free(xi); free(xf);
+    return k->px;
+}
+/* d = s over d, a row; s first times ga / 255 */
+static void over_run(uint32_t *restrict d, const uint32_t *restrict s, int n, uint32_t ga)
+{
+    if (ga == 255) for (int i = 0; i < n; i++) d[i] = over(d[i], s[i]);
+    else for (int i = 0; i < n; i++) d[i] = over(d[i], scale_px(s[i], ga));
+}
 static bool blit_(gcanvas *v, gbitmap *src, float sl, float st, float sr, float sb, float dl, float dt, float dr, float db,
                   const int32_t *p)
 {
@@ -1352,67 +1436,43 @@ static bool blit_(gcanvas *v, gbitmap *src, float sl, float st, float sr, float 
     CGPoint c0 = CGPointApplyAffineTransform(CGPointMake(dl, dt), m), c1 = CGPointApplyAffineTransform(CGPointMake(dr, db), m);
     double mx0 = c0.x, mx1 = c1.x, my0 = b->h - c0.y, my1 = b->h - c1.y;
     if (fabs(mx1 - mx0) < 1e-6 || fabs(my1 - my0) < 1e-6) return true;
+    bool filter = (p[P_FLAGS] & PF_FILTER) != 0;
+    double kx = (sr - sl) / (mx1 - mx0), ky = (sb - st) / (my1 - my0);
+    if (filter && (fabs(kx) > 2 || fabs(ky) > 2)) { g_bs[BS_SHRUNK]++; return false; }   /* much smaller: CoreGraphics' filtering */
+    /* one to one on whole pixels: the source itself; else the source scaled to the destination's size, laid on whole pixels
+     * (half a pixel at most from where it would be: nothing to see, and the scaled copy stays good while it moves) */
+    bool exact = fabs(kx - 1) < 1e-6 && fabs(ky - 1) < 1e-6
+              && fabs((sl - mx0) - lrint(sl - mx0)) < 1e-4 && fabs((st - my0) - lrint(st - my0)) < 1e-4
+              && fabs(sl - lrint(sl)) < 1e-4 && fabs(st - lrint(st)) < 1e-4;
+    int bx0 = (int)lrint(fmin(mx0, mx1)), by0 = (int)lrint(fmin(my0, my1));
+    int W = (int)lrint(fabs(mx1 - mx0)), H = (int)lrint(fabs(my1 - my0));
+    const uint32_t *img; size_t istride;
+    if (exact) {
+        int x = (int)lrint(sl), y = (int)lrint(st);
+        if (x < 0 || y < 0 || x + W > src->w || y + H > src->h) return false;
+        img = (const uint32_t *)(src->px + (size_t)y * src->stride) + x; istride = src->stride / 4;
+    } else {
+        if (W <= 0 || H <= 0) return true;
+        img = scaled(src, sl, st, sr, sb, W, H, mx1 < mx0, my1 < my0, filter); istride = (size_t)W;
+        if (!img) return false;
+    }
+    g_bs[exact ? BS_EXACT_PX : BS_SCALED_PX] += (int64_t)W * H;
+    /* the clip: the pixels whose centres it covers */
     CGRect clip = CGContextGetClipBoundingBox(v->c);
     if (CGRectIsNull(clip)) return true;
     CGRect cd = CGRectStandardize(CGRectApplyAffineTransform(clip, m));
-    double cx0 = cd.origin.x, cx1 = cx0 + cd.size.width, cy0 = b->h - (cd.origin.y + cd.size.height), cy1 = b->h - cd.origin.y;
-    /* the pixels whose centres are inside both */
-    double lo_x = fmax(fmin(mx0, mx1), cx0), hi_x = fmin(fmax(mx0, mx1), cx1);
-    double lo_y = fmax(fmin(my0, my1), cy0), hi_y = fmin(fmax(my0, my1), cy1);
-    int ix0 = (int)ceil(lo_x - 0.5), ix1 = (int)ceil(hi_x - 0.5), iy0 = (int)ceil(lo_y - 0.5), iy1 = (int)ceil(hi_y - 0.5);
+    int ix0 = (int)ceil(cd.origin.x - 0.5), ix1 = (int)ceil(cd.origin.x + cd.size.width - 0.5);
+    int iy0 = (int)ceil(b->h - (cd.origin.y + cd.size.height) - 0.5), iy1 = (int)ceil(b->h - cd.origin.y - 0.5);
+    if (ix0 < bx0) ix0 = bx0;
+    if (iy0 < by0) iy0 = by0;
+    if (ix1 > bx0 + W) ix1 = bx0 + W;
+    if (iy1 > by0 + H) iy1 = by0 + H;
     if (ix0 < 0) ix0 = 0;
     if (iy0 < 0) iy0 = 0;
     if (ix1 > b->w) ix1 = b->w;
     if (iy1 > b->h) iy1 = b->h;
-    if (ix0 >= ix1 || iy0 >= iy1) return true;
-    int n = ix1 - ix0;
-    bool filter = (p[P_FLAGS] & PF_FILTER) != 0;
-    double kx = (sr - sl) / (mx1 - mx0), ky = (sb - st) / (my1 - my0);
-    if (filter && (fabs(kx) > 2 || fabs(ky) > 2)) { g_bs[BS_SHRUNK]++; return false; }   /* much smaller: CoreGraphics' filtering */
-    /* one to one on whole pixels: a copy */
-    bool exact = fabs(fabs(kx) - 1) < 1e-6 && fabs(fabs(ky) - 1) < 1e-6 && kx > 0 && ky > 0
-              && fabs((sl - mx0) - lrint(sl - mx0)) < 1e-4 && fabs((st - my0) - lrint(st - my0)) < 1e-4;
-    g_bs[exact ? BS_EXACT_PX : BS_SCALED_PX] += (int64_t)n * (iy1 - iy0);
-    int smaxx = src->w - 1, smaxy = src->h - 1;
-    int32_t *xi = malloc((size_t)n * sizeof *xi);
-    uint8_t *xf = malloc((size_t)n);
-    if (!xi || !xf) { free(xi); free(xf); return false; }
-    for (int i = 0; i < n; i++) {
-        double sx = sl + (ix0 + i + 0.5 - mx0) * kx;
-        if (exact || !filter) { int x = (int)floor(sx); xi[i] = x < 0 ? 0 : x > smaxx ? smaxx : x; xf[i] = 0; }
-        else {
-            double fx = sx - 0.5, fl = floor(fx);
-            int x = (int)fl; uint32_t w = (uint32_t)lrint((fx - fl) * 256);
-            if (w >= 256) { x++; w = 0; }
-            if (x < 0) { x = 0; w = 0; }
-            if (x >= smaxx) { x = smaxx; w = 0; }
-            xi[i] = x; xf[i] = (uint8_t)w;
-        }
-    }
-    for (int j = iy0; j < iy1; j++) {
-        uint32_t *row = (uint32_t *)(b->px + (size_t)j * b->stride) + ix0;
-        double sy = st + (j + 0.5 - my0) * ky;
-        int y0, y1; uint32_t fy = 0;
-        if (exact || !filter) { y0 = (int)floor(sy); y0 = y0 < 0 ? 0 : y0 > smaxy ? smaxy : y0; y1 = y0; }
-        else {
-            double f = sy - 0.5, fl = floor(f);
-            y0 = (int)fl; fy = (uint32_t)lrint((f - fl) * 256);
-            if (fy >= 256) { y0++; fy = 0; }
-            if (y0 < 0) { y0 = 0; fy = 0; }
-            if (y0 >= smaxy) { y0 = smaxy; fy = 0; }
-            y1 = fy ? y0 + 1 : y0;
-        }
-        const uint32_t *s0 = (const uint32_t *)(src->px + (size_t)y0 * src->stride), *s1 = (const uint32_t *)(src->px + (size_t)y1 * src->stride);
-        for (int i = 0; i < n; i++) {
-            int x = xi[i];
-            uint32_t s;
-            if (!xf[i] && !fy) s = s0[x];
-            else s = bilerp(s0[x], s0[x + (xf[i] ? 1 : 0)], s1[x], s1[x + (xf[i] ? 1 : 0)], xf[i], fy);
-            if (ga != 255) s = scale_px(s, ga);
-            row[i] = over(row[i], s);
-        }
-    }
-    free(xi); free(xf);
+    for (int j = iy0; j < iy1; j++)
+        over_run((uint32_t *)(b->px + (size_t)j * b->stride) + ix0, img + (size_t)(j - by0) * istride + (ix0 - bx0), ix1 - ix0, ga);
     return true;
 }
 
@@ -1789,6 +1849,7 @@ static struct {
 NAT(G_present)
 {
     (void)self; (void)ret;
+    g_frame++;
     gbitmap *b = H(gbitmap, 0);
     if (!b) { atomic_store(&S.any, false); atomic_store(&S.fresh, true); return true; }
     pthread_mutex_lock(&S.lock);
