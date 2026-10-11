@@ -133,7 +133,26 @@ static const zip *apk_n(int n, const char **path)
 
 /* ================================================================== husk.Native */
 
-static jstring jstr(JNIEnv *env, const char *s) { return s ? (*env)->NewStringUTF(env, s) : NULL; }
+/* standard UTF-8 (the host's: emoji and all) as a Java string; JNI's own UTF-8 is a modified one */
+static jstring jstr(JNIEnv *env, const char *s)
+{
+    if (!s) return NULL;
+    size_t n = strlen(s), k = 0;
+    jchar *u = malloc((n + 1) * sizeof *u);
+    const unsigned char *p = (const unsigned char *)s, *e = p + n;
+    while (p < e) {
+        uint32_t c = *p++;
+        int more = c >= 0xF0 ? 3 : c >= 0xE0 ? 2 : c >= 0xC0 ? 1 : 0;
+        if (more) c &= 0x3F >> more;
+        for (; more && p < e && (*p & 0xC0) == 0x80; more--) c = c << 6 | (*p++ & 0x3F);
+        if (more) c = 0xFFFD;
+        if (c >= 0x10000) { c -= 0x10000; u[k++] = (jchar)(0xD800 | c >> 10); u[k++] = (jchar)(0xDC00 | (c & 0x3FF)); }
+        else u[k++] = (jchar)c;
+    }
+    jstring r = (*env)->NewString(env, u, (jsize)k);
+    free(u);
+    return r;
+}
 static jbyteArray jbytes(JNIEnv *env, const uint8_t *d, size_t n)
 {
     jbyteArray a = (*env)->NewByteArray(env, (jsize)n);
@@ -437,6 +456,7 @@ static void text_push(const char *kind, const char *utf8)
 void husk_app_text(const char *utf8) { if (utf8 && *utf8) text_push("t", utf8); }
 void husk_app_text_delete(void) { text_push("d", NULL); }
 void husk_app_text_action(void) { text_push("e", NULL); }
+void husk_app_text_hidden(void) { text_push("h", NULL); }
 void husk_app_insets(int l, int t, int r, int b, int ime)
 {
     A.insets[0] = l; A.insets[1] = t; A.insets[2] = r; A.insets[3] = b; A.insets[4] = ime;

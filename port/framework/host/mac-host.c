@@ -4,7 +4,7 @@
  * files, a frame a second. For CI, where it shows what the iOS app would show.
  *
  *   mac-host --art DIR --apk APK [--fwres framework-res.apk] [--data DIR] [--size 1080x2400] [--density 3] [--seconds 20]
- *            [--frames DIR] [--tap X,Y@SECONDS]...
+ *            [--frames DIR] [--tap X,Y@SECONDS]... [--type TEXT@SECONDS]...
  *
  * --art is a boot image directory (port/art/boot-image.sh's layout) with the framework in it;
  * the APK's compiled code is beside it, in oat/arm64/<apk name>.odex{,.dylib}.
@@ -55,6 +55,7 @@ int main(int argc, char **argv)
     int seconds = 20;
     const char *frames = "frames";
     struct { float x, y; int at; } taps[16]; int ntaps = 0;
+    struct { char text[256]; int at; } types[8]; int ntypes = 0;   /* text typed, as the keyboard commits it */
     for (int i = 1; i + 1 < argc; i += 2) {
         const char *k = argv[i], *v = argv[i + 1];
         if (!strcmp(k, "--art")) g_art = v;
@@ -67,6 +68,9 @@ int main(int argc, char **argv)
         else if (!strcmp(k, "--frames")) frames = v;
         else if (!strcmp(k, "--tap") && ntaps < 16) {
             if (sscanf(v, "%f,%f@%d", &taps[ntaps].x, &taps[ntaps].y, &taps[ntaps].at) == 3) ntaps++;
+        } else if (!strcmp(k, "--type") && ntypes < 8) {
+            const char *at = strrchr(v, '@');
+            if (at) { snprintf(types[ntypes].text, sizeof types[ntypes].text, "%.*s", (int)(at - v), v); types[ntypes++].at = atoi(at + 1); }
         } else { fprintf(stderr, "mac-host: unknown option %s\n", k); return 2; }
     }
     if (!g_art || !cfg.apk) { fprintf(stderr, "mac-host: --art and --apk are needed\n"); return 2; }
@@ -90,6 +94,10 @@ int main(int argc, char **argv)
             fprintf(stderr, "mac-host: tap %.0f,%.0f\n", taps[i].x, taps[i].y);
             husk_app_touch(0, 0, taps[i].x, taps[i].y);
             husk_app_touch(2, 0, taps[i].x, taps[i].y);
+        }
+        for (int i = 0; i < ntypes; i++) if (types[i].at * 10 == tenth) {
+            fprintf(stderr, "mac-host: type %s\n", types[i].text);
+            husk_app_text(types[i].text);
         }
         if (tenth % 10 != 9) continue;
         const uint8_t *px; int w, h; bool any;

@@ -600,7 +600,7 @@ jobs:
         run: |
           set +e
           perl -e 'alarm shift; exec @ARGV' 120 build/fw/mac-host --art "$PWD/build/app/boot" --apk "$PWD/build/app/app/base.apk" --fwres "$PWD/build/app/app/framework-res.apk" \
-            --seconds 15 --frames build/frames --tap 540,1300@8 > build/app-run.log 2>&1
+            --seconds 15 --frames build/frames --tap 400,760@3 --type "Привет 👋@5" --tap 540,1300@8 > build/app-run.log 2>&1
           status=$?
           echo "mac-host exit $status"
           tr -d '\000' < build/app-run.log | grep -av 'not in a known location\|Overlapping/invalid range' | tail -150

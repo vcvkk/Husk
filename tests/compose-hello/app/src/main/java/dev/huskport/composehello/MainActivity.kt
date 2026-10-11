@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -34,6 +36,9 @@ class MainActivity : ComponentActivity() {
                     Column(Modifier.align(Alignment.TopStart).padding(top = 48.dp)) {
                         Text("Ещё", Modifier.padding(24.dp, 6.dp), style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.Black, letterSpacing = (-2).sp)
                         Text("99", Modifier.padding(horizontal = 24.dp), fontSize = 96.sp, fontWeight = FontWeight.Bold, letterSpacing = (-4).sp)
+                        // a text field: CI taps it and the host types into it, as the iOS keyboard does
+                        var typed by remember { mutableStateOf("") }
+                        OutlinedTextField(typed, { typed = it }, Modifier.padding(horizontal = 24.dp), label = { Text("Type here") })
                     }
                     var taps by remember { mutableIntStateOf(0) }
                     Column(

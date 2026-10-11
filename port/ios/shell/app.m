@@ -22,6 +22,10 @@
 
 static NSString *gBundle;
 
+/* the screen's safe area and the keyboard's height, in pixels, as husk_app_insets takes them */
+static int gInsets[4], gKeyboard;
+static void SendInsets(void) { husk_app_insets(gInsets[0], gInsets[1], gInsets[2], gInsets[3], gKeyboard); }
+
 /* the framework's web views (port/framework/jni/web.m): WKWebViews in a container under the app's frames */
 void tl_web_attach(void *screen_view, void *container, float scale, bool fresh);
 bool tl_web_hit(float x, float y);
@@ -125,9 +129,103 @@ static void *AppMain(void *unused)
     [super safeAreaInsetsDidChange];
     CGFloat s = UIScreen.mainScreen.scale;
     UIEdgeInsets i = self.safeAreaInsets;
-    husk_app_insets((int)(i.left * s), (int)(i.top * s), (int)(i.right * s), (int)(i.bottom * s), 0);
+    gInsets[0] = (int)(i.left * s); gInsets[1] = (int)(i.top * s); gInsets[2] = (int)(i.right * s); gInsets[3] = (int)(i.bottom * s);
+    SendInsets();
 }
 @end
+
+// ---- the keyboard: iOS's own (and the keyboards the user installed), typing into the focused view's input connection
+
+@interface KeyInput : UIView <UIKeyInput>
+@property(nonatomic) UIKeyboardType keyboardType;
+@property(nonatomic) UIReturnKeyType returnKeyType;
+@property(nonatomic) UITextAutocapitalizationType autocapitalizationType;
+@property(nonatomic) UITextAutocorrectionType autocorrectionType;
+@property(nonatomic) UITextSpellCheckingType spellCheckingType;
+@property(nonatomic, getter=isSecureTextEntry) BOOL secureTextEntry;
+@property(nonatomic) BOOL hiding;          // the app asked for it to go: not the user closing it
+@end
+
+@implementation KeyInput
+- (BOOL)canBecomeFirstResponder { return YES; }
+- (BOOL)hasText { return YES; }            // backspace always reaches the app, whose field knows what is there
+- (void)insertText:(NSString *)text
+{
+    // the return key (and lines pasted in) as Android's editor action; the rest committed as typed
+    NSArray<NSString *> *lines = [text componentsSeparatedByString:@"\n"];
+    for (NSUInteger i = 0; i < lines.count; i++) {
+        if (i > 0) husk_app_text_action();
+        if (lines[i].length) husk_app_text(lines[i].UTF8String);
+    }
+}
+- (void)deleteBackward { husk_app_text_delete(); }
+
+// Android's EditorInfo (inputType, imeOptions) as iOS's text input traits
+- (void)configureType:(int)type options:(int)ime
+{
+    int cls = type & 0xF, variation = type & 0xFF0, flags = type & 0xFFF000;
+    UIKeyboardType kb = UIKeyboardTypeDefault;
+    BOOL secure = NO;
+    if (cls == 2) {                          // TYPE_CLASS_NUMBER
+        kb = (flags & 0x2000) ? UIKeyboardTypeDecimalPad : (flags & 0x1000) ? UIKeyboardTypeNumbersAndPunctuation : UIKeyboardTypeNumberPad;
+        secure = variation == 0x10;          // TYPE_NUMBER_VARIATION_PASSWORD
+    } else if (cls == 3) kb = UIKeyboardTypePhonePad;
+    else if (cls == 4) kb = UIKeyboardTypeNumbersAndPunctuation;
+    else if (cls == 1) {                     // TYPE_CLASS_TEXT
+        if (variation == 0x20 || variation == 0xD0) kb = UIKeyboardTypeEmailAddress;
+        else if (variation == 0x10) kb = UIKeyboardTypeURL;
+        secure = variation == 0x80 || variation == 0xE0;      // password, web password (not the visible one)
+    }
+    self.keyboardType = kb;
+    self.secureTextEntry = secure;
+    self.autocapitalizationType = cls != 1 ? UITextAutocapitalizationTypeNone
+        : (flags & 0x1000) ? UITextAutocapitalizationTypeAllCharacters : (flags & 0x2000) ? UITextAutocapitalizationTypeWords
+        : (flags & 0x4000) ? UITextAutocapitalizationTypeSentences : UITextAutocapitalizationTypeNone;
+    // whole words only: the keyboard does not see the field's text, so it may not correct what is already typed
+    self.autocorrectionType = UITextAutocorrectionTypeNo;
+    self.spellCheckingType = UITextSpellCheckingTypeNo;
+    BOOL multiLine = cls == 1 && (flags & 0x20000) && !(ime & 0x40000000);   // TYPE_TEXT_FLAG_MULTI_LINE, IME_FLAG_NO_ENTER_ACTION
+    switch (multiLine ? 0 : ime & 0xFF) {
+    case 2: self.returnKeyType = UIReturnKeyGo; break;
+    case 3: self.returnKeyType = UIReturnKeySearch; break;
+    case 4: self.returnKeyType = UIReturnKeySend; break;
+    case 5: self.returnKeyType = UIReturnKeyNext; break;
+    case 6: self.returnKeyType = UIReturnKeyDone; break;
+    default: self.returnKeyType = UIReturnKeyDefault; break;
+    }
+}
+@end
+
+static KeyInput *gKeyInput;
+
+static void ShowKeyboard(bool show, int type, int ime)
+{
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!gKeyInput) return;
+        if (show) {
+            [gKeyInput configureType:type options:ime];
+            if (gKeyInput.isFirstResponder) [gKeyInput reloadInputViews];
+            else [gKeyInput becomeFirstResponder];
+        } else if (gKeyInput.isFirstResponder) {
+            gKeyInput.hiding = YES;
+            [gKeyInput resignFirstResponder];
+        }
+    });
+}
+
+static void KeyboardMoved(NSNotification *note)
+{
+    CGRect end = [note.userInfo[UIKeyboardFrameEndUserInfoKey] CGRectValue];
+    UIScreen *screen = UIScreen.mainScreen;
+    BOOL hide = [note.name isEqualToString:UIKeyboardWillHideNotification];
+    CGFloat h = hide ? 0 : fmax(0, screen.bounds.size.height - end.origin.y);
+    gKeyboard = (int)(h * screen.scale);
+    SendInsets();
+    if (hide) {
+        if (gKeyInput && !gKeyInput.hiding) husk_app_text_hidden();   // the user closed it: the app hears so
+        gKeyInput.hiding = NO;
+    }
+}
 
 @interface FrameController : UIViewController
 @end
@@ -142,6 +240,10 @@ static void *AppMain(void *unused)
     webs.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     FrameView *frames = [[FrameView alloc] initWithFrame:r];
     frames.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    gKeyInput = [[KeyInput alloc] initWithFrame:CGRectZero];
+    [frames addSubview:gKeyInput];
+    for (NSNotificationName n in @[ UIKeyboardWillChangeFrameNotification, UIKeyboardWillHideNotification ])
+        [NSNotificationCenter.defaultCenter addObserverForName:n object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) { KeyboardMoved(note); }];
     [root addSubview:webs];
     [root addSubview:frames];
     self.view = root;
@@ -200,10 +302,12 @@ static char *GetClipboard(void)
         .open_url = OpenURL,
         .set_clipboard = SetClipboard,
         .get_clipboard = GetClipboard,
+        .show_keyboard = ShowKeyboard,
     };
     husk_app_configure(&cfg);
     UIEdgeInsets i = self.window.safeAreaInsets;
-    husk_app_insets((int)(i.left * scale), (int)(i.top * scale), (int)(i.right * scale), (int)(i.bottom * scale), 0);
+    gInsets[0] = (int)(i.left * scale); gInsets[1] = (int)(i.top * scale); gInsets[2] = (int)(i.right * scale); gInsets[3] = (int)(i.bottom * scale);
+    SendInsets();
 
     // ART wants a big stack; the main thread's belongs to UIKit
     pthread_attr_t attr;

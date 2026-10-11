@@ -43,6 +43,7 @@ void husk_app_back(void);
 void husk_app_text(const char *utf8);             /* typed text, committed */
 void husk_app_text_delete(void);
 void husk_app_text_action(void);                  /* the keyboard's return key */
+void husk_app_text_hidden(void);                  /* the host's keyboard went away (the user closed it) */
 void husk_app_insets(int left, int top, int right, int bottom, int keyboard);
 
 /* The latest frame the app drew, when there is a new one: premultiplied RGBA rows, 4 * w bytes
