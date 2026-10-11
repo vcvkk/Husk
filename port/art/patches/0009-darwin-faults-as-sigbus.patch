@@ -1,0 +1,25 @@
+diff --git a/art/runtime/fault_handler.cc b/art/runtime/fault_handler.cc
+index 6a9f794e..8c82a4bb 100644
+--- a/art/runtime/fault_handler.cc
++++ b/art/runtime/fault_handler.cc
+@@ -147,12 +147,20 @@ void FaultManager::Init() {
+   };
+ 
+   AddSpecialSignalHandlerFn(SIGSEGV, &sa);
++#if defined(__APPLE__)
++  // A load from a page mapped PROT_NONE (the heap window's first page, where a null reference
++  // points once made an address; stack guard pages) is SIGBUS on Apple systems, not SIGSEGV.
++  AddSpecialSignalHandlerFn(SIGBUS, &sa);
++#endif
+   initialized_ = true;
+ }
+ 
+ void FaultManager::Release() {
+   if (initialized_) {
+     RemoveSpecialSignalHandlerFn(SIGSEGV, art_fault_handler);
++#if defined(__APPLE__)
++    RemoveSpecialSignalHandlerFn(SIGBUS, art_fault_handler);
++#endif
+     initialized_ = false;
+   }
+ }

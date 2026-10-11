@@ -323,7 +323,7 @@ jobs:
               $D/darwin/bin/dalvikvm "${args[@]}" > $D/hello.lldb 2>&1
           fi
           [ -f $D/hello.lldb ] && tail -200 $D/hello.lldb
-          printf 'Hello from husk-port%ss DVM\nsum 1..100 = 5050, args=0\n' "'" | diff - $D/hello.out && [ $status -eq 0 ]
+          printf 'Hello from husk-port%ss DVM\nsum 1..100 = 5050, args=0\nfield on null: NullPointerException\nmethod on null: NullPointerException\n' "'" | diff - $D/hello.out && [ $status -eq 0 ]
 
   # the runtime for iOS: the same build against the iPhone SDK and libraries built for it
   # (port/art/darwin/ios-deps.sh), keeping going past errors to list them
