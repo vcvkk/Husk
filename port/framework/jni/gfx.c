@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /* From Husk's main line (Leviidev/Husk src/translation-layer-next/husk-tl-dvm-graphics.c at 2425372), as
- * it is but for its includes: its natives run on JNI here (shim.h, gen-jni.py writes their JNI methods from
- * k_gfx). */
+ * it is but for its includes and txBreak's letter spacing (make_attributed): its natives run on JNI here (shim.h,
+ * gen-jni.py writes their JNI methods from k_gfx). */
 /*
  * android.graphics for Java apps on Husk's Dalvik runtime: Bitmap, Canvas, Paint's text, Typeface and the shaders, drawn with
  * CoreGraphics and CoreText (the natives of husk.Gfx; the classes themselves are Java, in src/java-framework).
@@ -673,7 +673,9 @@ static CFStringRef cfstr(jobj *s, int start, int end)
     return CFStringCreateWithCharacters(NULL, u + start, end - start);
 }
 
-static CTLineRef make_line(CFStringRef str, const int32_t *p, gface *g)
+/* husk-port: the text with the paint's font and letter spacing, which measuring, breaking and drawing all lay out alike
+ * (txBreak had no letter spacing: text with a negative one measured narrower than it broke, and broke mid-word) */
+static CFAttributedStringRef make_attributed(CFStringRef str, const int32_t *p, gface *g)
 {
     CTFontRef f = sized(g, pf(p, P_TEXTSIZE));
     float ls = pf(p, P_LSPACE) * pf(p, P_TEXTSIZE);
@@ -682,8 +684,15 @@ static CTLineRef make_line(CFStringRef str, const int32_t *p, gface *g)
     const void *v[] = { f, kCFBooleanTrue, kern };
     CFDictionaryRef attrs = CFDictionaryCreate(NULL, k, v, ls != 0 ? 3 : 2, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
     CFAttributedStringRef as = CFAttributedStringCreate(NULL, str, attrs);
+    CFRelease(attrs); CFRelease(kern); CFRelease(f);
+    return as;
+}
+
+static CTLineRef make_line(CFStringRef str, const int32_t *p, gface *g)
+{
+    CFAttributedStringRef as = make_attributed(str, p, g);
     CTLineRef line = CTLineCreateWithAttributedString(as);
-    CFRelease(as); CFRelease(attrs); CFRelease(kern); CFRelease(f);
+    CFRelease(as);
     return line;
 }
 
@@ -1242,16 +1251,13 @@ NAT(G_txBreak)
     (void)self;
     CFStringRef s = cfstr(a[0].l, a[1].i, a[2].i);
     const int32_t *p = paint_of(a[4].l);
-    CTFontRef f = sized((gface *)(uintptr_t)a[5].j, pf(p, P_TEXTSIZE));
-    const void *k[] = { kCTFontAttributeName }; const void *v[] = { f };
-    CFDictionaryRef attrs = CFDictionaryCreate(NULL, k, v, 1, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-    CFAttributedStringRef as = CFAttributedStringCreate(NULL, s, attrs);
+    CFAttributedStringRef as = make_attributed(s, p, (gface *)(uintptr_t)a[5].j);
     CTTypesetterRef ts = CTTypesetterCreateWithAttributedString(as);
     float sx = pf(p, P_SCALEX) > 0 ? pf(p, P_SCALEX) : 1;
     double w = a[3].f / sx;
     CFIndex n = a[6].z ? CTTypesetterSuggestLineBreak(ts, 0, w) : CTTypesetterSuggestClusterBreak(ts, 0, w);
     *ret = Ii((int32_t)n);
-    CFRelease(ts); CFRelease(as); CFRelease(attrs); CFRelease(s); CFRelease(f);
+    CFRelease(ts); CFRelease(as); CFRelease(s);
     return true;
 }
 /* (String, int start, int end, int[] paint, long typeface, float[] out) -> advances per UTF-16 unit */
