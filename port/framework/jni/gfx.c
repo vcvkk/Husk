@@ -919,12 +919,12 @@ static bool blend_fill(gcanvas *v, CGRect r, uint32_t argb, bool aa)
  * pixel at a time: Compose's shapes, Material's expressive polygons, ovals and strokes). Where blend_ok allows. */
 static uint8_t *g_mask; static size_t g_mask_cap;
 static void mask_blend(gcanvas *v, const uint8_t *mask, int dx0, int dy1, int W, int H, uint32_t argb);
-/* mask zeroed for W x H; false without memory */
+/* g_mask zeroed for W x H; false without memory */
 static bool mask_room(int W, int H)
 {
     size_t need = (size_t)W * H;
-    if (need > mask_cap) { free(mask); mask_cap = need + need / 4; mask = malloc(mask_cap); if (!mask) { mask_cap = 0; return false; } }
-    memset(mask, 0, need);
+    if (need > g_mask_cap) { free(g_mask); g_mask_cap = need + need / 4; g_mask = malloc(g_mask_cap); if (!g_mask) { g_mask_cap = 0; return false; } }
+    memset(g_mask, 0, need);
     return true;
 }
 static bool mask_draw(gcanvas *v, CGPathRef path, const int32_t *p, bool even_odd)
@@ -1020,7 +1020,7 @@ static void mask_blend(gcanvas *v, const uint8_t *mask, int dx0, int dy1, int W,
         int mx0 = dx0, mx1 = dx0 + W, my0 = top, my1 = top + H;
         if (!clip_box(v, &mx0, &mx1, &my0, &my1)) return;
         for (int j = my0; j < my1; j++) {
-            const uint8_t *mk = g_mask + (size_t)(j - top) * W + (mx0 - dx0), *ck = clip_at(v, mx0, j);
+            const uint8_t *mk = mask + (size_t)(j - top) * W + (mx0 - dx0), *ck = clip_at(v, mx0, j);
             uint32_t *d = (uint32_t *)(b->px + (size_t)j * b->stride) + mx0;
             if (!ck) { for (int i = 0; i < mx1 - mx0; i++) d[i] = over(d[i], scale_px(s_full, mk[i])); continue; }
             for (int i = 0; i < mx1 - mx0; i++) d[i] = over(d[i], scale_px(s_full, (mk[i] * (uint32_t)ck[i] + 127) / 255));
@@ -1028,7 +1028,7 @@ static void mask_blend(gcanvas *v, const uint8_t *mask, int dx0, int dy1, int W,
         return;
     }
     for (int r = 0; r < H; r++) {
-        const uint8_t *mk = g_mask + (size_t)r * W;
+        const uint8_t *mk = mask + (size_t)r * W;
         uint32_t *d = (uint32_t *)(b->px + (size_t)(top + r) * b->stride) + dx0;
         for (int i = 0; i < W; i++) {
             uint32_t c = mk[i];
