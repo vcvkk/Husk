@@ -306,7 +306,7 @@ public final class S {
     public static final int GridView_stretchMode = 3;
     public static final int GridView_columnWidth = 4;
     public static final int GridView_numColumns = 5;
-    public static final int[] Window = { 0x01010031, 0x01010032, 0x01010054, 0x01010056, 0x01010057, 0x01010058, 0x01010059, 0x0101020d, 0x0101021f, 0x0101022b, 0x010102cd, 0x010102e4, 0x01010356, 0x01010357, 0x0101035b, 0x010103ef, 0x010103f0, 0x01010450, 0x01010451, 0x01010452, 0x01010490, 0x010104e0, 0x01010503, 0x0101056c, 0x01010586 };
+    public static final int[] Window = { 0x01010031, 0x01010032, 0x01010054, 0x01010056, 0x01010057, 0x01010058, 0x01010059, 0x0101020d, 0x0101021f, 0x0101022b, 0x010102cd, 0x010102e4, 0x01010356, 0x01010357, 0x0101035b, 0x010103ef, 0x010103f0, 0x01010450, 0x01010451, 0x01010452, 0x01010490, 0x010104e0, 0x01010503, 0x0101056c, 0x01010586, 0x0101069a };
     public static final int Window_colorBackground = 0;
     public static final int Window_backgroundDimAmount = 1;
     public static final int Window_windowBackground = 2;
@@ -332,6 +332,7 @@ public final class S {
     public static final int Window_windowBackgroundFallback = 22;
     public static final int Window_windowLightNavigationBar = 23;
     public static final int Window_windowLayoutInDisplayCutoutMode = 24;
+    public static final int Window_windowOptOutEdgeToEdgeEnforcement = 25;
     public static final int[] Theme = { 0x01010030, 0x01010031, 0x01010036, 0x01010038, 0x01010039, 0x0101009a, 0x01010429, 0x0101042a, 0x0101042b, 0x0101042c, 0x01010433, 0x01010434, 0x01010435, 0x010104ce };
     public static final int Theme_colorForeground = 0;
     public static final int Theme_colorBackground = 1;

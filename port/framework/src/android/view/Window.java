@@ -50,6 +50,7 @@ public class Window {
     private ViewGroup mContentParent;
     private int mFeatures, mLocalFeatures;
     private WindowManager mWindowManager;
+    private boolean mEdgeToEdge, mDecorFitsSet;
     private boolean mFloating, mDecorFits = true, mActive, mDestroyed, mIsActivityWindow;
     private int mStatusBarColor, mNavigationBarColor;
     private CharSequence mTitle;
@@ -83,6 +84,9 @@ public class Window {
         mDefaultSoftInput = a.getInt(husk.S.Window_windowSoftInputMode, 0);
         if (!mSoftInputSet) mAttrs.softInputMode = mDefaultSoftInput;
         mAttrs.layoutInDisplayCutoutMode = a.getInt(husk.S.Window_windowLayoutInDisplayCutoutMode, 0);
+        // Android 15 lays apps targeting it out edge to edge: under transparent bars, unless the theme opts out
+        mEdgeToEdge = husk.Manifest.targetSdk >= 35 && !a.getBoolean(husk.S.Window_windowOptOutEdgeToEdgeEnforcement, false);
+        if (mEdgeToEdge && !mDecorFitsSet) mDecorFits = false;
         if (mFloating) {
             if (!mLayoutSet) { mAttrs.width = WindowManager.LayoutParams.WRAP_CONTENT; mAttrs.height = WindowManager.LayoutParams.WRAP_CONTENT; }
             if (!mGravitySet) mAttrs.gravity = Gravity.CENTER;
@@ -180,16 +184,17 @@ public class Window {
     public void setBackgroundDrawable(Drawable d) { mBackgroundSet = true; mBackground = d; if (mDecor != null) mDecor.setWindowBackground(d); }
     public void setBackgroundDrawableResource(int id) { setBackgroundDrawable(mContext.getDrawable(id)); }
     public void setStatusBarColor(int c) { mStatusBarColorSet = true; mStatusBarColor = c; if (mDecor != null) mDecor.invalidate(); }
-    public int getStatusBarColor() { ensureStyle(); return mStatusBarColor; }
+    public int getStatusBarColor() { ensureStyle(); return mEdgeToEdge ? 0 : mStatusBarColor; }
     public void setNavigationBarColor(int c) { mNavigationBarColorSet = true; mNavigationBarColor = c; if (mDecor != null) mDecor.invalidate(); }
-    public int getNavigationBarColor() { ensureStyle(); return mNavigationBarColor; }
+    public int getNavigationBarColor() { ensureStyle(); return mEdgeToEdge ? 0 : mNavigationBarColor; }
     public void setNavigationBarDividerColor(int c) {}
     public void setStatusBarContrastEnforced(boolean e) {}
     public void setNavigationBarContrastEnforced(boolean e) {}
     public boolean isStatusBarContrastEnforced() { return false; }
     public boolean isNavigationBarContrastEnforced() { return false; }
-    public void setDecorFitsSystemWindows(boolean f) { mDecorFits = f; if (mDecor != null) mDecor.requestApplyInsets(); }
+    public void setDecorFitsSystemWindows(boolean f) { mDecorFitsSet = true; mDecorFits = f; if (mDecor != null) mDecor.requestApplyInsets(); }
     public boolean huskDecorFits() {
+        ensureStyle();
         if (!mDecorFits) return false;
         int f = mAttrs.flags;
         if ((f & (WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)) != 0) return false;
