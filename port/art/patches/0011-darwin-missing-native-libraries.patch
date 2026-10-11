@@ -1,8 +1,15 @@
 diff --git a/art/runtime/entrypoints/jni/jni_entrypoints.cc b/art/runtime/entrypoints/jni/jni_entrypoints.cc
-index a4083a4f..40002737 100644
+index a4083a4f..ce54eac0 100644
 --- a/art/runtime/entrypoints/jni/jni_entrypoints.cc
 +++ b/art/runtime/entrypoints/jni/jni_entrypoints.cc
-@@ -25,6 +25,16 @@
+@@ -19,12 +19,85 @@
+ #include "art_method-inl.h"
+ #include "entrypoints/entrypoint_utils.h"
+ #include "jni/java_vm_ext.h"
++#include "mirror/class-inl.h"
+ #include "mirror/object-inl.h"
+ #include "scoped_thread_state_change-inl.h"
+ #include "thread.h"
  
  namespace art {
  
@@ -16,20 +23,84 @@ index a4083a4f..40002737 100644
 +#endif
 +#endif
 +
++#if defined(__APPLE__)
++// The same for a method returning an object: an empty one of its type, as the app would get something from a phone
++// without the feature (Kotlin code takes a returned object for granted): "" for a String, an empty array, an empty
++// ArrayList, HashMap or HashSet for those interfaces, otherwise an instance from its no-argument constructor or, without
++// one, with its fields at their defaults; null for other interfaces and abstract classes.
++extern "C" jobject art_husk_missing_object(JNIEnv* env, jobject) {
++  Thread* self = Thread::Current();
++  jclass cls = nullptr;
++  bool is_string = false, is_array = false, is_abstract = false;
++  Primitive::Type component = Primitive::kPrimNot;
++  jclass component_cls = nullptr;
++  {
++    ScopedObjectAccess soa(self);
++    ArtMethod* method = self->GetCurrentMethod(nullptr);
++    ObjPtr<mirror::Class> rt = method != nullptr ? method->ResolveReturnType() : nullptr;
++    if (rt == nullptr) { self->ClearException(); return nullptr; }
++    is_string = rt->IsStringClass();
++    is_array = rt->IsArrayClass();
++    is_abstract = rt->IsInterface() || rt->IsAbstract();
++    if (is_array) {
++      component = rt->GetComponentType()->GetPrimitiveType();
++      if (component == Primitive::kPrimNot) component_cls = soa.AddLocalReference<jclass>(rt->GetComponentType());
++    }
++    cls = soa.AddLocalReference<jclass>(rt);
++  }
++  if (is_string) return env->NewStringUTF("");
++  if (is_array) {
++    switch (component) {
++      case Primitive::kPrimBoolean: return env->NewBooleanArray(0);
++      case Primitive::kPrimByte: return env->NewByteArray(0);
++      case Primitive::kPrimChar: return env->NewCharArray(0);
++      case Primitive::kPrimShort: return env->NewShortArray(0);
++      case Primitive::kPrimInt: return env->NewIntArray(0);
++      case Primitive::kPrimLong: return env->NewLongArray(0);
++      case Primitive::kPrimFloat: return env->NewFloatArray(0);
++      case Primitive::kPrimDouble: return env->NewDoubleArray(0);
++      default: return env->NewObjectArray(0, component_cls, nullptr);
++    }
++  }
++  if (is_abstract) {
++    for (const char* impl : { "java/util/ArrayList", "java/util/HashMap", "java/util/HashSet" }) {
++      jclass ic = env->FindClass(impl);
++      if (ic == nullptr) { env->ExceptionClear(); continue; }
++      if (env->IsAssignableFrom(ic, cls)) {
++        jmethodID init = env->GetMethodID(ic, "<init>", "()V");
++        return init != nullptr ? env->NewObject(ic, init) : nullptr;
++      }
++    }
++    return nullptr;
++  }
++  jmethodID init = env->GetMethodID(cls, "<init>", "()V");
++  if (init != nullptr) {
++    jobject o = env->NewObject(cls, init);
++    if (!env->ExceptionCheck()) return o;
++  }
++  env->ExceptionClear();
++  jobject o = env->AllocObject(cls);
++  if (env->ExceptionCheck()) { env->ExceptionClear(); return nullptr; }
++  return o;
++}
++#endif
++
  // Used by the JNI dlsym stub to find the native method to invoke if none is registered.
  #if defined(__arm__) || defined(__aarch64__)
  extern "C" const void* artFindNativeMethod() {
-@@ -42,6 +52,15 @@ extern "C" const void* artFindNativeMethod(Thread* self) {
+@@ -42,6 +115,17 @@ extern "C" const void* artFindNativeMethod(Thread* self) {
    // Lookup symbol address for method, on failure we'll return null with an exception set,
    // otherwise we return the address of the method we found.
    void* native_code = soa.Vm()->FindCodeForNativeMethod(method);
 +#if defined(__APPLE__)
 +  if (native_code == nullptr && !method->GetDeclaringClass()->GetClassLoader().IsNull()) {
 +    // husk-port: an app's native method whose library is not here (an Android .so, which Darwin can not load): it
-+    // returns zero, false or null, whatever its signature, instead of throwing, as libcore's loadLibrary went on.
++    // returns zero or false (an object: an empty one of its type), instead of throwing, as libcore's loadLibrary went on.
 +    self->ClearException();
 +    LOG(WARNING) << "husk-port: no native code for " << method->PrettyMethod() << ", it returns nothing";
-+    native_code = reinterpret_cast<void*>(art_husk_missing_native);
++    char ret = method->GetShorty()[0];
++    native_code = ret == 'L' ? reinterpret_cast<void*>(art_husk_missing_object)
++                             : reinterpret_cast<void*>(art_husk_missing_native);
 +  }
 +#endif
    if (native_code == nullptr) {
