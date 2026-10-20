@@ -643,27 +643,41 @@ static void clip_mask_add_(gcanvas *v, CGPathRef path, bool even_odd, bool diffe
 static uint8_t *g_clipcov, *g_cliptmp; static size_t g_clipcov_cap;
 static int g_cc_x0, g_cc_y0, g_cc_w;
 static uint8_t *g_cc_full; static size_t g_cc_full_cap;   /* per row of the region: wholly covered (no mask needed) */
-/* a rounded rectangle's coverage of one row, x0 .. x0 + w, pixel row j */
+/* a corner's ellipse (centre cx, cy; radii rx, ry) on row j: how far in from the corner's side the row is wholly covered (at the
+ * row's edge farthest from the centre) and covered at all (nearest); top: the corner is above its centre */
+static inline void rr_corner(float cy, float rx, float ry, bool top, int j, float t, float b, float *full, float *any)
+{
+    float yfar = top ? fmaxf((float)j, t) : fminf((float)(j + 1), b), ynear = top ? fminf((float)(j + 1), cy) : fmaxf((float)j, cy);
+    float df = (yfar - cy) / ry, dn = (ynear - cy) / ry;
+    *full = rx - (df * df < 1 ? rx * sqrtf(1 - df * df) : 0);
+    *any = rx - (dn * dn < 1 ? rx * sqrtf(1 - dn * dn) : 0);
+}
+/* a rounded rectangle's coverage of one row, x0 .. x0 + w, pixel row j: none outside it, the row's own where it covers all of a
+ * pixel, each pixel's own only along the edges (a circle's rows were a square root a pixel, all the way across) */
 static void rr_row(const cmask *k, uint8_t *o, int x0, int w, int j)
 {
     float py = j + 0.5f;
     float cy = clamp01(fminf(py - k->rt, k->rb - py) + 0.5f);
     if (cy <= 0) { memset(o, 0, (size_t)w); return; }
-    bool band = py < k->rt + fmaxf(k->ry[0], k->ry[1]) || py > k->rb - fmaxf(k->ry[2], k->ry[3]);
-    float lx = band ? k->rl + fmaxf(k->rx[0], k->rx[3]) : k->rl + 1, rxe = band ? k->rr_ - fmaxf(k->rx[1], k->rx[2]) : k->rr_ - 1;
-    uint8_t mid = (uint8_t)lrintf(cy * 255);
-    for (int xx = 0; xx < w; xx++) {
-        float px = x0 + xx + 0.5f;
-        if (px >= lx && px <= rxe) {
-            int end = (int)floorf(rxe - 0.5f) - x0 + 1;
-            if (end > w) end = w;
-            if (end <= xx) end = xx + 1;
-            memset(o + xx, mid, (size_t)(end - xx));
-            xx = end - 1;
-            continue;
-        }
-        o[xx] = (uint8_t)lrintf(rrect4_cover(px, py, k->rl, k->rt, k->rr_, k->rb, k->rx, k->ry) * 255);
-    }
+    /* each side's inset where the row is wholly covered and where it is covered at all */
+    float lfull = 0, lany = 0, rfull = 0, rany = 0;
+    if (k->rx[0] > 0 && k->ry[0] > 0 && py < k->rt + k->ry[0]) rr_corner(k->rt + k->ry[0], k->rx[0], k->ry[0], true, j, k->rt, k->rb, &lfull, &lany);
+    else if (k->rx[3] > 0 && k->ry[3] > 0 && py > k->rb - k->ry[3]) rr_corner(k->rb - k->ry[3], k->rx[3], k->ry[3], false, j, k->rt, k->rb, &lfull, &lany);
+    if (k->rx[1] > 0 && k->ry[1] > 0 && py < k->rt + k->ry[1]) rr_corner(k->rt + k->ry[1], k->rx[1], k->ry[1], true, j, k->rt, k->rb, &rfull, &rany);
+    else if (k->rx[2] > 0 && k->ry[2] > 0 && py > k->rb - k->ry[2]) rr_corner(k->rb - k->ry[2], k->rx[2], k->ry[2], false, j, k->rt, k->rb, &rfull, &rany);
+    int f0 = (int)ceilf(k->rl + lfull) - x0, f1 = (int)floorf(k->rr_ - rfull) - x0;
+    int a0 = (int)floorf(k->rl + lany) - 1 - x0, a1 = (int)ceilf(k->rr_ - rany) + 1 - x0;
+    if (a0 < 0) a0 = 0;
+    if (a1 > w) a1 = w;
+    if (a0 >= a1) { memset(o, 0, (size_t)w); return; }
+    if (f0 < a0) f0 = a0;
+    if (f1 > a1) f1 = a1;
+    if (f1 <= f0) f0 = f1 = a1;
+    memset(o, 0, (size_t)a0);
+    memset(o + a1, 0, (size_t)(w - a1));
+    if (f1 > f0) memset(o + f0, (int)lrintf(cy * 255), (size_t)(f1 - f0));
+    for (int xx = a0; xx < f0; xx++) o[xx] = (uint8_t)lrintf(rrect4_cover(x0 + xx + 0.5f, py, k->rl, k->rt, k->rr_, k->rb, k->rx, k->ry) * 255);
+    for (int xx = f1; xx < a1; xx++) o[xx] = (uint8_t)lrintf(rrect4_cover(x0 + xx + 0.5f, py, k->rl, k->rt, k->rr_, k->rb, k->rx, k->ry) * 255);
 }
 /* whether the rounded rectangle covers all of row j from x0 to x0 + w */
 static inline bool rr_row_full(const cmask *k, int x0, int w, int j)
@@ -2096,66 +2110,57 @@ static bool rrect_fill(gcanvas *v, CGRect r, float rx, float ry, uint32_t argb, 
     if (ix1 > b->w) ix1 = b->w;
     if (iy1 > b->h) iy1 = b->h;
     if (ix0 >= ix1 || iy0 >= iy1) return true;
-    /* the columns where a row's coverage may vary: the corners' and the edges' */
-    int lx = (int)ceil(x0 + srx + 0.5f), rxs = (int)floor(x1 - srx - 0.5f);
-    if (lx < ix0) lx = ix0;
-    if (rxs > ix1) rxs = ix1;
-    if (lx > rxs) lx = rxs = ix1;
     uint32_t inv_full, s_full = premul(argb, 1, &inv_full);
-    if (clip_need(v, ix0, ix1, iy0, iy1)) {
-        int mx0 = ix0, mx1 = ix1, my0 = iy0, my1 = iy1;
-        if (!clip_box(v, &mx0, &mx1, &my0, &my1)) return true;
-        for (int j = my0; j < my1; j++) {
-            uint32_t *row = (uint32_t *)(b->px + (size_t)j * b->stride);
-            const uint8_t *mk = clip_at(v, mx0, j);
-            float py = j + 0.5f;
-            float cy = clamp01(fminf(py - y0, y1 - py) + 0.5f);
-            if (!aa) cy = cy >= 0.5f ? 1 : 0;
-            if (cy <= 0) continue;
-            bool corner_row = py < y0 + sry || py > y1 - sry;
-            uint32_t cinv, cs;
-            if (cy >= 0.999f) { cs = s_full; cinv = inv_full; } else cs = premul(argb, cy, &cinv);
-            for (int i = mx0; i < mx1; i++) {
-                if (!corner_row && i >= lx && i < rxs) {
-                    /* the straight middle: one coverage, through the mask where the row has one */
-                    int e = rxs < mx1 ? rxs : mx1;
-                    if (!mk) blend_run(row + i, e - i, cs, cinv);
-                    else for (int q = i; q < e; q++) row[q] = over(row[q], scale_px(cs, mk[q - mx0]));
-                    i = e - 1;
-                    continue;
-                }
-                float c = rrect_cover(i + 0.5f, py, x0, y0, x1, y1, srx, sry);
-                if (!aa) c = c >= 0.5f ? 1 : 0;
-                if (c <= 0) continue;
-                uint32_t c8 = (uint32_t)lrintf(c * 255);
-                if (mk) c8 = (c8 * mk[i - mx0] + 127) / 255;
-                row[i] = over(row[i], scale_px(s_full, c8));
-            }
-        }
-        return true;
-    }
-    for (int j = iy0; j < iy1; j++) {
+    int X0 = ix0, X1 = ix1, Y0 = iy0, Y1 = iy1;
+    if (clip_need(v, ix0, ix1, iy0, iy1)) { if (!clip_box(v, &X0, &X1, &Y0, &Y1)) return true; }
+    else g_cc_on = false;
+    /* Each row: the pixels it wholly covers (one coverage, the row's: blended as a run), the ones it may partly cover (each its
+     * own, from the distance to the corner's ellipse), none past them. A circle is corner rows top to bottom: it was a square
+     * root and a division a pixel, over all of it (Compose's round buttons, 20 of them on a calculator). */
+    for (int j = Y0; j < Y1; j++) {
         uint32_t *row = (uint32_t *)(b->px + (size_t)j * b->stride);
+        const uint8_t *mk = clip_at(v, X0, j);
+        const uint8_t *m0 = mk ? mk - X0 : NULL;
         float py = j + 0.5f;
         float cy = clamp01(fminf(py - y0, y1 - py) + 0.5f);
         if (!aa) cy = cy >= 0.5f ? 1 : 0;
         if (cy <= 0) continue;
-        bool corner_row = py < y0 + sry || py > y1 - sry;
-        for (int i = ix0; i < ix1; i++) {
-            if (i == lx && i < rxs && !corner_row) {
-                /* the middle of a straight row: one coverage throughout */
-                uint32_t inv, sv;
-                if (cy >= 0.999f) { sv = s_full; inv = inv_full; } else sv = premul(argb, cy, &inv);
-                blend_run(row + lx, rxs - lx, sv, inv);
-                i = rxs - 1;
-                continue;
+        int o0 = X0, o1 = X1, f0, f1;
+        bool top = py < y0 + sry, bot = py > y1 - sry;
+        if (!(top || bot) || srx <= 0 || sry <= 0) { f0 = (int)ceilf(x0); f1 = (int)floorf(x1); }
+        else {
+            /* the ellipse's half width where the row is farthest from its centre (wholly covered within) and nearest (none past) */
+            float ecy = top ? y0 + sry : y1 - sry;
+            float yfar = top ? fmaxf((float)j, y0) : fminf((float)(j + 1), y1), ynear = top ? fminf((float)(j + 1), ecy) : fmaxf((float)j, ecy);
+            float df = (yfar - ecy) / sry, dn = (ynear - ecy) / sry;
+            float wf = df * df < 1 ? srx * sqrtf(1 - df * df) : 0, wn = dn * dn < 1 ? srx * sqrtf(1 - dn * dn) : 0;
+            f0 = (int)ceilf(x0 + srx - wf); f1 = (int)floorf(x1 - srx + wf);
+            int n0 = (int)floorf(x0 + srx - wn) - 1, n1 = (int)ceilf(x1 - srx + wn) + 1;
+            if (o0 < n0) o0 = n0;
+            if (o1 > n1) o1 = n1;
+        }
+        if (o0 >= o1) continue;
+        if (f0 < o0) f0 = o0;
+        if (f1 > o1) f1 = o1;
+        if (f1 <= f0) f0 = f1 = o1;
+        /* the middle */
+        if (f1 > f0) {
+            uint32_t cinv, cs;
+            if (cy >= 0.999f) { cs = s_full; cinv = inv_full; } else cs = premul(argb, cy, &cinv);
+            if (!m0) blend_run(row + f0, f1 - f0, cs, cinv);
+            else for (int q = f0; q < f1; q++) row[q] = over(row[q], scale_px(cs, m0[q]));
+        }
+        /* the edges, a pixel at a time */
+        for (int e = 0; e < 2; e++) {
+            int a0 = e ? f1 : o0, a1 = e ? o1 : f0;
+            for (int q = a0; q < a1; q++) {
+                float c = rrect_cover(q + 0.5f, py, x0, y0, x1, y1, srx, sry);
+                if (!aa) c = c >= 0.5f ? 1 : 0;
+                if (c <= 0) continue;
+                uint32_t c8 = c >= 0.999f ? 255 : (uint32_t)lrintf(c * 255);
+                if (m0) c8 = (c8 * m0[q] + 127) / 255;
+                if (c8) row[q] = over(row[q], c8 == 255 ? s_full : scale_px(s_full, c8));
             }
-            float c = rrect_cover(i + 0.5f, py, x0, y0, x1, y1, srx, sry);
-            if (!aa) c = c >= 0.5f ? 1 : 0;
-            if (c <= 0) continue;
-            uint32_t inv, sv;
-            if (c >= 0.999f) { sv = s_full; inv = inv_full; } else sv = premul(argb, c, &inv);
-            blend_run(row + i, 1, sv, inv);
         }
     }
     return true;
