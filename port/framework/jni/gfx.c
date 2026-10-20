@@ -2055,10 +2055,17 @@ static bool ring_fill(gcanvas *v, CGRect outer, CGRect inner, gshader *sh, uint3
     int mx0 = ix0, mx1 = ix1, my0 = iy0, my1 = iy1;
     if (clip_need(v, ix0, ix1, iy0, iy1)) { if (!clip_box(v, &mx0, &mx1, &my0, &my1)) return true; }
     else g_cc_on = false;
+    /* each column's coverage by the outer rectangle and by the hole, worked out once: a row's is theirs times its own */
+    static float *cov; static int cov_cap;
+    int W = mx1 - mx0;
+    if (2 * W > cov_cap) { free(cov); cov_cap = 2 * W + 256; cov = malloc(sizeof(float) * (size_t)cov_cap); if (!cov) { cov_cap = 0; return false; } }
+    float *co = cov - mx0, *ci = cov + W - mx0;
+    for (int i = mx0; i < mx1; i++) { co[i] = span_cover(i, o[0], o[1]); ci[i] = hole ? span_cover(i, n[0], n[1]) : 0; }
     /* the hole's wholly covered columns: a row that is wholly in the hole leaves them alone */
     int hx0 = hole ? (int)ceil(n[0]) : 0, hx1 = hole ? (int)floor(n[1]) : 0;
     if (hx0 < mx0) hx0 = mx0;
     if (hx1 > mx1) hx1 = mx1;
+    int tile = sh ? sh->tile : 0;
     for (int j = my0; j < my1; j++) {
         float cyo = span_cover(j, o[2], o[3]);
         if (cyo <= 0) continue;
@@ -2071,15 +2078,15 @@ static bool ring_fill(gcanvas *v, CGRect outer, CGRect inner, gshader *sh, uint3
         bool skip = hole && cyi >= 0.999f && cyo >= 0.999f && hx1 > hx0;
         for (int seg = 0; seg < (skip ? 2 : 1); seg++) {
             int a = skip ? (seg ? hx1 : mx0) : mx0, z = skip ? (seg ? mx1 : hx0) : mx1;
-            for (int i = a; i < z; i++) {
-                float cov = span_cover(i, o[0], o[1]) * cyo - (hole ? span_cover(i, n[0], n[1]) * cyi : 0);
-                if (cov <= 0.002f) continue;
-                uint32_t k = cov >= 0.998f ? 255 : (uint32_t)lrintf(cov * 255);
+            float t = tj + tx * (a + 0.5f);
+            for (int i = a; i < z; i++, t += tx) {
+                float c = co[i] * cyo - ci[i] * cyi;
+                if (c <= 0.002f) continue;
+                uint32_t k = c >= 0.998f ? 255 : (uint32_t)(c * 255 + 0.5f);
                 if (m0) k = (k * m0[i] + 127) / 255;
                 if (!k) continue;
-                uint32_t c = lut ? lut[grad_index(tj + tx * (i + 0.5f), sh->tile)] : s_full;
-                if (k != 255) c = scale_px(c, k);
-                row[i] = over(row[i], c);
+                uint32_t px = lut ? lut[grad_index(t, tile)] : s_full;
+                row[i] = over(row[i], k == 255 ? px : scale_px(px, k));
             }
         }
     }
