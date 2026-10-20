@@ -1828,6 +1828,7 @@ NAT(G_cvDrawColor)
 }
 static int64_t g_gs_fast, g_gs_cg;      /* HUSK_FRAME_STATS: shaded draws done here, given to CoreGraphics */
 static bool grad_fill(gcanvas *v, CGRect r, gshader *s, uint32_t argb, bool aa);
+static bool ring_fill(gcanvas *v, CGRect outer, CGRect inner, gshader *sh, uint32_t argb, bool aa);
 /* shapes: (long, l, t, r, b, [extra...], int[] paint, long shader) */
 static void shape(gcanvas *v, CGPathRef p, jobj *paint, int64_t shader)
 {
@@ -1836,8 +1837,8 @@ static void shape(gcanvas *v, CGPathRef p, jobj *paint, int64_t shader)
     draw_path(cg(v), p, paint_of(paint), (gshader *)(uintptr_t)shader, false);
 }
 /* HUSK_FRAME_STATS: drawRect by the way it went, with its time */
-enum { DR_FILL, DR_FILL_CG, DR_GRAD, DR_SH_KIND, DR_SH_PAINT, DR_SH_LAYER, DR_PAINT, DR_COUNT };
-static const char *const k_dr_name[DR_COUNT] = { "colour here", "colour to CoreGraphics", "gradient here", "shader not linear",
+enum { DR_FILL, DR_FILL_CG, DR_GRAD, DR_STROKE, DR_SH_KIND, DR_SH_PAINT, DR_SH_LAYER, DR_PAINT, DR_COUNT };
+static const char *const k_dr_name[DR_COUNT] = { "colour here", "colour to CoreGraphics", "gradient here", "outline here", "shader not linear",
     "shader, paint not plain", "shader in a layer or turned", "paint not plain" };
 static int64_t g_dr_n[DR_COUNT], g_dr_ns[DR_COUNT], g_dr_px[DR_COUNT];
 static int g_dr_last_xfer = -1, g_dr_last_cf = -1, g_dr_last_kind = -1;
@@ -1861,6 +1862,14 @@ static int draw_rect(gcanvas *v, CGRect r, jobj *paint, int64_t shader)
     }
     gshader *sh = (gshader *)(uintptr_t)shader;
     if (sh && plain && grad_fill(v, r, sh, (uint32_t)p[P_COLOR], (p[P_FLAGS] & PF_AA) != 0)) return DR_GRAD;
+    /* stroked, mitred (a rectangle's corners are right angles: within any miter limit Android takes): the outline's band */
+    float sw = pf(p, P_STROKE);
+    if (p[P_STYLE] != 0 && p[P_JOIN] == 0 && sw > 0 && p[P_CFMODE] < 0 && pf(p, P_SHRAD) <= 0 && p[P_XFER] == 3) {
+        CGRect rs = CGRectStandardize(r);
+        CGRect outer = CGRectInset(rs, -sw / 2, -sw / 2), inner = CGRectInset(rs, sw / 2, sw / 2);
+        if (p[P_STYLE] == 2 || inner.size.width <= 0 || inner.size.height <= 0 || CGRectIsNull(inner)) inner = CGRectZero;
+        if (ring_fill(v, outer, inner, sh, (uint32_t)p[P_COLOR], (p[P_FLAGS] & PF_AA) != 0)) return DR_STROKE;
+    }
     int why = !sh ? DR_PAINT : !plain ? DR_SH_PAINT : sh->kind != SH_LINEAR ? DR_SH_KIND : DR_SH_LAYER;
     if (sh) g_dr_last_kind = sh->kind;
     CGPathRef path = CGPathCreateWithRect(r, NULL);
@@ -1978,6 +1987,86 @@ static bool grad_fill(gcanvas *v, CGRect r, gshader *s, uint32_t argb, bool aa)
             uint32_t k = (cy8 * ce + 127) / 255;
             if (m0) k = (k * m0[i] + 127) / 255;
             row[i] = over(row[i], scale_px(lut[grad_index(tj + tx * (i + 0.5f), tile)], k));
+        }
+    }
+    g_gs_fast++;
+    return true;
+}
+/* ---- ring_fill: a rectangle's outline, the outer rectangle less the inner, in a colour or a linear gradient (a stroked rectangle
+ * with mitred corners: Compose's Modifier.border round a whole screen, DepCalc's gaming mode's turning rainbow every frame, which
+ * CoreGraphics filled through a mask of the outline the size of the screen). A box filter's coverage of a rectangle is its rows'
+ * times its columns', and the inner lies in the outer: a pixel's is the outer's less the inner's, so only the band is visited. */
+static inline float span_cover(int i, double a, double b) { double c = fmin(i + 1, b) - fmax(i, a); return c > 0 ? (float)c : 0; }
+static bool ring_fill(gcanvas *v, CGRect outer, CGRect inner, gshader *sh, uint32_t argb, bool aa)
+{
+    CGAffineTransform m;
+    if ((sh && sh->kind != SH_LINEAR) || !blend_ok(v, &m)) return false;
+    gbitmap *b = v->bm;
+    float tx = 0, ty = 0, t0 = 0;
+    const uint32_t *lut = NULL;
+    int alpha = (int)(argb >> 24);
+    if (sh) {
+        CGAffineTransform full = CGAffineTransformConcat(CGAffineTransformConcat(sh->local, m), CGAffineTransformMake(1, 0, 0, -1, 0, b->h));
+        if (fabs(full.a * full.d - full.b * full.c) < 1e-12) return false;
+        CGAffineTransform inv = CGAffineTransformInvert(full);
+        float gx = sh->x1 - sh->x0, gy = sh->y1 - sh->y0, len2 = gx * gx + gy * gy;
+        if (len2 < 1e-9f) return false;
+        tx = (float)(inv.a * gx + inv.b * gy) / len2; ty = (float)(inv.c * gx + inv.d * gy) / len2;
+        t0 = (float)((inv.tx - sh->x0) * gx + (inv.ty - sh->y0) * gy) / len2;
+        if (!(lut = grad_lut(sh, alpha))) return false;
+    }
+    uint32_t inv_unused, s_full = premul(argb, 1, &inv_unused);
+    CGRect clip = clip_user(v);
+    if (CGRectIsNull(clip) || !alpha) return true;
+    CGRect cd = CGRectStandardize(CGRectApplyAffineTransform(clip, m));
+    CGRect bounds = CGRectIntersection(cd, CGRectMake(0, 0, b->w, b->h));
+    /* both rectangles in device space, cut to the clip's bounds, rows from the top */
+    double o[4], n[4] = { 0, 0, 0, 0 };     /* x0 x1 y0 y1 */
+    CGRect od = CGRectIntersection(CGRectStandardize(CGRectApplyAffineTransform(CGRectStandardize(outer), m)), bounds);
+    if (CGRectIsNull(od) || od.size.width <= 0 || od.size.height <= 0) return true;
+    o[0] = od.origin.x; o[1] = o[0] + od.size.width; o[2] = b->h - (od.origin.y + od.size.height); o[3] = b->h - od.origin.y;
+    bool hole = inner.size.width > 0 && inner.size.height > 0;
+    if (hole) {
+        CGRect id = CGRectIntersection(CGRectStandardize(CGRectApplyAffineTransform(CGRectStandardize(inner), m)), bounds);
+        hole = !CGRectIsNull(id) && id.size.width > 0 && id.size.height > 0;
+        if (hole) { n[0] = id.origin.x; n[1] = n[0] + id.size.width; n[2] = b->h - (id.origin.y + id.size.height); n[3] = b->h - id.origin.y; }
+    }
+    if (!aa) for (int k = 0; k < 4; k++) { o[k] = ceil(o[k] - 0.5); n[k] = ceil(n[k] - 0.5); }
+    int ix0 = (int)floor(o[0]), ix1 = (int)ceil(o[1]), iy0 = (int)floor(o[2]), iy1 = (int)ceil(o[3]);
+    if (ix0 < 0) ix0 = 0;
+    if (iy0 < 0) iy0 = 0;
+    if (ix1 > b->w) ix1 = b->w;
+    if (iy1 > b->h) iy1 = b->h;
+    if (ix0 >= ix1 || iy0 >= iy1) return true;
+    int mx0 = ix0, mx1 = ix1, my0 = iy0, my1 = iy1;
+    if (clip_need(v, ix0, ix1, iy0, iy1)) { if (!clip_box(v, &mx0, &mx1, &my0, &my1)) return true; }
+    else g_cc_on = false;
+    /* the hole's wholly covered columns: a row that is wholly in the hole leaves them alone */
+    int hx0 = hole ? (int)ceil(n[0]) : 0, hx1 = hole ? (int)floor(n[1]) : 0;
+    if (hx0 < mx0) hx0 = mx0;
+    if (hx1 > mx1) hx1 = mx1;
+    for (int j = my0; j < my1; j++) {
+        float cyo = span_cover(j, o[2], o[3]);
+        if (cyo <= 0) continue;
+        float cyi = hole ? span_cover(j, n[2], n[3]) : 0;
+        uint32_t *row = (uint32_t *)(b->px + (size_t)j * b->stride);
+        const uint8_t *mk = clip_at(v, mx0, j);
+        const uint8_t *m0 = mk ? mk - mx0 : NULL;
+        float tj = t0 + ty * (j + 0.5f);
+        /* a row in the hole top to bottom skips its middle */
+        bool skip = hole && cyi >= 0.999f && cyo >= 0.999f && hx1 > hx0;
+        for (int seg = 0; seg < (skip ? 2 : 1); seg++) {
+            int a = skip ? (seg ? hx1 : mx0) : mx0, z = skip ? (seg ? mx1 : hx0) : mx1;
+            for (int i = a; i < z; i++) {
+                float cov = span_cover(i, o[0], o[1]) * cyo - (hole ? span_cover(i, n[0], n[1]) * cyi : 0);
+                if (cov <= 0.002f) continue;
+                uint32_t k = cov >= 0.998f ? 255 : (uint32_t)lrintf(cov * 255);
+                if (m0) k = (k * m0[i] + 127) / 255;
+                if (!k) continue;
+                uint32_t c = lut ? lut[grad_index(tj + tx * (i + 0.5f), sh->tile)] : s_full;
+                if (k != 255) c = scale_px(c, k);
+                row[i] = over(row[i], c);
+            }
         }
     }
     g_gs_fast++;

@@ -33,6 +33,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.ColorFilter
@@ -72,6 +73,10 @@ class MainActivity : ComponentActivity() {
                                  topLeft = Offset(0f, size.height / 2), size = Size(size.width, size.height / 2))
                         drawRect(Brush.horizontalGradient(listOf(Color(0xFFE91E63), Color(0x802196F3), Color(0xFF4CAF50))),
                                  topLeft = Offset(0f, size.height * 0.62f), size = Size(size.width, 60f))
+                        // a border round the screen in a turning gradient, as DepCalc's gaming mode (a stroked rectangle)
+                        drawRect(Brush.linearGradient(listOf(Color.Red, Color.Yellow, Color.Green, Color.Cyan, Color.Blue, Color.Magenta, Color.Red),
+                                 start = Offset(0f, 0f), end = Offset(size.width, size.height)),
+                                 topLeft = Offset(12f, 12f), size = Size(size.width - 24f, size.height - 24f), style = Stroke(18.5f))
                     }
                     // text measured and laid out at heavy weights and large sizes, as DepCalc's titles; above, where it moves nothing
                     Column(Modifier.align(Alignment.TopStart).padding(top = 48.dp)) {
