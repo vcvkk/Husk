@@ -29,6 +29,7 @@ typedef struct husk_app_config {
     void (*set_clipboard)(const char *text);
     char *(*get_clipboard)(void);    /* malloc'd, or NULL */
     void (*share)(const char *text);
+    void (*pick_documents)(const char *mime_types, bool multiple);   /* the system's file picker; answer with husk_app_documents_picked */
     void (*vibrate)(int ms);
     void (*set_orientation)(int android_orientation);
     void (*exit)(void);
@@ -48,6 +49,7 @@ void husk_app_text_action(void);                  /* the keyboard's return key *
 void husk_app_text_hidden(void);                  /* the host's keyboard went away (the user closed it) */
 void husk_app_insets(int left, int top, int right, int bottom, int keyboard);
 void husk_app_vsync(void);                        /* the display refreshed (from any thread) */
+void husk_app_documents_picked(const char *const *paths, int n);   /* the file picker's answer: copies the app may read; none, cancelled */
 
 /* The latest frame the app drew, when there is a new one: premultiplied RGBA rows, 4 * w bytes
  * each, locked until husk_frame_done. *any is false when the app shows nothing. */

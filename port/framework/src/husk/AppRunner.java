@@ -29,7 +29,20 @@ public final class AppRunner {
     private static ClassLoader sLoader;
     /** The app's class loader, as Android gives every app: a PathClassLoader over its APK and splits. Its classes say they come from
      *  it (Class.getClassLoader), and resources in the APKs are found through it. */
-    public static ClassLoader classLoader() { return sLoader != null ? sLoader : AppRunner.class.getClassLoader(); }
+    public static ClassLoader classLoader() {
+        // a packer's stub may have put a loader over the app's real code into LoadedApk.mClassLoader: components come from it
+        ClassLoader swapped = android.app.LoadedApk.self().getClassLoader();
+        if (swapped != baseClassLoader() && swapped != sAdopted) {
+            sAdopted = swapped;
+            Native.setAppClassLoader(swapped);
+            Thread.currentThread().setContextClassLoader(swapped);
+            android.util.Log.d("Husk", "the app installed a class loader of its own: " + swapped);
+        }
+        return swapped;
+    }
+    private static ClassLoader sAdopted;
+    /** The loader the app was launched with (its APK and splits, or what its component factory gave). */
+    public static ClassLoader baseClassLoader() { return sLoader != null ? sLoader : AppRunner.class.getClassLoader(); }
     private static void installClassLoader() {
         try {
             StringBuilder path = new StringBuilder(Native.apkPath());
@@ -42,6 +55,31 @@ public final class AppRunner {
         } catch (Throwable t) { android.util.Log.w("Husk", "the app's class loader: " + t); }
     }
 
+    /** android:appComponentFactory, as LoadedApk uses it: it may replace the class loader, then makes the app's components.
+     *  Protectors decrypt the app's real code there ("Protected app component factory was not installed" otherwise), and
+     *  androidx's CoreComponentFactory builds components through it. DEFAULT when the manifest names none. */
+    private static android.app.AppComponentFactory sFactory = android.app.AppComponentFactory.DEFAULT;
+    private static void installComponentFactory() {
+        String f = Manifest.appComponentFactory;
+        // androidx's CoreComponentFactory only builds components the default way (most AndroidX apps name it): leave those apps
+        // on the path they have always taken
+        if (f == null || f.isEmpty() || f.equals("androidx.core.app.CoreComponentFactory")) return;
+        try {
+            sFactory = (android.app.AppComponentFactory) Class.forName(f, true, classLoader()).newInstance();
+            ClassLoader cl = sFactory.instantiateClassLoader(classLoader(), android.content.pm.ApplicationInfo.self());
+            if (cl != null && cl != classLoader()) {
+                sLoader = cl;
+                Native.setAppClassLoader(cl);
+                Thread.currentThread().setContextClassLoader(cl);
+                android.util.Log.d("Husk", "component factory " + f + " gave the app a class loader of its own");
+            }
+        } catch (Throwable t) {
+            android.util.Log.w("Husk", "component factory " + f + " did not start: " + t);
+            sFactory = android.app.AppComponentFactory.DEFAULT;
+        }
+    }
+    private static boolean usesFactory() { return sFactory != android.app.AppComponentFactory.DEFAULT; }
+
     public static void run(String activityClass, String applicationClass) throws Exception {
         android.webkit.MimeTypeMap.huskInstallDefault();
         KeyStoreProvider.install();
@@ -52,12 +90,18 @@ public final class AppRunner {
         if (Thread.getDefaultUncaughtExceptionHandler() == null) Thread.setDefaultUncaughtExceptionHandler(new UncaughtLogger());
         Manifest.read();
         installClassLoader();
+        installComponentFactory();
+        android.app.LoadedApk.self().huskSetClassLoader(baseClassLoader());
         ContextImpl base = ContextImpl.app();
         String appCls = applicationClass != null ? applicationClass : Manifest.applicationClass;
         Application app;
-        try { app = appCls != null ? (Application) Class.forName(appCls, true, classLoader()).newInstance() : new Application(); }
+        try {
+            if (appCls != null && usesFactory()) app = sFactory.instantiateApplication(classLoader(), appCls);
+            else app = appCls != null ? (Application) Class.forName(appCls, true, classLoader()).newInstance() : new Application();
+        }
         catch (ClassNotFoundException e) { android.util.Log.w("Husk", "no application class " + appCls); app = new Application(); }
         sApp = app;
+        android.app.ActivityThread.huskBind(app);
         Application.huskSet(app);
         ContextImpl.setApplication(app);
         app.huskAttach(base);
@@ -76,7 +120,23 @@ public final class AppRunner {
         launch(activityClass, main, null, -1, launcher);
         Looper.loop();
     }
-    public static Application application() { return sApp; }
+    public static Application application() { Application a = android.app.ActivityThread.currentActivityThread().huskInitialApplication(); return a != null ? a : sApp; }
+    /** LoadedApk.makeApplication: the app's Application class (or the plain one) made through the loader and attached, not created
+     *  (whoever asked calls onCreate, as Instrumentation.callApplicationOnCreate does). */
+    public static Application makeApplication(String cls, ClassLoader loader) {
+        Application app;
+        try {
+            if (cls == null || cls.isEmpty()) app = new Application();
+            else if (usesFactory()) app = sFactory.instantiateApplication(loader, cls);
+            else app = (Application) Class.forName(cls, true, loader).newInstance();
+        } catch (Throwable t) {
+            android.util.Log.w("Husk", "makeApplication " + cls + ": " + t);
+            app = new Application();
+        }
+        if (app.getBaseContext() == null) app.huskAttach(ContextImpl.app());
+        android.app.ActivityThread.currentActivityThread().huskAddApplication(app);
+        return app;
+    }
     static final class UncaughtLogger implements Thread.UncaughtExceptionHandler {
         public void uncaughtException(Thread t, Throwable e) {
             android.util.Log.e("AndroidRuntime", "FATAL EXCEPTION: " + t.getName(), e);
@@ -92,7 +152,8 @@ public final class AppRunner {
         for (Manifest.Component p : ordered) {
             if (!p.enabled) continue;
             try {
-                ContentProvider cp = (ContentProvider) Class.forName(p.name, true, classLoader()).newInstance();
+                ContentProvider cp = usesFactory() ? sFactory.instantiateProvider(classLoader(), p.name)
+                        : (ContentProvider) Class.forName(p.name, true, classLoader()).newInstance();
                 ProviderInfo info = new ProviderInfo();
                 info.name = p.name; info.authority = p.authorities; info.packageName = Native.packageName(); info.exported = p.exported; info.metaData = p.metaData; info.grantUriPermissions = p.grantUriPermissions;
                 info.applicationInfo = app.getApplicationInfo();
@@ -114,7 +175,7 @@ public final class AppRunner {
     static Activity launch(String cls, Intent intent, Activity caller, int request, Manifest.Component info) throws Exception {
         android.util.Log.d("Husk", "launch " + cls);
         Activity prev = top();
-        Activity a = (Activity) Class.forName(cls, true, classLoader()).newInstance();
+        Activity a = usesFactory() ? sFactory.instantiateActivity(classLoader(), cls, intent) : (Activity) Class.forName(cls, true, classLoader()).newInstance();
         ContextImpl base = ContextImpl.forActivity();
         a.huskAttach(base, sApp, intent, info, caller, request);
         if (prev != null && prev.isResumedHusk()) prev.huskPause();
@@ -178,6 +239,11 @@ public final class AppRunner {
         if (Intent.ACTION_SEND.equals(action)) {
             String text = i.getStringExtra(Intent.EXTRA_TEXT);
             if (text != null) Native.share(text);
+            return;
+        }
+        if (Documents.handles(i)) {
+            final Activity caller = from instanceof Activity ? (Activity) from : top();
+            sHandler.post(() -> Documents.pick(caller, i, request));
             return;
         }
         if ("android.intent.action.CHOOSER".equals(action)) { Intent inner = i.getParcelableExtra("android.intent.extra.INTENT"); if (inner != null) startActivity(from, inner, request, opts); return; }

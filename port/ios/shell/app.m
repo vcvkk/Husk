@@ -12,6 +12,7 @@
 // The log goes to Documents/husk-port.log (the Files app).
 #import <QuartzCore/QuartzCore.h>
 #import <UIKit/UIKit.h>
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -290,6 +291,75 @@ static char *GetClipboard(void)
     return s ? strdup(s.UTF8String) : NULL;
 }
 
+// ---- the system's file picker (husk.Documents: GET_CONTENT, OPEN_DOCUMENT, PICK): what the user picks is copied where the
+// app can read it by path long after the picker's access ends
+
+/* the document types for an intent's MIME types ("image/*,application/pdf"); anything unknown opens it to all files */
+static NSArray<UTType *> *ContentTypes(NSString *mimes)
+{
+    NSMutableArray<UTType *> *types = [NSMutableArray array];
+    for (NSString *raw in [mimes componentsSeparatedByString:@","]) {
+        NSString *m = [raw stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet].lowercaseString;
+        UTType *t = nil;
+        if (m.length == 0 || [m isEqualToString:@"*/*"]) return @[ UTTypeItem ];
+        else if ([m isEqualToString:@"image/*"]) t = UTTypeImage;
+        else if ([m isEqualToString:@"video/*"]) t = UTTypeMovie;
+        else if ([m isEqualToString:@"audio/*"]) t = UTTypeAudio;
+        else if ([m isEqualToString:@"text/*"]) t = UTTypeText;
+        else if ([m isEqualToString:@"application/*"]) t = UTTypeData;
+        else t = [UTType typeWithMIMEType:m];
+        if (!t) return @[ UTTypeItem ];
+        [types addObject:t];
+    }
+    return types.count ? types : @[ UTTypeItem ];
+}
+static void Picked(NSArray<NSString *> *paths)
+{
+    const char *c[paths.count ? paths.count : 1];
+    for (NSUInteger i = 0; i < paths.count; i++) c[i] = paths[i].UTF8String;
+    husk_app_documents_picked(c, (int)paths.count);
+}
+
+@interface PickerAnswer : NSObject <UIDocumentPickerDelegate>
+@end
+static PickerAnswer *gPicker;           /* the picker up, if any: its delegate is weak */
+@implementation PickerAnswer
+- (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls
+{
+    gPicker = nil;
+    NSFileManager *fm = NSFileManager.defaultManager;
+    NSURL *dir = [NSFileManager.defaultManager.temporaryDirectory URLByAppendingPathComponent:[@"picked" stringByAppendingPathComponent:NSUUID.UUID.UUIDString] isDirectory:YES];
+    [fm createDirectoryAtURL:dir withIntermediateDirectories:YES attributes:nil error:nil];
+    NSMutableArray<NSString *> *paths = [NSMutableArray array];
+    for (NSURL *u in urls) {
+        BOOL scoped = [u startAccessingSecurityScopedResource];
+        NSURL *dest = [dir URLByAppendingPathComponent:u.lastPathComponent];
+        NSError *e = nil;
+        if ([fm copyItemAtURL:u toURL:dest error:&e]) [paths addObject:dest.path];
+        else NSLog(@"husk-port: could not copy the picked %@: %@", u.lastPathComponent, e.localizedDescription);
+        if (scoped) [u stopAccessingSecurityScopedResource];
+    }
+    Picked(paths);
+}
+- (void)documentPickerWasCancelled:(UIDocumentPickerViewController *)controller { gPicker = nil; Picked(@[]); }
+@end
+
+static void PickDocuments(const char *mime_types, bool multiple)
+{
+    NSString *mimes = @(mime_types);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (gPicker) { Picked(@[]); return; }
+        UIViewController *top = UIApplication.sharedApplication.keyWindow.rootViewController;
+        while (top.presentedViewController && !top.presentedViewController.isBeingDismissed) top = top.presentedViewController;
+        if (!top) { Picked(@[]); return; }
+        UIDocumentPickerViewController *p = [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:ContentTypes(mimes) asCopy:NO];
+        p.allowsMultipleSelection = multiple;
+        gPicker = [PickerAnswer new];
+        p.delegate = gPicker;
+        [top presentViewController:p animated:YES completion:nil];
+    });
+}
+
 @interface AppDelegate : UIResponder <UIApplicationDelegate>
 @property(strong, nonatomic) UIWindow *window;
 @end
@@ -323,6 +393,7 @@ static char *GetClipboard(void)
         .set_clipboard = SetClipboard,
         .get_clipboard = GetClipboard,
         .show_keyboard = ShowKeyboard,
+        .pick_documents = PickDocuments,
         .vsync = true,                      // nextFrame: each refresh of the display link
         .refresh_rate = (float)screen.maximumFramesPerSecond,
     };

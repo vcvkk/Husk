@@ -391,6 +391,12 @@ static jstring N_getClipboard(JNIEnv *env, jclass c)
     return s;
 }
 static void N_share(JNIEnv *env, jclass c, jstring text) { (void)c; UTF(env, text, t, if (A.cfg.share && t) A.cfg.share(t)); }
+static void N_pickDocuments(JNIEnv *env, jclass c, jstring types, jboolean multiple)
+{
+    (void)c;
+    if (!A.cfg.pick_documents) { husk_app_documents_picked(NULL, 0); return; }   /* no picker here (host tests): the user backed out */
+    UTF(env, types, t, A.cfg.pick_documents(t ? t : "*/*", multiple != 0));
+}
 static void N_setOrientation(JNIEnv *env, jclass c, jint o) { (void)env; (void)c; if (A.cfg.set_orientation) A.cfg.set_orientation(o); }
 static jintArray N_insets(JNIEnv *env, jclass c)
 {
@@ -448,6 +454,7 @@ static const JNINativeMethod k_native[] = {
     { "setClipboard", "(Ljava/lang/String;)V", (void *)N_setClipboard },
     { "getClipboard", "()Ljava/lang/String;", (void *)N_getClipboard },
     { "share", "(Ljava/lang/String;)V", (void *)N_share },
+    { "pickDocuments", "(Ljava/lang/String;Z)V", (void *)N_pickDocuments },
     { "setOrientation", "(I)V", (void *)N_setOrientation },
     { "insets", "()[I", (void *)N_insets },
     { "nightMode", "()Z", (void *)N_nightMode },
@@ -512,6 +519,12 @@ void husk_app_text(const char *utf8) { if (utf8 && *utf8) text_push("t", utf8); 
 void husk_app_text_delete(void) { text_push("d", NULL); }
 void husk_app_text_action(void) { text_push("e", NULL); }
 void husk_app_text_hidden(void) { text_push("h", NULL); }
+/* husk.Documents: "f<path>" each file picked, then "F" */
+void husk_app_documents_picked(const char *const *paths, int n)
+{
+    for (int i = 0; i < n; i++) if (paths[i] && *paths[i]) text_push("f", paths[i]);
+    text_push("F", NULL);
+}
 void husk_app_insets(int l, int t, int r, int b, int ime)
 {
     A.insets[0] = l; A.insets[1] = t; A.insets[2] = r; A.insets[3] = b; A.insets[4] = ime;
