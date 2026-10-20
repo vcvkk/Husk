@@ -3,7 +3,8 @@ name: An APK on macOS
 # Runs an app other than the test app on the macOS test host, under lldb so a crash leaves its
 # backtrace: the runtime and boot image come from a run of "ART runtime on Darwin", the app's
 # compiled code (an app/ folder as macos.tgz has it, packed as a .tgz) from a URL. tests/run-apk.env says
-# which: RUN_ID, APP_URL, SECONDS; a push changing it runs this.
+# which: RUN_ID, APP_URL, SECONDS, and HOST_ARGS (taps, typing) and PROFILE_AT (a CPU profile) if wanted; a push
+# changing it runs this.
 
 on:
   push:
@@ -30,8 +31,11 @@ jobs:
           tar -xzf build/darwin-runtime.tgz -C build
           mkdir -p build/app && tar -xzf build/macos.tgz -C build/app
           rm -rf build/app/app
+          # APP_URL: one URL, or the parts of the .tgz in order (file hosts take only so much at once)
           for i in 1 2 3 4 5; do   # the file host answers a busy page now and then
-            curl -sSL -A 'Mozilla/5.0' "${{ env.APP_URL }}" -o build/app.tgz && gzip -t build/app.tgz 2>/dev/null && break
+            rm -f build/app.tgz
+            for u in ${{ env.APP_URL }}; do curl -sSL -A 'Mozilla/5.0' "$u" >> build/app.tgz; done
+            gzip -t build/app.tgz 2>/dev/null && break
             echo "download $i: $(head -c 200 build/app.tgz | tr -cd '[:print:]')"; sleep $((i * 10))
           done
           tar -xzf build/app.tgz -C build/app
@@ -53,9 +57,16 @@ jobs:
             -o 'settings set platform.plugin.darwin.ignored-exceptions EXC_BAD_ACCESS|EXC_BAD_INSTRUCTION|EXC_ARITHMETIC' \
             -o run -k 'thread backtrace all' -k 'register read' -k 'image list' \
             -- build/fw/mac-host --art "$PWD/build/app/boot" --apk "$PWD/build/app/app/base.apk" --fwres "$PWD/build/app/app/framework-res.apk" \
-            --seconds ${{ env.SECONDS }} --frames build/frames > build/app-run.log 2>&1
+            --seconds ${{ env.SECONDS }} --frames build/frames ${{ env.HOST_ARGS }} > build/app-run.log 2>&1 &
+          run=$!
+          # a CPU profile while the app runs (PROFILE_AT seconds in): where a frame's time goes, by function
+          if [ -n "${{ env.PROFILE_AT }}" ]; then
+            sleep ${{ env.PROFILE_AT }}; pid=$(pgrep -n mac-host) && sample $pid 5 -mayDie -file build/sample.txt > /dev/null 2>&1
+          fi
+          wait $run
           echo "exit $?"
           tr -d '\000' < build/app-run.log | grep -av 'not in a known location\|Overlapping/invalid range\|FrameStats' | tail -250
+          grep -a FrameStats build/app-run.log | tail -60 || true
           ls ~/Library/Logs/DiagnosticReports 2>/dev/null | tail
       - uses: actions/upload-artifact@v4
         if: always()
@@ -64,4 +75,5 @@ jobs:
           path: |
             build/frames
             build/app-run.log
+            build/sample.txt
           if-no-files-found: ignore
