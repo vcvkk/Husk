@@ -125,7 +125,16 @@ bool shim_register(JNIEnv *env, const char *cls, const JNINativeMethod *m, int n
     jclass c = (*env)->FindClass(env, cls);
     if (!c) { (*env)->ExceptionClear(env); tl_log_line("husk-port: no class %s for its natives", cls); return false; }
     bool ok = (*env)->RegisterNatives(env, c, m, n) == 0;
-    if (!ok) { (*env)->ExceptionDescribe(env); (*env)->ExceptionClear(env); }
+    if (!ok) {
+        /* ART takes all or none: one method the class lacks (a framework jar older than the natives) and none are
+           registered. Each on its own then, so only what is missing is missing. */
+        (*env)->ExceptionClear(env);
+        for (int i = 0; i < n; i++)
+            if ((*env)->RegisterNatives(env, c, &m[i], 1) != 0) {
+                (*env)->ExceptionClear(env);
+                tl_log_line("husk-port: %s has no %s%s for its native", cls, m[i].name, m[i].signature);
+            }
+    }
     (*env)->DeleteLocalRef(env, c);
     return ok;
 }
