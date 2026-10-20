@@ -345,9 +345,6 @@ public class View implements Drawable.Callback, KeyEvent.Callback {
     /* the window is the parent only of its own root view (a removed view that still remembers the window has none) */
     public final ViewParent getParent() { return mParent != null ? mParent : mRoot != null && mRoot.getView() == this ? mRoot : null; }
     // husk-port: members apps call that the main line left out (ART links strictly)
-    /** The time the frame being drawn started: what animations drawn in it are timed by. */
-    public long getDrawingTime() { return android.os.SystemClock.uptimeMillis(); }
-    public void cancelLongPress() {}
     public ViewParent getParentForAccessibility() { return getParent(); }
     public View getRootView() { View v = this; while (v.mParent != null) v = v.mParent; return v; }
     public boolean isAttachedToWindow() { return mRoot != null; }
