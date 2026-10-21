@@ -49,7 +49,8 @@ void husk_app_text_action(void);                  /* the keyboard's return key *
 void husk_app_text_hidden(void);                  /* the host's keyboard went away (the user closed it) */
 void husk_app_insets(int left, int top, int right, int bottom, int keyboard);
 void husk_app_vsync(void);                        /* the display refreshed (from any thread) */
-void husk_app_documents_picked(const char *const *paths, int n);   /* the file picker's answer: copies the app may read; none, cancelled */
+void husk_app_documents_picked(const char *const *paths, int n);
+void husk_app_audio_paused(bool paused);          /* the app is off screen (or a call took the sound): silence, the clock stopped */   /* the file picker's answer: copies the app may read; none, cancelled */
 
 /* The latest frame the app drew, when there is a new one: premultiplied RGBA rows, 4 * w bytes
  * each, locked until husk_frame_done. *any is false when the app shows nothing. */

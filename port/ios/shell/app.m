@@ -13,6 +13,7 @@
 #import <QuartzCore/QuartzCore.h>
 #import <UIKit/UIKit.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+#import <AVFoundation/AVFoundation.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -398,6 +399,17 @@ static void PickDocuments(const char *mime_types, bool multiple)
         .refresh_rate = (float)screen.maximumFramesPerSecond,
     };
     husk_app_configure(&cfg);
+    // sound as an Android app's media: heard with the ring/silent switch on silent, alongside other apps' music
+    AVAudioSession *session = AVAudioSession.sharedInstance;
+    [session setCategory:AVAudioSessionCategoryPlayback withOptions:AVAudioSessionCategoryOptionMixWithOthers error:nil];
+    [session setActive:YES error:nil];
+    // a call or an alarm stops the output; it starts again when they are over
+    [NSNotificationCenter.defaultCenter addObserverForName:AVAudioSessionInterruptionNotification object:session queue:NSOperationQueue.mainQueue
+                                                usingBlock:^(NSNotification *n) {
+        bool began = [n.userInfo[AVAudioSessionInterruptionTypeKey] unsignedIntegerValue] == AVAudioSessionInterruptionTypeBegan;
+        if (!began) [AVAudioSession.sharedInstance setActive:YES error:nil];
+        husk_app_audio_paused(began);
+    }];
     UIEdgeInsets i = self.window.safeAreaInsets;
     gInsets[0] = (int)(i.left * scale); gInsets[1] = (int)(i.top * scale); gInsets[2] = (int)(i.right * scale); gInsets[3] = (int)(i.bottom * scale);
     SendInsets();
@@ -412,6 +424,9 @@ static void PickDocuments(const char *mime_types, bool multiple)
     pthread_create(&t, &attr, AppMain, NULL);
     return YES;
 }
+// off screen (the app switcher, the lock screen, Control Center): no sound until it is back
+- (void)applicationWillResignActive:(UIApplication *)app { husk_app_audio_paused(true); }
+- (void)applicationDidBecomeActive:(UIApplication *)app { husk_app_audio_paused(false); }
 @end
 
 int main(int argc, char *argv[])

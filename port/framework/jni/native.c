@@ -477,6 +477,7 @@ static const JNINativeMethod k_sensors[] = {
 bool husk_register_gfx(JNIEnv *env);   /* gfx_jni.c, from gen-jni.py */
 bool husk_register_sqlite(JNIEnv *env);   /* sqlite.c */
 bool husk_register_web(JNIEnv *env);      /* web_jni.m, from gen-jni.py */
+bool husk_register_audio(JNIEnv *env);    /* audio_jni.c, from gen-jni.py */
 
 bool husk_framework_register(JNIEnv *env)
 {
@@ -484,6 +485,7 @@ bool husk_framework_register(JNIEnv *env)
     ok &= shim_register(env, "husk/Sensors", k_sensors, (int)(sizeof k_sensors / sizeof *k_sensors));
     ok &= husk_register_sqlite(env);
     ok &= husk_register_web(env);
+    ok &= husk_register_audio(env);
     return husk_register_gfx(env) && ok;
 }
 
