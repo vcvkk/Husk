@@ -552,3 +552,7 @@ bool tl_ui_frame_take(const uint8_t **px, int *w, int *h, bool *any);
 void tl_ui_frame_done(void);
 bool husk_frame_take(const uint8_t **px, int *w, int *h, bool *any) { return tl_ui_frame_take(px, w, h, any); }
 void husk_frame_done(void) { tl_ui_frame_done(); }
+bool tl_ui_frame_hold(const uint8_t **px, int *w, int *h, bool *any, int *token);
+void tl_ui_frame_release(int token);
+bool husk_frame_hold(const uint8_t **px, int *w, int *h, bool *any, int *token) { return tl_ui_frame_hold(px, w, h, any, token); }
+void husk_frame_release(int token) { tl_ui_frame_release(token); }

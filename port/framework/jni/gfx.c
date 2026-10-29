@@ -811,6 +811,86 @@ static inline const uint8_t *clip_at(const gcanvas *v, int x, int y)
     return g_clipcov + (size_t)(y - g_cc_y0) * g_cc_w + (x - g_cc_x0);
 }
 
+/* ---- par_rows: a big draw's rows shared out among a few threads (the iPhone has six cores; a frame drew on one). The rows go
+ * in chunks taken in turn, so the efficiency cores' slower chunks do not hold up the rest; the caller takes its share and waits
+ * for the others. Small draws (under ~200 thousand pixels) stay on the calling thread: the hand-off would cost more. */
+#include <sys/sysctl.h>
+typedef void (^rows_blk)(int j0, int j1);
+static struct {
+    pthread_mutex_t mu, busy;
+    pthread_cond_t go, done;
+    int workers, active, y0, y1, chunk, nchunks;
+    _Atomic int next;
+    rows_blk blk;
+    uint64_t gen;
+    bool tried;
+} P = { .mu = PTHREAD_MUTEX_INITIALIZER, .busy = PTHREAD_MUTEX_INITIALIZER, .go = PTHREAD_COND_INITIALIZER, .done = PTHREAD_COND_INITIALIZER };
+static void par_take(rows_blk blk, int y0, int y1, int chunk, int nchunks)
+{
+    for (;;) {
+        int k = atomic_fetch_add(&P.next, 1);
+        if (k >= nchunks) return;
+        int a = y0 + k * chunk, z = a + chunk < y1 ? a + chunk : y1;
+        if (a < z) blk(a, z);
+    }
+}
+static void *par_worker(void *arg)
+{
+    (void)arg;
+    pthread_setname_np("husk-raster");
+    pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+    uint64_t seen = 0;
+    pthread_mutex_lock(&P.mu);
+    for (;;) {
+        while (P.gen == seen) pthread_cond_wait(&P.go, &P.mu);
+        seen = P.gen;
+        rows_blk blk = P.blk; int y0 = P.y0, y1 = P.y1, chunk = P.chunk, nch = P.nchunks;
+        pthread_mutex_unlock(&P.mu);
+        par_take(blk, y0, y1, chunk, nch);
+        pthread_mutex_lock(&P.mu);
+        if (--P.active == 0) pthread_cond_signal(&P.done);
+    }
+    return NULL;
+}
+static bool par_init(void)
+{
+    if (P.tried) return P.workers > 0;
+    P.tried = true;
+    int n = 0; size_t sz = sizeof n;
+    if (sysctlbyname("hw.activecpu", &n, &sz, NULL, 0) != 0) n = 1;
+    const char *e = getenv("HUSK_RASTER_THREADS");
+    if (e) n = atoi(e) + 1;
+    n = n - 1; if (n > 3) n = 3; if (n < 0) n = 0;
+    for (int i = 0; i < n; i++) {
+        pthread_t t; pthread_attr_t at; pthread_attr_init(&at);
+        if (pthread_create(&t, &at, par_worker, NULL) == 0) P.workers++;
+        pthread_attr_destroy(&at);
+    }
+    if (P.workers) tl_log_line("gfx: %d raster threads besides the drawing one", P.workers);
+    return P.workers > 0;
+}
+/* blk(j0, j1) for rows y0 .. y1 (px: about how many pixels in all), the rows split among the threads; back when all are done */
+static void par_rows(int64_t px, int y0, int y1, rows_blk blk)
+{
+    if (y1 <= y0) return;
+    if (px < 200000 || y1 - y0 < 32 || !par_init() || pthread_mutex_trylock(&P.busy) != 0) { blk(y0, y1); return; }
+    int nch = (P.workers + 1) * 4, rows = y1 - y0;
+    int chunk = (rows + nch - 1) / nch;
+    if (chunk < 8) chunk = 8;
+    nch = (rows + chunk - 1) / chunk;
+    pthread_mutex_lock(&P.mu);
+    P.blk = blk; P.y0 = y0; P.y1 = y1; P.chunk = chunk; P.nchunks = nch;
+    atomic_store(&P.next, 0);
+    P.active = P.workers; P.gen++;
+    pthread_cond_broadcast(&P.go);
+    pthread_mutex_unlock(&P.mu);
+    par_take(blk, y0, y1, chunk, nch);
+    pthread_mutex_lock(&P.mu);
+    while (P.active) pthread_cond_wait(&P.done, &P.mu);
+    pthread_mutex_unlock(&P.mu);
+    pthread_mutex_unlock(&P.busy);
+}
+
 static inline uint32_t over(uint32_t d, uint32_t s)
 {
     uint32_t inv = 255 - (s >> 24);       /* no branches: inv 0 gives s, 255 gives d, and the loop vectorises */
@@ -893,7 +973,8 @@ static bool blend_fill(gcanvas *v, CGRect r, uint32_t argb, bool aa)
         int mx0 = ix0, mx1 = ix1, my0 = iy0, my1 = iy1;
         if (!clip_box(v, &mx0, &mx1, &my0, &my1)) return true;
         uint32_t cl8 = (uint32_t)lrintf(cl * 255), cr8 = (uint32_t)lrintf(cr * 255);
-        for (int j = my0; j < my1; j++) {
+        par_rows((int64_t)(mx1 - mx0) * (my1 - my0), my0, my1, ^(int j0_, int j1_) {
+        for (int j = j0_; j < j1_; j++) {
             float cy = (float)(fmin(j + 1, y1) - fmax(j, y0));
             if (cy <= 0) continue;
             uint32_t *row = (uint32_t *)(b->px + (size_t)j * b->stride);
@@ -914,9 +995,11 @@ static bool blend_fill(gcanvas *v, CGRect r, uint32_t argb, bool aa)
             if (le && ix0 >= mx0) row[ix0] = over(row[ix0], scale_px(sf, (((cy8 * cl8 + 127) / 255) * m0[ix0] + 127) / 255));
             if (re && ix1 - 1 < mx1) row[ix1 - 1] = over(row[ix1 - 1], scale_px(sf, (((cy8 * cr8 + 127) / 255) * m0[ix1 - 1] + 127) / 255));
         }
+        });
         return true;
     }
-    for (int j = iy0; j < iy1; j++) {
+    par_rows((int64_t)(ix1 - ix0) * (iy1 - iy0), iy0, iy1, ^(int j0_, int j1_) {
+    for (int j = j0_; j < j1_; j++) {
         float cy = (float)(fmin(j + 1, y1) - fmax(j, y0));
         if (cy <= 0) continue;
         uint32_t *row = (uint32_t *)(b->px + (size_t)j * b->stride);
@@ -926,6 +1009,7 @@ static bool blend_fill(gcanvas *v, CGRect r, uint32_t argb, bool aa)
         if (le) { uint32_t i2, s2 = premul(argb, cy * cl, &i2); blend_run(row + ix0, 1, s2, i2); }
         if (re) { uint32_t i2, s2 = premul(argb, cy * cr, &i2); blend_run(row + ix1 - 1, 1, s2, i2); }
     }
+    });
     return true;
 }
 
@@ -1570,9 +1654,11 @@ NAT(G_bmErase)
     if (!b) return true;
     uint8_t px[4]; from_argb(px, (uint32_t)a[1].i);
     uint32_t v; memcpy(&v, px, 4);
-    uint32_t *d = (uint32_t *)b->px;
-    size_t n = (size_t)b->w * b->h;
-    if (!v) memset(d, 0, n * 4); else for (size_t i = 0; i < n; i++) d[i] = v;
+    int w = b->w; size_t stride = b->stride; uint8_t *base = b->px;
+    par_rows((int64_t)b->w * b->h, 0, b->h, ^(int j0, int j1) {
+        if (!v && stride == (size_t)w * 4) { memset(base + (size_t)j0 * stride, 0, (size_t)(j1 - j0) * stride); return; }
+        for (int j = j0; j < j1; j++) { uint32_t *d = (uint32_t *)(base + (size_t)j * stride); for (int i = 0; i < w; i++) d[i] = v; }
+    });
     return true;
 }
 NAT(G_bmGetPixel)
@@ -1972,7 +2058,8 @@ static bool grad_fill(gcanvas *v, CGRect r, gshader *s, uint32_t argb, bool aa)
     if (cr8 < 255 && ix1 - 1 < mx1 && ix1 - 1 >= fx0) fx1 = ix1 - 1;
     /* a gradient along y alone (the usual scrim) is one colour a row */
     bool rowwise = fabsf(tx) * (float)(ix1 - ix0) < 0.5f / 255;
-    for (int j = my0; j < my1; j++) {
+    par_rows((int64_t)(mx1 - mx0) * (my1 - my0), my0, my1, ^(int j0_, int j1_) {
+    for (int j = j0_; j < j1_; j++) {
         float cy = (float)(fmin(j + 1, y1) - fmax(j, y0));
         if (cy <= 0) continue;
         uint32_t cy8 = cy >= 0.999f ? 255 : (uint32_t)lrintf(cy * 255);
@@ -2003,6 +2090,7 @@ static bool grad_fill(gcanvas *v, CGRect r, gshader *s, uint32_t argb, bool aa)
             row[i] = over(row[i], scale_px(lut[grad_index(tj + tx * (i + 0.5f), tile)], k));
         }
     }
+    });
     g_gs_fast++;
     return true;
 }
@@ -2066,10 +2154,12 @@ static bool ring_fill(gcanvas *v, CGRect outer, CGRect inner, gshader *sh, uint3
     if (hx0 < mx0) hx0 = mx0;
     if (hx1 > mx1) hx1 = mx1;
     int tile = sh ? sh->tile : 0;
-    for (int j = my0; j < my1; j++) {
-        float cyo = span_cover(j, o[2], o[3]);
+    const double *O = o, *N = n;
+    par_rows((int64_t)(mx1 - mx0) * (my1 - my0) / 8, my0, my1, ^(int j0_, int j1_) {
+    for (int j = j0_; j < j1_; j++) {
+        float cyo = span_cover(j, O[2], O[3]);
         if (cyo <= 0) continue;
-        float cyi = hole ? span_cover(j, n[2], n[3]) : 0;
+        float cyi = hole ? span_cover(j, N[2], N[3]) : 0;
         uint32_t *row = (uint32_t *)(b->px + (size_t)j * b->stride);
         const uint8_t *mk = clip_at(v, mx0, j);
         const uint8_t *m0 = mk ? mk - mx0 : NULL;
@@ -2090,6 +2180,7 @@ static bool ring_fill(gcanvas *v, CGRect outer, CGRect inner, gshader *sh, uint3
             }
         }
     }
+    });
     g_gs_fast++;
     return true;
 }
@@ -2124,7 +2215,8 @@ static bool rrect_fill(gcanvas *v, CGRect r, float rx, float ry, uint32_t argb, 
     /* Each row: the pixels it wholly covers (one coverage, the row's: blended as a run), the ones it may partly cover (each its
      * own, from the distance to the corner's ellipse), none past them. A circle is corner rows top to bottom: it was a square
      * root and a division a pixel, over all of it (Compose's round buttons, 20 of them on a calculator). */
-    for (int j = Y0; j < Y1; j++) {
+    par_rows((int64_t)(X1 - X0) * (Y1 - Y0), Y0, Y1, ^(int j0_, int j1_) {
+    for (int j = j0_; j < j1_; j++) {
         uint32_t *row = (uint32_t *)(b->px + (size_t)j * b->stride);
         const uint8_t *mk = clip_at(v, X0, j);
         const uint8_t *m0 = mk ? mk - X0 : NULL;
@@ -2170,6 +2262,7 @@ static bool rrect_fill(gcanvas *v, CGRect r, float rx, float ry, uint32_t argb, 
             }
         }
     }
+    });
     return true;
 }
 
@@ -2442,9 +2535,10 @@ static bool blit_(gcanvas *v, gbitmap *src, float sl, float st, float sr, float 
     ca = 255 - ca;                          /* premul gave 255 - alpha */
     if (clip_need(v, ix0, ix1, iy0, iy1)) {
         if (!clip_box(v, &ix0, &ix1, &iy0, &iy1)) return true;
+        par_rows((int64_t)(ix1 - ix0) * (iy1 - iy0), iy0, iy1, ^(int j0_, int j1_) {
         uint32_t *tmp = malloc((size_t)(ix1 - ix0) * 4);
-        if (!tmp) return true;
-        for (int j = iy0; j < iy1; j++) {
+        if (!tmp) return;
+        for (int j = j0_; j < j1_; j++) {
             /* the row as it would blend, then each pixel through the mask */
             const uint32_t *sr0 = img + (size_t)(j - by0) * istride + (ix0 - bx0);
             const uint8_t *mk = clip_at(v, ix0, j);
@@ -2458,14 +2552,17 @@ static bool blit_(gcanvas *v, gbitmap *src, float sl, float st, float sr, float 
             for (int i = 0; i < ix1 - ix0; i++) d[i] = over(d[i], scale_px(tmp[i], mk[i]));
         }
         free(tmp);
+        });
         return true;
     }
-    for (int j = iy0; j < iy1; j++) {
+    par_rows((int64_t)(ix1 - ix0) * (iy1 - iy0), iy0, iy1, ^(int j0_, int j1_) {
+    for (int j = j0_; j < j1_; j++) {
         uint32_t *d = (uint32_t *)(b->px + (size_t)j * b->stride) + ix0;
         const uint32_t *sr0 = img + (size_t)(j - by0) * istride + (ix0 - bx0);
         if (cf < 0) over_run(d, sr0, ix1 - ix0, ga);
         else over_run_cf(d, sr0, ix1 - ix0, ga, cf, cp, ca);
     }
+    });
     return true;
 }
 
@@ -2561,13 +2658,45 @@ NAT(G_cvDrawText)
 }
 
 /* ---- text measuring: (String, int start, int end, int[] paint, long typeface, ...) */
+/* txMeasure's answers kept: Compose measures the same labels every frame (60 a frame on DepCalc's calculator), and CoreText laid
+ * each out again. Keyed by the characters and what of the paint sets a width: size, scale, skew, spacing, flags, the face. */
+typedef struct { uint64_t h; int32_t key[6]; int64_t face; uint16_t *chars; int n; float w; } mcache;
+static mcache g_mc[2048];
+static pthread_mutex_t g_mc_lock = PTHREAD_MUTEX_INITIALIZER;
 NAT(G_txMeasure)
 {
     (void)self;
+    int32_t len = 0;
+    const uint16_t *all = a[0].l ? tl_dvm_string_chars(a[0].l, &len) : NULL;
+    int st = a[1].i, en = a[2].i;
+    const int32_t *pp = paint_of(a[3].l);
+    mcache *e = NULL; uint64_t mh = 0;
+    if (all && st >= 0 && en <= len && en > st && en - st <= 256) {
+        int32_t key[6] = { pp[P_TEXTSIZE], pp[P_SCALEX], pp[P_SKEWX], pp[P_LSPACE], pp[P_FLAGS], 0 };
+        uint64_t h = 1469598103934665603ull ^ (uint64_t)a[4].j;
+        for (int i = st; i < en; i++) h = (h ^ all[i]) * 1099511628211ull;
+        for (int i = 0; i < 5; i++) h = (h ^ (uint32_t)key[i]) * 1099511628211ull;
+        e = &g_mc[h & 2047];
+        pthread_mutex_lock(&g_mc_lock);
+        bool hit = e->chars && e->h == h && e->n == en - st && e->face == a[4].j && !memcmp(e->key, key, sizeof key)
+            && !memcmp(e->chars, all + st, (size_t)(en - st) * 2);
+        float hw = e->w;
+        if (!hit) {
+            free(e->chars);
+            e->chars = malloc((size_t)(en - st) * 2);
+            if (e->chars) { memcpy(e->chars, all + st, (size_t)(en - st) * 2); e->h = h; e->n = en - st; e->face = a[4].j; memcpy(e->key, key, sizeof key); e->w = NAN; }
+        }
+        pthread_mutex_unlock(&g_mc_lock);
+        if (hit && !isnan(hw)) { *ret = Ff(hw); return true; }
+        if (!hit && !e->chars) e = NULL;
+        mh = h;
+    }
     CFStringRef s = cfstr(a[0].l, a[1].i, a[2].i);
     const int32_t *p = paint_of(a[3].l);
     CTLineRef line = make_line(s, p, (gface *)(uintptr_t)a[4].j);
-    *ret = Ff(line_width(line, p));
+    float w = line_width(line, p);
+    if (e) { pthread_mutex_lock(&g_mc_lock); if (e->h == mh) e->w = w; pthread_mutex_unlock(&g_mc_lock); }
+    *ret = Ff(w);
     CFRelease(line); CFRelease(s);
     return true;
 }
@@ -2849,14 +2978,19 @@ NAT(G_pathLength)
 
 /* ================================================================== the frame on screen */
 
+/* A few buffers the frames go round: the host holds the one it shows (and Core Animation the one before, until it lets go)
+ * while the next is drawn into another; nothing is copied twice, nor waits on the other side's lock while it copies. */
+#define NFB 4
 static struct {
     pthread_mutex_t lock;
-    uint8_t *px; int w, h;          /* the latest frame the view system drew */
+    uint8_t *buf[NFB]; int bw[NFB], bh[NFB];
+    int refs[NFB];                  /* the host's holds on each */
+    int cur;                        /* the latest frame's buffer, -1 none */
     atomic_bool fresh;
     atomic_bool any;
-} S = { .lock = PTHREAD_MUTEX_INITIALIZER };
+} S = { .lock = PTHREAD_MUTEX_INITIALIZER, .cur = -1 };
 
-/* husk.Native.present(long bitmap): the window's views, drawn; the GL thread puts them on screen. */
+/* husk.Native.present(long bitmap): the window's views, drawn; the host puts them on screen. */
 NAT(G_present)
 {
     (void)self; (void)ret;
@@ -2864,23 +2998,50 @@ NAT(G_present)
     gbitmap *b = H(gbitmap, 0);
     if (!b) { atomic_store(&S.any, false); atomic_store(&S.fresh, true); return true; }
     pthread_mutex_lock(&S.lock);
-    if (S.w != b->w || S.h != b->h) { free(S.px); S.px = malloc(b->stride * (size_t)b->h); S.w = b->w; S.h = b->h; }
-    memcpy(S.px, b->px, b->stride * (size_t)b->h);
+    int k = -1;
+    for (int i = 0; i < NFB && k < 0; i++) if (i != S.cur && !S.refs[i]) k = i;
+    if (k < 0) { pthread_mutex_unlock(&S.lock); return true; }     /* all held: the host is behind, this frame is skipped */
+    if (S.bw[k] != b->w || S.bh[k] != b->h) { free(S.buf[k]); S.buf[k] = malloc((size_t)b->w * 4 * (size_t)b->h); S.bw[k] = b->w; S.bh[k] = b->h; }
+    uint8_t *dst = S.buf[k];
+    pthread_mutex_unlock(&S.lock);
+    if (!dst) return true;
+    /* no one takes a buffer that is neither the latest nor held: it is filled without the lock */
+    size_t row = (size_t)b->w * 4, stride = b->stride; const uint8_t *src = b->px;
+    par_rows((int64_t)b->w * b->h, 0, b->h, ^(int j0, int j1) {
+        if (stride == row) memcpy(dst + (size_t)j0 * row, src + (size_t)j0 * row, (size_t)(j1 - j0) * row);
+        else for (int j = j0; j < j1; j++) memcpy(dst + (size_t)j * row, src + (size_t)j * stride, row);
+    });
+    pthread_mutex_lock(&S.lock);
+    S.cur = k;
     pthread_mutex_unlock(&S.lock);
     atomic_store(&S.any, true);
     atomic_store(&S.fresh, true);
     return true;
 }
 
-/* For the GL thread: when there is a new frame, its pixels (locked until tl_ui_frame_done). */
-bool tl_ui_frame_take(const uint8_t **px, int *w, int *h, bool *any)
+/* For the host: when there is a new frame, its pixels (w * 4 bytes a row), held until tl_ui_frame_release(token) */
+bool tl_ui_frame_hold(const uint8_t **px, int *w, int *h, bool *any, int *token)
 {
     if (!atomic_exchange(&S.fresh, false)) return false;
     pthread_mutex_lock(&S.lock);
-    *px = S.px; *w = S.w; *h = S.h; *any = atomic_load(&S.any);
+    int k = S.cur;
+    if (k >= 0) { S.refs[k]++; *px = S.buf[k]; *w = S.bw[k]; *h = S.bh[k]; } else { *px = NULL; *w = *h = 0; }
+    *any = atomic_load(&S.any) && k >= 0;
+    *token = k;
+    pthread_mutex_unlock(&S.lock);
     return true;
 }
-void tl_ui_frame_done(void) { pthread_mutex_unlock(&S.lock); }
+void tl_ui_frame_release(int token)
+{
+    if (token < 0 || token >= NFB) return;
+    pthread_mutex_lock(&S.lock);
+    if (S.refs[token] > 0) S.refs[token]--;
+    pthread_mutex_unlock(&S.lock);
+}
+/* the same, one at a time (the GL thread, the test host) */
+static int g_held = -1;
+bool tl_ui_frame_take(const uint8_t **px, int *w, int *h, bool *any) { return tl_ui_frame_hold(px, w, h, any, &g_held); }
+void tl_ui_frame_done(void) { tl_ui_frame_release(g_held); g_held = -1; }
 bool tl_ui_has_frame(void) { return atomic_load(&S.any); }
 
 static const struct { const char *name, *sig; dvm_native_fn fn; } k_gfx[] = {

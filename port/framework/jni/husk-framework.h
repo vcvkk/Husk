@@ -57,5 +57,9 @@ void husk_app_audio_paused(bool paused);          /* the app is off screen (or a
  * each, locked until husk_frame_done. *any is false when the app shows nothing. */
 bool husk_frame_take(const uint8_t **px, int *w, int *h, bool *any);
 void husk_frame_done(void);
+/* The same without a lock: the frame is held (still the app's, w * 4 bytes a row) until husk_frame_release(token), from any
+ * thread -- a CGImage over it lets go when Core Animation is done with it. The app draws on into other buffers meanwhile. */
+bool husk_frame_hold(const uint8_t **px, int *w, int *h, bool *any, int *token);
+void husk_frame_release(int token);
 
 #endif

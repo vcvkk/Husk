@@ -97,23 +97,26 @@ static void FrameStat(double t0, double t1)
     }
 }
 
+static void ReleaseFrame(void *info, const void *data, size_t size) { (void)data; (void)size; husk_frame_release((int)(intptr_t)info); }
+
 - (void)nextFrame:(CADisplayLink *)link
 {
     husk_app_vsync();                       // the app's Choreographer draws its next frame now, when it wants one
     const uint8_t *px; int w, h; bool any;
     if (gStats) gStatTicks++;
     double t0 = gStats ? CACurrentMediaTime() : 0;
-    if (!husk_frame_take(&px, &w, &h, &any)) return;
+    int token;
+    if (!husk_frame_hold(&px, &w, &h, &any, &token)) return;
     CGImageRef img = NULL;
     if (any && w > 0 && h > 0) {
-        CFDataRef d = CFDataCreate(NULL, px, (CFIndex)w * h * 4);   // the frame stays the app's
-        CGDataProviderRef p = CGDataProviderCreateWithCFData(d);
+        // the frame's own buffer, not a copy: given back when Core Animation lets go of the image
+        CGDataProviderRef p = CGDataProviderCreateWithData((void *)(intptr_t)token, px, (size_t)w * h * 4, ReleaseFrame);
         CGColorSpaceRef cs = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
         img = CGImageCreate((size_t)w, (size_t)h, 8, 32, (size_t)w * 4, cs,
                             kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big, p, NULL, false, kCGRenderingIntentDefault);
-        CGColorSpaceRelease(cs); CGDataProviderRelease(p); CFRelease(d);
-    }
-    husk_frame_done();
+        CGColorSpaceRelease(cs); CGDataProviderRelease(p);
+        if (!img) husk_frame_release(token);
+    } else husk_frame_release(token);
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     self.layer.contents = (__bridge id)img;
