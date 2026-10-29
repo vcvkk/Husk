@@ -26,9 +26,10 @@ rm -f "$OUT/libhusknative.a"
 nm -gU "${objs[@]}" 2>/dev/null | awk 'NF>=3 {print $3}' | sort -u > "$OUT/defined.txt"
 nm -gu "${objs[@]}" 2>/dev/null | grep -v ':$' | awk '{print $NF}' | sort -u > "$OUT/used.txt"
 comm -23 "$OUT/used.txt" "$OUT/defined.txt" > "$OUT/undefined-all.txt"
-# the system's own (libSystem, frameworks) are fine: check against a link
-"${CC[@]}" -dynamiclib -o "$OUT/probe.dylib" "${objs[@]}" -lz -framework CoreFoundation -framework Security -undefined dynamic_lookup 2>/dev/null || true
-nm -u "$OUT/probe.dylib" 2>/dev/null | sort -u > "$OUT/undefined.txt" || true
+# a real link: what is still missing, by name (the system's libraries and frameworks given)
+"${CC[@]}" -dynamiclib -o "$OUT/probe.dylib" "${objs[@]}" -lz -lc++ -framework CoreFoundation -framework Security -framework Foundation \
+    2> "$OUT/link.log" || true
+grep -o '"_[^"]*"' "$OUT/link.log" | sort -u > "$OUT/undefined.txt" || true
 echo "objects: ${#objs[@]}, compile failures: $fail"
-echo "undefined after link (dynamic_lookup):"; cat "$OUT/undefined.txt" | grep -v "^_\(OS\|CF\|Sec\|dispatch\|os_\|_\)" | head -300
+echo "undefined at link: $(wc -l < "$OUT/undefined.txt")"; cat "$OUT/undefined.txt"
 exit $fail
