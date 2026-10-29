@@ -489,6 +489,22 @@ static const JNINativeMethod k_sensors[] = {
     { "stop", "(I)V", (void *)S_stop }, { "read", "(I[F)J", (void *)S_read }, { "battery", "()I", (void *)S_battery },
 };
 
+/* husk.EGLNative: OpenGL ES is not part of this port yet (the main line's is ANGLE over Metal). An app's own EGL gets no context
+ * (EGL_NO_CONTEXT, as a device without the API would answer) and goes on without GL: Telegram's intro shows without its animation. */
+static jlong E_createContext(JNIEnv *env, jclass c, jint version, jlong share) { (void)env; (void)c; (void)version; (void)share; return 0; }
+static void E_destroy(JNIEnv *env, jclass c, jlong h) { (void)env; (void)c; (void)h; }
+static jlong E_createSurface(JNIEnv *env, jclass c, jint w, jint h) { (void)env; (void)c; (void)w; (void)h; return 0; }
+static jboolean E_makeCurrent(JNIEnv *env, jclass c, jlong s, jlong x) { (void)env; (void)c; (void)s; (void)x; return JNI_FALSE; }
+static jboolean E_swap(JNIEnv *env, jclass c, jlong s, jlong x, jint a, jint b, jint w, jint h) { (void)env; (void)c; (void)s; (void)x; (void)a; (void)b; (void)w; (void)h; return JNI_FALSE; }
+static jboolean E_isRenderThread(JNIEnv *env, jclass c) { (void)env; (void)c; return JNI_FALSE; }
+static void E_hide(JNIEnv *env, jclass c) { (void)env; (void)c; }
+static const JNINativeMethod k_egl[] = {
+    { "createContext", "(IJ)J", (void *)E_createContext }, { "destroyContext", "(J)V", (void *)E_destroy },
+    { "createSurface", "(II)J", (void *)E_createSurface }, { "destroySurface", "(J)V", (void *)E_destroy },
+    { "makeCurrent", "(JJ)Z", (void *)E_makeCurrent }, { "swap", "(JJIIII)Z", (void *)E_swap },
+    { "isRenderThread", "()Z", (void *)E_isRenderThread }, { "hide", "()V", (void *)E_hide },
+};
+
 bool husk_register_gfx(JNIEnv *env);   /* gfx_jni.c, from gen-jni.py */
 bool husk_register_sqlite(JNIEnv *env);   /* sqlite.c */
 bool husk_register_web(JNIEnv *env);      /* web_jni.m, from gen-jni.py */
@@ -504,6 +520,7 @@ bool husk_framework_register(JNIEnv *env)
     ok &= husk_register_web(env);
     ok &= husk_register_audio(env);
     ok &= husk_register_nativelibs(env);
+    ok &= shim_register(env, "husk/EGLNative", k_egl, (int)(sizeof k_egl / sizeof *k_egl));
     husk_native_libs_configure(A.cfg.apk, A.cfg.native_dir);
     return husk_register_gfx(env) && ok;
 }
