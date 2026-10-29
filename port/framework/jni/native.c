@@ -126,6 +126,7 @@ void husk_app_configure(const husk_app_config *cfg)
     A.cfg.data = dup_or_empty(cfg->data);
     A.cfg.external = dup_or_empty(cfg->external);
     A.cfg.package = dup_or_empty(cfg->package);
+    A.cfg.native_dir = cfg->native_dir ? strdup(cfg->native_dir) : NULL;   /* the host's string goes with its autorelease pool */
     if (!zip_open(&A.apk, A.cfg.apk)) tl_log_line("husk-port: cannot read the APK %s", A.cfg.apk);
 }
 
