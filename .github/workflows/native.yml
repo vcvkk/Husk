@@ -1,0 +1,21 @@
+name: Native libraries layer
+
+# Builds port/native (the guest linker, bionic and JIT-less dylibs from Husk's main line) for macOS and iOS: what does not
+# compile, and what it still needs from outside.
+
+on:
+  push:
+    branches: [husk-port]
+    paths: ['port/native/**', '.github/workflows/native.yml']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: macOS
+        run: port/native/build.sh macos build/native-mac || true
+      - name: iOS
+        run: port/native/build.sh ios build/native-ios
