@@ -79,7 +79,9 @@ bool husk_vm_start(const char *art, const char *data_dir, const char *const *ext
     snprintf(image, sizeof image, "-Ximage:%s/boot.art", art);
     snprintf(bcp, sizeof bcp, "-Xbootclasspath:%s", jars);
     snprintf(bcl, sizeof bcl, "-Xbootclasspath-locations:%s", locations);
-    const char *base[] = { "-Xusejit:false", image, bcp, bcl, "-Xss8m" };
+    /* the heap: as large as Android gives an app that asks for android:largeHeap (Telegram does), whatever the app asks -- a
+     * limit, not memory taken; 256 MiB ran out under exteraGram */
+    const char *base[] = { "-Xusejit:false", image, bcp, bcl, "-Xss8m", "-Xmx512m", "-XX:HeapGrowthLimit=512m" };
     int n = (int)(sizeof base / sizeof *base);
     /* art/vm.options, if there: more options, one a line (-Dwolfjsse.debug=true and the like, for a diagnostic build), and
      * env:NAME=VALUE lines for the environment (env:TL_VIEW_DUMP=1: the framework's view dumps) */
