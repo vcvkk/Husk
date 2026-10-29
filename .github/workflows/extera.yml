@@ -44,7 +44,7 @@ jobs:
           bcp=$(tr ':' '\n' < "$B/boot.classpath" | sed "s|^/boot/|$B/jars/|" | paste -sd: -)
           mkdir -p build/android-data/dalvik-cache
           ANDROID_DATA="$PWD/build/android-data" dex2oat --runtime-arg -Xbootclasspath:"$bcp" \
-            --runtime-arg -Xbootclasspath-locations:"$(cat "$B/boot.classpath")" --runtime-arg -Xmx2g \
+            --runtime-arg -Xbootclasspath-locations:"$(cat "$B/boot.classpath")" --runtime-arg -Xmx1g \
             --boot-image="$B/boot.art" --instruction-set=arm64 --class-loader-context='PCL[]' \
             --dex-file="$A/base.apk" --dex-location=base.apk --oat-file="$A/oat/arm64/base.odex" > build/d2o.log 2>&1 || true
           grep -av 'shutting_down\|Unexpected register location' build/d2o.log | head -60
