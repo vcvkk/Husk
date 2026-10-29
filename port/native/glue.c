@@ -26,10 +26,15 @@ bool tl_vk_available(void) { return false; }
 void (*tl_cocos_audio_hook)(const int16_t *samples, int frames, int channels, int rate);
 /* the JIT region StikDebug (or the debugged process itself) made at launch (ios/husk-ios-jit.c, husk_app_jit_prewarm) */
 typedef struct { uint8_t *rw_addr, *rx_addr; size_t size; } husk_mapping;
-husk_mapping *husk_ios_jit_get_mapping(void) __attribute__((weak));   /* the phone's only (husk-ios-jit.c has none on a Mac) */
+#include <TargetConditionals.h>
+#if TARGET_OS_IPHONE
+husk_mapping *husk_ios_jit_get_mapping(void);
+#else
+static husk_mapping *husk_ios_jit_get_mapping(void) { return NULL; }   /* a Mac makes its own (husk-tl-xmem.c) */
+#endif
 tl_dual_mapping *tl_find_stikdebug_prewarmed(void)
 {
-    husk_mapping *m = husk_ios_jit_get_mapping ? husk_ios_jit_get_mapping() : NULL;
+    husk_mapping *m = husk_ios_jit_get_mapping();
     if (!m || !m->rw_addr || !m->rx_addr) return NULL;
     static tl_dual_mapping d;
     d.rw_addr = m->rw_addr; d.rx_addr = m->rx_addr; d.size = m->size;
