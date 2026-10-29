@@ -128,11 +128,10 @@ void husk_app_run(JNIEnv *env)
         husk_app_set_package(p);
         (*env)->ReleaseStringUTFChars(env, pkg, p);
     }
-    jobject launcher = (*env)->CallStaticObjectMethod(env, manifest,
-        (*env)->GetStaticMethodID(env, manifest, "launcher", "()Lhusk/Manifest$Component;"));
-    if (!check(env, "Manifest.launcher") || !launcher) { tl_log_line("husk-port: the app has no launcher activity"); return; }
-    jclass component = (*env)->GetObjectClass(env, launcher);
-    jstring activity = (*env)->GetObjectField(env, launcher, (*env)->GetFieldID(env, component, "name", "Ljava/lang/String;"));
+    /* the class the launcher's entry starts (an alias's target) */
+    jstring activity = (*env)->CallStaticObjectMethod(env, manifest,
+        (*env)->GetStaticMethodID(env, manifest, "launcherClass", "()Ljava/lang/String;"));
+    if (!check(env, "Manifest.launcherClass") || !activity) { tl_log_line("husk-port: the app has no launcher activity"); return; }
     const char *a = (*env)->GetStringUTFChars(env, activity, NULL);
     tl_log_line("husk-port: starting %s", a);
     (*env)->ReleaseStringUTFChars(env, activity, a);

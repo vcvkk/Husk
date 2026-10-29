@@ -147,11 +147,25 @@ public final class Manifest {
         } catch (Exception e) { android.util.Log.e("Husk", "the manifest could not be read", e); }
     }
     public static Component activity(String cls) { read(); for (Component c : activities) if (c.name.equals(cls)) return c; return null; }
+    /** The launcher's entry: an enabled one first, as the launcher shows only those (exteraGram's icons are aliases, all but one
+     *  disabled: android:enabled="false"), MAIN and LAUNCHER before LAUNCHER alone. */
     public static Component launcher() {
         read();
-        for (Component c : activities) for (Filter f : c.filters) if (f.categories.contains("android.intent.category.LAUNCHER") && f.actions.contains("android.intent.action.MAIN")) return c;
-        for (Component c : activities) for (Filter f : c.filters) if (f.categories.contains("android.intent.category.LAUNCHER")) return c;
+        for (int pass = 0; pass < 4; pass++) {
+            boolean enabledOnly = pass < 2, needMain = (pass & 1) == 0;
+            for (Component c : activities) {
+                if (enabledOnly && !c.enabled) continue;
+                for (Filter f : c.filters)
+                    if (f.categories.contains("android.intent.category.LAUNCHER") && (!needMain || f.actions.contains("android.intent.action.MAIN"))) return c;
+            }
+        }
         return activities.isEmpty() ? null : activities.get(0);
+    }
+    /** The class the launcher's entry starts: an alias's target activity (an alias is no class). */
+    public static String launcherClass() {
+        Component c = launcher();
+        if (c == null) return null;
+        return "activity-alias".equals(c.kind) && c.parentActivity != null ? c.parentActivity : c.name;
     }
     /** The services (or receivers) of this app an intent names or whose filters take it. */
     public static java.util.List<Component> match(java.util.List<Component> list, android.content.Intent i) {
