@@ -12,7 +12,7 @@ on:
 
 jobs:
   dlopen:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -36,7 +36,7 @@ jobs:
   # ART's heap must be below 4 GiB (32-bit references); a Mach-O program's
   # __PAGEZERO covers that range unless it is linked smaller
   low4g:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4

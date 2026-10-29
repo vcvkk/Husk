@@ -17,7 +17,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -273,7 +273,7 @@ jobs:
 
   image:
     needs: [build, boot]
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -334,7 +334,7 @@ jobs:
   # the runtime for iOS: the same build against the iPhone SDK and libraries built for it
   # (port/art/darwin/ios-deps.sh), keeping going past errors to list them
   ios:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -446,7 +446,7 @@ jobs:
   # Hello as an iOS app: unsigned for a sideloading tool to sign (Feather and the like)
   ipa:
     needs: [ios, boot]
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -589,7 +589,7 @@ jobs:
   # the app on macOS, no window: its frames as PNG files
   app-mac:
     needs: [build, app-boot]
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -640,7 +640,7 @@ jobs:
   # the Compose app as an iOS app: unsigned for a sideloading tool to sign
   app-ipa:
     needs: [ios, app-boot]
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4

@@ -80,7 +80,7 @@ jobs:
   # Silicon, signed as an app would sign them, and check what ART relies on.
   darwin:
     needs: art
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
