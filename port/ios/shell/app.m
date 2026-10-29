@@ -361,6 +361,24 @@ static void PickDocuments(const char *mime_types, bool multiple)
     });
 }
 
+/* the battery as BatteryManager has it: level | status << 8 (2 charging, 3 discharging, 5 full) | plugged << 16 (2 USB) */
+static int Battery(void)
+{
+    __block int r = -1;
+    void (^get)(void) = ^{
+        UIDevice *d = UIDevice.currentDevice;
+        d.batteryMonitoringEnabled = YES;
+        float lvl = d.batteryLevel;
+        if (lvl < 0) return;
+        UIDeviceBatteryState s = d.batteryState;
+        int status = s == UIDeviceBatteryStateCharging ? 2 : s == UIDeviceBatteryStateFull ? 5 : 3;
+        int plugged = s == UIDeviceBatteryStateCharging || s == UIDeviceBatteryStateFull ? 2 : 0;
+        r = (int)lroundf(lvl * 100) | status << 8 | plugged << 16;
+    };
+    if (NSThread.isMainThread) get(); else dispatch_sync(dispatch_get_main_queue(), get);
+    return r;
+}
+
 @interface AppDelegate : UIResponder <UIApplicationDelegate>
 @property(strong, nonatomic) UIWindow *window;
 @end
@@ -395,6 +413,7 @@ static void PickDocuments(const char *mime_types, bool multiple)
         .get_clipboard = GetClipboard,
         .show_keyboard = ShowKeyboard,
         .pick_documents = PickDocuments,
+        .battery = Battery,
         .vsync = true,                      // nextFrame: each refresh of the display link
         .refresh_rate = (float)screen.maximumFramesPerSecond,
     };

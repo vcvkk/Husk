@@ -7,6 +7,7 @@
  */
 #define _DARWIN_C_SOURCE
 #include "husk-framework.h"
+#include <CoreFoundation/CoreFoundation.h>
 
 #include <fcntl.h>
 #include <pthread.h>
@@ -406,6 +407,18 @@ static jintArray N_insets(JNIEnv *env, jclass c)
     return a;
 }
 static jboolean N_nightMode(JNIEnv *env, jclass c) { (void)env; (void)c; return A.cfg.night_mode; }
+/* the phone's clock: 12-hour when its locale's hour pattern ("j") has an am/pm marker */
+static jboolean N_is24Hour(JNIEnv *env, jclass c)
+{
+    (void)env; (void)c;
+    CFLocaleRef loc = CFLocaleCopyCurrent();
+    CFStringRef f = CFDateFormatterCreateDateFormatFromTemplate(NULL, CFSTR("j"), 0, loc);
+    bool h24 = !f || CFStringFind(f, CFSTR("a"), 0).location == kCFNotFound;
+    if (f) CFRelease(f);
+    CFRelease(loc);
+    return h24;
+}
+static jint S_battery(JNIEnv *env, jclass c) { (void)env; (void)c; return A.cfg.battery ? A.cfg.battery() : -1; }
 static void N_vibrate(JNIEnv *env, jclass c, jlong ms) { (void)env; (void)c; if (A.cfg.vibrate) A.cfg.vibrate((int)ms); }
 static void N_openUrl(JNIEnv *env, jclass c, jstring url)
 {
@@ -458,6 +471,7 @@ static const JNINativeMethod k_native[] = {
     { "setOrientation", "(I)V", (void *)N_setOrientation },
     { "insets", "()[I", (void *)N_insets },
     { "nightMode", "()Z", (void *)N_nightMode },
+    { "is24Hour", "()Z", (void *)N_is24Hour },
     { "vibrate", "(J)V", (void *)N_vibrate },
     { "openUrl", "(Ljava/lang/String;)V", (void *)N_openUrl },
     { "exit", "()V", (void *)N_exit },
@@ -471,7 +485,7 @@ static void S_stop(JNIEnv *env, jclass c, jint type) { (void)env; (void)c; (void
 static jlong S_read(JNIEnv *env, jclass c, jint type, jfloatArray v) { (void)env; (void)c; (void)type; (void)v; return 0; }
 static const JNINativeMethod k_sensors[] = {
     { "available", "(I)Z", (void *)S_available }, { "start", "(II)V", (void *)S_start },
-    { "stop", "(I)V", (void *)S_stop }, { "read", "(I[F)J", (void *)S_read },
+    { "stop", "(I)V", (void *)S_stop }, { "read", "(I[F)J", (void *)S_read }, { "battery", "()I", (void *)S_battery },
 };
 
 bool husk_register_gfx(JNIEnv *env);   /* gfx_jni.c, from gen-jni.py */
