@@ -42,10 +42,12 @@ jobs:
           rm -rf build/ex; mkdir -p "$A/oat/arm64"
           cp build/app.apk "$A/base.apk"; cp build/mac/app/framework-res.apk "$A/"
           bcp=$(tr ':' '\n' < "$B/boot.classpath" | sed "s|^/boot/|$B/jars/|" | paste -sd: -)
+          mkdir -p build/android-data/dalvik-cache
           ANDROID_DATA="$PWD/build/android-data" dex2oat --runtime-arg -Xbootclasspath:"$bcp" \
             --runtime-arg -Xbootclasspath-locations:"$(cat "$B/boot.classpath")" --runtime-arg -Xmx2g \
             --boot-image="$B/boot.art" --instruction-set=arm64 --class-loader-context='PCL[]' \
-            --dex-file="$A/base.apk" --dex-location=base.apk --oat-file="$A/oat/arm64/base.odex" 2>&1 | tail -20
+            --dex-file="$A/base.apk" --dex-location=base.apk --oat-file="$A/oat/arm64/base.odex" > build/d2o.log 2>&1 || true
+          grep -av 'shutting_down\|Unexpected register location' build/d2o.log | head -60
           cc -std=c11 -O1 tools/oat2macho.c -o build/oat2macho
           build/oat2macho --macos "$A/oat/arm64/base.odex" "$A/oat/arm64/base.odex.dylib"
           tar -czf build/extera-macos.tgz -C build/ex app
