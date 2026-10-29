@@ -5,7 +5,7 @@
  * the name the linker looks for in the folder tl_ld_set_aot_dir names (the app's Frameworks). Unsigned: the IPA's signing signs
  * them with the app. Runs on a Mac (the linker maps the library the way it would at run time).
  *
- *   so2dylib OUT_DIR lib1.so [lib2.so ...]
+ *   so2dylib [--macos] OUT_DIR lib1.so [lib2.so ...]      (--macos: for the Mac test host, run with TL_NO_XMEM and TL_AOT_DIR)
  */
 #include <errno.h>
 #include <stdarg.h>
@@ -43,7 +43,9 @@ static uint8_t *slurp(const char *path, size_t *n)
 
 int main(int argc, char **argv)
 {
-    if (argc < 3) { fprintf(stderr, "usage: so2dylib OUT_DIR lib.so...\n"); return 2; }
+    bool ios = true;
+    if (argc > 1 && !strcmp(argv[1], "--macos")) { ios = false; argv++; argc--; }
+    if (argc < 3) { fprintf(stderr, "usage: so2dylib [--macos] OUT_DIR lib.so...\n"); return 2; }
     mkdir(argv[1], 0755);
     int failed = 0;
     for (int i = 2; i < argc; i++) {
@@ -54,7 +56,7 @@ int main(int argc, char **argv)
         tl_aot_file_name(name, sizeof(name), tl_aot_hash(data, n), base);
         snprintf(out, sizeof(out), "%s/%s", argv[1], name);
         tl_ld_aot_image info;
-        if (tl_aot_make_dylib(base, data, n, out, true, &info, err, sizeof(err)))
+        if (tl_aot_make_dylib(base, data, n, out, ios, &info, err, sizeof(err)))
             printf("so2dylib: %s -> %s (%zu KiB of image, %zu pages copied)\n", base, name, info.size >> 10, info.n_mixed);
         else { fprintf(stderr, "so2dylib: %s: %s\n", base, err); failed++; }
         free(data);

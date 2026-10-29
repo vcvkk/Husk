@@ -112,6 +112,18 @@ jobs:
           for f in build/app/boot/arm64/*.dylib build/app/app/oat/arm64/*.dylib; do codesign -s - -f "$f"; done
       - name: Natives and the test host
         run: port/framework/build-natives.sh macos build/fw build/darwin/include/nativehelper "$PWD/build/darwin/lib"
+      # NOJIT=1: as on a phone with no JIT (iOS 26 without a debugger): no executable memory, the libraries from macOS dylibs made
+      # ahead of time as the IPA's are (tools/so2dylib.c --macos), signed
+      - name: Its libraries made ahead of time
+        if: env.NOJIT == '1'
+        run: |
+          mkdir -p build/so && unzip -qo -j build/app/app/base.apk 'lib/arm64-v8a/*.so' -d build/so
+          xcrun --sdk macosx clang -O1 -g -I port/native/tl -Dtl_jni_call=tln_jni_call -Dtl_jni_get_field=tln_jni_get_field \
+            -Dtl_jni_ref=tln_jni_ref -Dtl_jni_pending=tln_jni_pending -Dtl_jni_clear=tln_jni_clear -Wno-everything \
+            tools/so2dylib.c port/native/tl/*.c port/native/glue.c -o build/so2dylib -lz -framework CoreFoundation -framework Security
+          build/so2dylib --macos build/aot-mac build/so/*.so 2>&1 | grep -v "^ld:" | tail -30
+          for f in build/aot-mac/*.dylib; do codesign -s - -f "$f"; done
+          echo "TL_NO_XMEM=1" >> "$GITHUB_ENV"; echo "TL_AOT_DIR=$PWD/build/aot-mac" >> "$GITHUB_ENV"
       - name: Run it under lldb
         run: |
           set +e
