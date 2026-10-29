@@ -1,0 +1,113 @@
+name: exteraGram on macOS
+
+# exteraGram (Telegram with Python plugins: nearly all of it native libraries) on the macOS test host, under lldb so a crash
+# leaves its backtrace. The APK is not in the repository: the compile job takes it from Google Drive (tests/extera.env's
+# DRIVE_ID) and compiles it on a run's boot image (RUN_ID); the run job runs it, its libraries through the guest linker
+# (port/native: on a Mac with executable memory, as on a phone with JIT). A push changing tests/extera.env runs this.
+
+on:
+  push:
+    branches: [husk-port]
+    paths: ['tests/extera.env']
+
+jobs:
+  compile:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: What to run
+        run: grep -v '^#' tests/extera.env >> "$GITHUB_ENV"
+      - name: Packages
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libbsd-dev libelf-dev libicu-dev libssl-dev libexpat1-dev zip liblz4-dev liblzma-dev libcap-dev zlib1g-dev clang
+      - uses: actions/cache/restore@v4
+        with:
+          path: build/prefix
+          key: art-prefix-${{ runner.arch }}-${{ hashFiles('port/art/patches/**', 'port/art/build.sh', 'port/art/dx-via-d8', 'port/art/vixl-meson.patch') }}
+      - name: ART
+        run: port/art/ci-install.sh
+      - uses: actions/download-artifact@v4
+        with: { name: app-macos, path: build/run, run-id: '${{ env.RUN_ID }}', github-token: '${{ github.token }}' }
+      - name: The APK, compiled
+        run: |
+          mkdir -p build/mac && tar -xzf build/run/macos.tgz -C build/mac
+          for i in 1 2 3 4 5; do
+            curl -sSL -o build/app.apk "https://drive.usercontent.google.com/download?id=$DRIVE_ID&export=download&confirm=t" && unzip -tq build/app.apk > /dev/null 2>&1 && break
+            echo "download $i: not an APK"; sleep $((i * 10))
+          done
+          B="$PWD/build/mac/boot"; A="$PWD/build/ex/app"
+          rm -rf build/ex; mkdir -p "$A/oat/arm64"
+          cp build/app.apk "$A/base.apk"; cp build/mac/app/framework-res.apk "$A/"
+          bcp=$(tr ':' '\n' < "$B/boot.classpath" | sed "s|^/boot/|$B/jars/|" | paste -sd: -)
+          ANDROID_DATA="$PWD/build/android-data" dex2oat --runtime-arg -Xbootclasspath:"$bcp" \
+            --runtime-arg -Xbootclasspath-locations:"$(cat "$B/boot.classpath")" --runtime-arg -Xmx2g \
+            --boot-image="$B/boot.art" --instruction-set=arm64 --class-loader-context='PCL[]' \
+            --dex-file="$A/base.apk" --dex-location=base.apk --oat-file="$A/oat/arm64/base.odex" 2>&1 | tail -20
+          cc -std=c11 -O1 tools/oat2macho.c -o build/oat2macho
+          build/oat2macho --macos "$A/oat/arm64/base.odex" "$A/oat/arm64/base.odex.dylib"
+          tar -czf build/extera-macos.tgz -C build/ex app
+          ls -la build/extera-macos.tgz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extera-macos
+          path: build/extera-macos.tgz
+          retention-days: 3
+
+  run:
+    needs: compile
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: What to run
+        run: grep -v '^#' tests/extera.env >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with: { name: darwin-runtime, path: build, run-id: '${{ env.RUN_ID }}', github-token: '${{ github.token }}' }
+      - uses: actions/download-artifact@v4
+        with: { name: app-macos, path: build, run-id: '${{ env.RUN_ID }}', github-token: '${{ github.token }}' }
+      - uses: actions/download-artifact@v4
+        with: { name: ComposeHello-ipa, path: build/ipa, run-id: '${{ env.RUN_ID }}', github-token: '${{ github.token }}' }
+      - uses: actions/download-artifact@v4
+        with: { name: extera-macos, path: build }
+      - name: Unpack, the app in place of the test app, sign the compiled code
+        run: |
+          brew install lz4 xz icu4c openssl@3 epoll-shim > /dev/null 2>&1 || true
+          tar -xzf build/darwin-runtime.tgz -C build
+          mkdir -p build/app && tar -xzf build/macos.tgz -C build/app
+          rm -rf build/app/app && tar -xzf build/extera-macos.tgz -C build/app
+          (cd build/ipa && unzip -q ComposeHello.ipa 'Payload/*/art/etc/*') && cp -R build/ipa/Payload/*/art/etc build/app/boot/
+          for f in build/app/boot/arm64/*.dylib build/app/app/oat/arm64/*.dylib; do codesign -s - -f "$f"; done
+      - name: Natives and the test host
+        run: port/framework/build-natives.sh macos build/fw build/darwin/include/nativehelper "$PWD/build/darwin/lib"
+      - name: Run it under lldb
+        run: |
+          set +e
+          mkdir -p build/frames
+          export HUSK_FRAME_STATS=1 HUSK_AUDIO_STATS=1
+          unset JAVA_HOME
+          perl -e 'alarm shift; exec @ARGV' $(( SECONDS + 60 )) lldb --batch \
+            -o 'process handle SIGSEGV -s false -p true -n false' -o 'process handle SIGBUS -s false -p true -n false' \
+            -o 'process handle SIGTRAP -s false -p true -n false' -o 'process handle SIGILL -s false -p true -n false' \
+            -o 'settings set target.process.stop-on-exec false' \
+            -o 'settings set platform.plugin.darwin.ignored-exceptions EXC_BAD_ACCESS|EXC_BAD_INSTRUCTION|EXC_ARITHMETIC|EXC_BREAKPOINT' \
+            -o run -k 'thread backtrace all' -k 'register read' \
+            -- build/fw/mac-host --art "$PWD/build/app/boot" --apk "$PWD/build/app/app/base.apk" --fwres "$PWD/build/app/app/framework-res.apk" \
+            --seconds $SECONDS --frames build/frames $HOST_ARGS > build/app-run.log 2>&1 &
+          run=$!
+          if [ -n "$PROFILE_AT" ]; then sleep $PROFILE_AT; pid=$(pgrep -n mac-host) && sample $pid 5 -mayDie -file build/sample.txt > /dev/null 2>&1; fi
+          wait $run
+          echo "exit $?"
+          tr -d '\000' < build/app-run.log | grep -av 'not in a known location\|Overlapping/invalid range\|FrameStats' | tail -300
+          grep -a FrameStats build/app-run.log | tail -40 || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: extera-run
+          path: |
+            build/frames
+            build/app-run.log
+            build/sample.txt
+          if-no-files-found: ignore
+          retention-days: 3
