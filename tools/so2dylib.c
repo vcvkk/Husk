@@ -23,6 +23,12 @@ void tl_log_line(const char *fmt, ...)
     va_list ap; va_start(ap, fmt); vfprintf(stderr, fmt, ap); va_end(ap); fputc('\n', stderr);
 }
 
+/* jnigraphics' functions the bionic tables name: the framework's at run time (gfx.c), never called while converting */
+int tl_AndroidBitmap_getInfo(void *env, void *bitmap, void *info) { (void)env; (void)bitmap; (void)info; return -1; }
+int tl_AndroidBitmap_lockPixels(void *env, void *bitmap, void **addr) { (void)env; (void)bitmap; (void)addr; return -1; }
+int tl_AndroidBitmap_unlockPixels(void *env, void *bitmap) { (void)env; (void)bitmap; return -1; }
+int32_t tl_AndroidBitmap_getDataSpace(void *env, void *bitmap) { (void)env; (void)bitmap; return 0; }
+
 static uint8_t *slurp(const char *path, size_t *n)
 {
     FILE *f = fopen(path, "rb");

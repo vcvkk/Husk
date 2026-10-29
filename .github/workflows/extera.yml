@@ -58,6 +58,34 @@ jobs:
           path: build/extera-macos.tgz
           retention-days: 3
 
+  # its libraries as iOS dylibs made ahead of time (tools/so2dylib.c), for a phone with no JIT: the IPA carries them in Frameworks
+  aot:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: What to convert
+        run: grep -v '^#' tests/extera.env >> "$GITHUB_ENV"
+      - name: Libraries for iOS without JIT
+        run: |
+          mkdir -p build/so build/aot
+          for i in 1 2 3 4 5; do
+            curl -sSL -o build/app.apk "https://drive.usercontent.google.com/download?id=$DRIVE_ID&export=download&confirm=t" && unzip -tq build/app.apk > /dev/null 2>&1 && break
+            sleep $((i * 10))
+          done
+          unzip -qo -j build/app.apk 'lib/arm64-v8a/*.so' -d build/so
+          xcrun --sdk macosx clang -O1 -g -I port/native/tl -Dtl_jni_call=tln_jni_call -Dtl_jni_get_field=tln_jni_get_field \
+            -Dtl_jni_ref=tln_jni_ref -Dtl_jni_pending=tln_jni_pending -Dtl_jni_clear=tln_jni_clear -Wno-everything \
+            tools/so2dylib.c port/native/tl/*.c port/native/glue.c -o build/so2dylib -lz -framework CoreFoundation -framework Security
+          build/so2dylib build/aot build/so/*.so 2>&1 | grep -v "^ld:" | tail -40
+          tar -czf build/extera-aot.tgz -C build aot
+          ls -la build/extera-aot.tgz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extera-aot
+          path: build/extera-aot.tgz
+          retention-days: 3
+
   run:
     needs: compile
     runs-on: macos-15
@@ -104,25 +132,6 @@ jobs:
           echo "exit $?"
           tr -d '\000' < build/app-run.log | grep -av 'not in a known location\|Overlapping/invalid range\|FrameStats' | tail -300
           grep -a FrameStats build/app-run.log | tail -40 || true
-      # its libraries as iOS dylibs made ahead of time (tools/so2dylib.c), for a phone with no JIT: the IPA carries them in Frameworks
-      - name: Libraries for iOS without JIT
-        if: always()
-        run: |
-          mkdir -p build/so build/aot
-          unzip -qo -j build/app/app/base.apk 'lib/arm64-v8a/*.so' -d build/so
-          xcrun --sdk macosx clang -O1 -g -I port/native/tl -Dtl_jni_call=tln_jni_call -Dtl_jni_get_field=tln_jni_get_field \
-            -Dtl_jni_ref=tln_jni_ref -Dtl_jni_pending=tln_jni_pending -Dtl_jni_clear=tln_jni_clear -Wno-everything \
-            tools/so2dylib.c port/native/tl/*.c port/native/glue.c -o build/so2dylib -lz -framework CoreFoundation -framework Security
-          build/so2dylib build/aot build/so/*.so 2>&1 | grep -v "^ld:" | tail -40
-          tar -czf build/extera-aot.tgz -C build aot
-          ls -la build/extera-aot.tgz
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: extera-aot
-          path: build/extera-aot.tgz
-          if-no-files-found: ignore
-          retention-days: 3
       - uses: actions/upload-artifact@v4
         if: always()
         with:
