@@ -38,11 +38,7 @@ tl_dual_mapping *tl_find_stikdebug_prewarmed(void)
 bool tl_assetstream_stored(const char *name, int *fd, int64_t *off, int64_t *len) { (void)name; (void)fd; (void)off; (void)len; return false; }
 int tl_dns_servers(char out[][64], int max) { (void)out; (void)max; return 0; }
 
-/* Android's bitmaps to native code (jnigraphics): over ART's Bitmaps, with the JNI bridge */
-int tl_AndroidBitmap_getInfo(void *env, void *bitmap, void *info) { (void)env; (void)bitmap; (void)info; return -1; }
-int tl_AndroidBitmap_lockPixels(void *env, void *bitmap, void **addr) { (void)env; (void)bitmap; if (addr) *addr = NULL; return -1; }
-int tl_AndroidBitmap_unlockPixels(void *env, void *bitmap) { (void)env; (void)bitmap; return -1; }
-int32_t tl_AndroidBitmap_getDataSpace(void *env, void *bitmap) { (void)env; (void)bitmap; return 0; }
+/* Android's bitmaps to native code (jnigraphics, tl_AndroidBitmap_*): the framework's, over its own bitmaps (gfx.c) */
 
 /* the layer's own Java world: none here */
 jvalue tln_jni_call(jobj *o, const char *name, const char *sig, const jvalue *args) { (void)o; (void)name; (void)sig; (void)args; jvalue v; memset(&v, 0, sizeof v); return v; }

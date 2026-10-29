@@ -76,17 +76,23 @@ static gbitmap *bm_new(int w, int h)
 /* libjnigraphics: native code reads and writes a Bitmap's pixels in place (Lottie's and Rive's renderers, image decoders). Husk's
  * bitmaps are premultiplied RGBA rows, which is ANDROID_BITMAP_FORMAT_RGBA_8888 as Android lays it out. */
 typedef struct { uint32_t width, height, stride; int32_t format; uint32_t flags; } tl_abitmap_info;
-static gbitmap *bm_of_java(void *bitmap)
+/* env: the runtime's JNIEnv, as an app's library (port/native) has it, and the Bitmap a JNI reference */
+static gbitmap *bm_of_java(void *env, void *bitmap)
 {
-    if (!bitmap) return NULL;
-    jvalue n = tl_jni_get_field((jobj *)bitmap, "mNative", "J");
-    if (tl_jni_pending()) { tl_jni_clear(); return NULL; }
-    return (gbitmap *)(uintptr_t)n.j;
+    JNIEnv *e = env;
+    if (!e || !bitmap) return NULL;
+    static jfieldID fid;
+    if (!fid) {
+        jclass c = (*e)->FindClass(e, "android/graphics/Bitmap");
+        if (c) { fid = (*e)->GetFieldID(e, c, "mNative", "J"); (*e)->DeleteLocalRef(e, c); }
+        if ((*e)->ExceptionCheck(e)) { (*e)->ExceptionClear(e); fid = NULL; }
+        if (!fid) return NULL;
+    }
+    return (gbitmap *)(uintptr_t)(*e)->GetLongField(e, (jobject)bitmap, fid);
 }
 int tl_AndroidBitmap_getInfo(void *env, void *bitmap, tl_abitmap_info *info)
 {
-    (void)env;
-    gbitmap *b = bm_of_java(bitmap);
+    gbitmap *b = bm_of_java(env, bitmap);
     if (!b || !info) return -1;                                 /* ANDROID_BITMAP_RESULT_BAD_PARAMETER */
     info->width = (uint32_t)b->w; info->height = (uint32_t)b->h; info->stride = (uint32_t)b->stride;
     info->format = 1;                                           /* RGBA_8888 */
@@ -95,13 +101,12 @@ int tl_AndroidBitmap_getInfo(void *env, void *bitmap, tl_abitmap_info *info)
 }
 int tl_AndroidBitmap_lockPixels(void *env, void *bitmap, void **addr)
 {
-    (void)env;
-    gbitmap *b = bm_of_java(bitmap);
+    gbitmap *b = bm_of_java(env, bitmap);
     if (!b) return -1;
     if (addr) *addr = b->px;
     return 0;
 }
-int tl_AndroidBitmap_unlockPixels(void *env, void *bitmap) { (void)env; return bm_of_java(bitmap) ? 0 : -1; }
+int tl_AndroidBitmap_unlockPixels(void *env, void *bitmap) { return bm_of_java(env, bitmap) ? 0 : -1; }
 int32_t tl_AndroidBitmap_getDataSpace(void *env, void *bitmap) { (void)env; (void)bitmap; return 142671872; /* ADATASPACE_SRGB */ }
 
 static void bm_cache_free(gbitmap *b);
