@@ -224,9 +224,5 @@ bool dvm_throw(const char *cls, const char *fmt, ...)
     return false;
 }
 
-const char *tl_path_resolve(const char *path, char *buf, size_t n)
-{
-    /* the app's own files come later (Native.dataDir); system fonts: CoreText's */
-    (void)path; (void)buf; (void)n;
-    return NULL;
-}
+/* tl_path_resolve: the guest linker's bionic's (port/native/tl/husk-tl-bionic-io.c), which resolves Android's paths for the
+ * app's libraries too; with no system fonts folder set it gives a /system path back as it is, and gfx.c takes CoreText's then */

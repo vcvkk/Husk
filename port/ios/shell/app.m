@@ -417,6 +417,7 @@ static int Battery(void)
         .show_keyboard = ShowKeyboard,
         .pick_documents = PickDocuments,
         .battery = Battery,
+        .native_dir = NSBundle.mainBundle.privateFrameworksPath.UTF8String,   // aot-*.dylib: the app's libraries, made ahead of time
         .vsync = true,                      // nextFrame: each refresh of the display link
         .refresh_rate = (float)screen.maximumFramesPerSecond,
     };

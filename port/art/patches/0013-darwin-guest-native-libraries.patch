@@ -1,0 +1,76 @@
+--- a/art/runtime/entrypoints/jni/jni_entrypoints.cc
++++ b/art/runtime/entrypoints/jni/jni_entrypoints.cc
+@@ -37,6 +37,19 @@
+ #endif
+ 
+ #if defined(__APPLE__)
++// husk-port: hooks for the framework's guest linker (port/native), which runs an app's Android libraries in this process.
++// Where a native method's code is looked up after the runtime's own libraries: (JNI short name, long name) -> code or null.
++static void* (*g_husk_native_lookup)(const char*, const char*);
++extern "C" __attribute__((visibility("default"))) void art_husk_set_native_lookup(void* (*fn)(const char*, const char*)) {
++  g_husk_native_lookup = fn;
++}
++// A method's shorty (return type, then parameters: "VIL"), for reading a guest's variadic JNI calls.
++extern "C" __attribute__((visibility("default"))) const char* art_husk_method_shorty(jmethodID mid) {
++  return mid != nullptr ? reinterpret_cast<ArtMethod*>(mid)->GetShorty() : nullptr;
++}
++#endif
++
++#if defined(__APPLE__)
+ // The same for a method returning an object: an empty one of its type, as the app would get something from a phone
+ // without the feature (Kotlin code takes a returned object for granted): "" for a String, an empty array, an empty
+ // ArrayList, HashMap or HashSet for those interfaces, otherwise an instance from its no-argument constructor or, without
+@@ -116,6 +129,12 @@
+   // otherwise we return the address of the method we found.
+   void* native_code = soa.Vm()->FindCodeForNativeMethod(method);
+ #if defined(__APPLE__)
++  if (native_code == nullptr && g_husk_native_lookup != nullptr) {
++    // husk-port: the app's libraries the framework's guest linker loaded (husk.NativeLibs): Java_... by name, as dlsym
++    std::string short_name(method->JniShortName()), long_name(method->JniLongName());
++    native_code = g_husk_native_lookup(short_name.c_str(), long_name.c_str());
++    if (native_code != nullptr) self->ClearException();
++  }
+   if (native_code == nullptr && !method->GetDeclaringClass()->GetClassLoader().IsNull()) {
+     // husk-port: an app's native method whose library is not here (an Android .so, which Darwin can not load): it
+     // returns zero or false (an object: an empty one of its type), instead of throwing, as libcore's loadLibrary went on.
+--- a/libcore/ojluni/src/main/java/java/lang/Runtime.java
++++ b/libcore/ojluni/src/main/java/java/lang/Runtime.java
+@@ -1005,8 +1005,16 @@
+             String filename = loader.findLibrary(libraryName);
+             if (filename == null && "Darwin".equals(libcore.io.Libcore.os.uname().sysname)) {
+                 // husk-port: an Android app's own native libraries are Linux ELF files, which iOS and macOS can not load
+-                // (os.name says Linux, as on Android: the kernel's name is uname's).
+-                // The app goes on without them; their methods return zero, false or null when called (the runtime's
++                // (os.name says Linux, as on Android: the kernel's name is uname's). The framework's guest linker
++                // (husk.NativeLibs, port/native) runs them where it can: the APK's lib/arm64-v8a/ library, mapped and
++                // bound to its bionic, or the dylib made from it ahead of time.
++                try {
++                    Object ok = Class.forName("husk.NativeLibs").getMethod("load", String.class).invoke(null, libraryName);
++                    if (Boolean.TRUE.equals(ok)) return;
++                } catch (Throwable t) {
++                    System.logW("husk-port: the guest linker could not be asked for " + libraryName + ": " + t);
++                }
++                // Otherwise the app goes on without it; its methods return zero, false or null when called (the runtime's
+                 // stand-in for a native method it can not find), as a feature its phone lacks.
+                 System.logW("husk-port: " + System.mapLibraryName(libraryName) + " is not here; its native methods return nothing");
+                 return;
+--- a/art/runtime/jni/jni_env_ext.cc
++++ b/art/runtime/jni/jni_env_ext.cc
+@@ -311,6 +311,17 @@
+   }
+ }
+ 
++#if defined(__APPLE__)
++// husk-port: the guest linker's JNI table (calls from an Android library pass their variadic arguments as AAPCS64 does, not as
++// Darwin does): the runtime's own to start from, and the override installed for every thread.
++extern "C" __attribute__((visibility("default"))) const JNINativeInterface* art_husk_jni_table() {
++  return GetJniNativeInterface();
++}
++extern "C" __attribute__((visibility("default"))) void art_husk_set_jni_table(const JNINativeInterface* table) {
++  JNIEnvExt::SetTableOverride(table);
++}
++#endif
++
+ const JNINativeInterface* JNIEnvExt::GetFunctionTable(bool check_jni) {
+   const JNINativeInterface* override = JNIEnvExt::table_override_;
+   if (override != nullptr) {

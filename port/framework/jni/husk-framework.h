@@ -33,6 +33,7 @@ typedef struct husk_app_config {
     void (*vibrate)(int ms);
     void (*set_orientation)(int android_orientation);
     void (*exit)(void);
+    const char *native_dir;          /* the app's native libraries made into dylibs ahead of time (aot-*.dylib), or NULL */
     int (*battery)(void);            /* level 0-100 | BatteryManager status << 8 | plugged << 16, or -1 */
     bool vsync;                      /* the host calls husk_app_vsync at each display refresh */
     float refresh_rate;              /* its refreshes a second (0: 60) */

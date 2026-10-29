@@ -120,6 +120,7 @@ static char *dup_or_empty(const char *s) { return strdup(s ? s : ""); }
 void husk_app_configure(const husk_app_config *cfg)
 {
     A.cfg = *cfg;
+    { void tl_set_data_dir(const char *dir); tl_set_data_dir(cfg->data); }
     A.cfg.apk = dup_or_empty(cfg->apk);
     A.cfg.framework_res = cfg->framework_res ? strdup(cfg->framework_res) : NULL;
     A.cfg.data = dup_or_empty(cfg->data);
@@ -492,6 +493,8 @@ bool husk_register_gfx(JNIEnv *env);   /* gfx_jni.c, from gen-jni.py */
 bool husk_register_sqlite(JNIEnv *env);   /* sqlite.c */
 bool husk_register_web(JNIEnv *env);      /* web_jni.m, from gen-jni.py */
 bool husk_register_audio(JNIEnv *env);    /* audio_jni.c, from gen-jni.py */
+bool husk_register_nativelibs(JNIEnv *env);   /* nativelibs.c */
+void husk_native_libs_configure(const char *apk, const char *aot_dir);
 
 bool husk_framework_register(JNIEnv *env)
 {
@@ -500,6 +503,8 @@ bool husk_framework_register(JNIEnv *env)
     ok &= husk_register_sqlite(env);
     ok &= husk_register_web(env);
     ok &= husk_register_audio(env);
+    ok &= husk_register_nativelibs(env);
+    husk_native_libs_configure(A.cfg.apk, A.cfg.native_dir);
     return husk_register_gfx(env) && ok;
 }
 
@@ -518,7 +523,7 @@ void husk_app_vsync(void) { if (atomic_exchange(&A.want_vsync, false)) push(10, 
 void husk_app_touch(int phase, int id, float x, float y) { push(phase, id, x, y); }
 void husk_app_back(void) { push(5, 0, 0, 0); }
 void husk_app_web_event(void) { push(9, 0, 0, 0); }   /* web.m: husk.Web has events to poll */
-const char *tl_data_dir(void) { return A.cfg.data; }
+/* tl_data_dir: bionic's (husk-tl-bionic-io.c), set to the app's data directory when the host configures the app */
 
 static void text_push(const char *kind, const char *utf8)
 {

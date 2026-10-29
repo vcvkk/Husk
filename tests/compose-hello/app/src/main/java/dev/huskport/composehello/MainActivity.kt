@@ -100,6 +100,9 @@ class MainActivity : ComponentActivity() {
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Text("Hello from Compose on husk-port", style = MaterialTheme.typography.headlineSmall)
+                        // the native library's checks (Native.kt): the guest linker under ART
+                        val native = remember { Native.report() }
+                        Text(native, style = MaterialTheme.typography.bodySmall)
                         Text("taps: $taps", style = MaterialTheme.typography.bodyLarge)
                         // always moving: every display refresh draws a frame (HUSK_FRAME_STATS measures them in CI)
                         CircularProgressIndicator()
