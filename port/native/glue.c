@@ -24,7 +24,17 @@ void *tl_vk_resolve(const char *name) { (void)name; return NULL; }
 bool tl_vk_available(void) { return false; }
 
 void (*tl_cocos_audio_hook)(const int16_t *samples, int frames, int channels, int rate);
-tl_dual_mapping *tl_find_stikdebug_prewarmed(void) { return NULL; }
+/* the JIT region StikDebug (or the debugged process itself) made at launch (ios/husk-ios-jit.c, husk_app_jit_prewarm) */
+typedef struct { uint8_t *rw_addr, *rx_addr; size_t size; } husk_mapping;
+husk_mapping *husk_ios_jit_get_mapping(void);
+tl_dual_mapping *tl_find_stikdebug_prewarmed(void)
+{
+    husk_mapping *m = husk_ios_jit_get_mapping();
+    if (!m || !m->rw_addr || !m->rx_addr) return NULL;
+    static tl_dual_mapping d;
+    d.rw_addr = m->rw_addr; d.rx_addr = m->rx_addr; d.size = m->size;
+    return &d;
+}
 bool tl_assetstream_stored(const char *name, int *fd, int64_t *off, int64_t *len) { (void)name; (void)fd; (void)off; (void)len; return false; }
 int tl_dns_servers(char out[][64], int max) { (void)out; (void)max; return 0; }
 

@@ -20,6 +20,7 @@
 #include <unistd.h>
 
 #include "husk-framework.h"
+#include "husk-ios-jit.h"
 #include "husk-launch.h"
 
 static NSString *gBundle;
@@ -436,6 +437,11 @@ static int Battery(void)
     UIEdgeInsets i = self.window.safeAreaInsets;
     gInsets[0] = (int)(i.left * scale); gInsets[1] = (int)(i.top * scale); gInsets[2] = (int)(i.right * scale); gInsets[3] = (int)(i.bottom * scale);
     SendInsets();
+
+    // executable memory for the app's own native libraries: StikDebug's region (through LocalDevVPN), or the process's own where
+    // JIT is enabled; without either, the libraries that need it do not load and their methods return nothing
+    husk_ios_jit_install_trap_handler();
+    if (husk_ios_jit_prewarm(768u << 20)) husk_ios_jit_detach();
 
     // ART wants a big stack; the main thread's belongs to UIKit
     pthread_attr_t attr;

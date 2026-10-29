@@ -31,9 +31,10 @@ done
 # the guest linker and its bionic (port/native/tl, Husk's main line's), its calls to its own Java world's JNI renamed (glue.c)
 NCC=(-fno-strict-aliasing -Wno-unused-parameter -I"$HERE/../native/tl" -Dtl_jni_call=tln_jni_call -Dtl_jni_get_field=tln_jni_get_field
      -Dtl_jni_ref=tln_jni_ref -Dtl_jni_pending=tln_jni_pending -Dtl_jni_clear=tln_jni_clear)
-for f in "$HERE"/../native/tl/*.c "$HERE"/../native/glue.c; do
+# and the JIT region StikDebug grants at launch (ios/: Husk's main line's husk-ios-jit and its brk requests)
+for f in "$HERE"/../native/tl/*.c "$HERE"/../native/glue.c "$HERE"/../native/ios/husk-ios-jit.c "$HERE"/../native/ios/husk-brk.S; do
     o="$OUT/native-$(basename "${f%.*}").o"
-    "${CC[@]}" "${NCC[@]}" -c "$f" -o "$o"
+    "${CC[@]}" "${NCC[@]}" -I"$HERE/../native/ios" -c "$f" -o "$o"
     objs+=("$o")
 done
 rm -f "$OUT/libhuskframework.a"
