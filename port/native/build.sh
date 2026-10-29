@@ -13,9 +13,10 @@ case "$TARGET" in
     *) echo "macos or ios" >&2; exit 2 ;;
 esac
 CC=(xcrun --sdk $SDK clang -target $TRIPLE -isysroot "$(xcrun --sdk $SDK --show-sdk-path)" -O2 -g -fno-strict-aliasing
-    -Wall -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -I"$HERE/tl")
+    -Wall -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -I"$HERE/tl"
+    -Dtl_jni_call=tln_jni_call -Dtl_jni_get_field=tln_jni_get_field -Dtl_jni_ref=tln_jni_ref -Dtl_jni_pending=tln_jni_pending -Dtl_jni_clear=tln_jni_clear)
 objs=(); fail=0
-for f in "$HERE"/tl/*.c "$HERE"/tl/*.m; do
+for f in "$HERE"/tl/*.c "$HERE"/tl/*.m "$HERE"/glue.c; do
     [ -e "$f" ] || continue
     o="$OUT/$(basename "${f%.*}").o"
     if "${CC[@]}" -c "$f" -o "$o" 2> "$o.log"; then objs+=("$o"); else echo "== $(basename "$f")"; grep -m 40 "error" "$o.log"; fail=1; fi
