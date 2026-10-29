@@ -35,7 +35,7 @@
      // returns zero or false (an object: an empty one of its type), instead of throwing, as libcore's loadLibrary went on.
 --- a/libcore/ojluni/src/main/java/java/lang/Runtime.java
 +++ b/libcore/ojluni/src/main/java/java/lang/Runtime.java
-@@ -1005,8 +1005,16 @@
+@@ -1005,8 +1005,17 @@
              String filename = loader.findLibrary(libraryName);
              if (filename == null && "Darwin".equals(libcore.io.Libcore.os.uname().sysname)) {
                  // husk-port: an Android app's own native libraries are Linux ELF files, which iOS and macOS can not load
@@ -45,7 +45,8 @@
 +                // (husk.NativeLibs, port/native) runs them where it can: the APK's lib/arm64-v8a/ library, mapped and
 +                // bound to its bionic, or the dylib made from it ahead of time.
 +                try {
-+                    Object ok = Class.forName("husk.NativeLibs").getMethod("load", String.class).invoke(null, libraryName);
++                    Object ok = Class.forName("husk.NativeLibs").getMethod("load", String.class, ClassLoader.class)
++                            .invoke(null, libraryName, loader);
 +                    if (Boolean.TRUE.equals(ok)) return;
 +                } catch (Throwable t) {
 +                    System.logW("husk-port: the guest linker could not be asked for " + libraryName + ": " + t);
@@ -74,3 +75,33 @@
  const JNINativeInterface* JNIEnvExt::GetFunctionTable(bool check_jni) {
    const JNINativeInterface* override = JNIEnvExt::table_override_;
    if (override != nullptr) {
+--- a/art/runtime/jni/jni_internal.cc
++++ b/art/runtime/jni/jni_internal.cc
+@@ -597,6 +597,13 @@
+   return jni::EncodeArtMethod(method);
+ }
+ 
++#if defined(__APPLE__)
++// husk-port: the ClassLoader an app library's JNI_OnLoad finds classes with (null: none), on this thread
++extern "C" __attribute__((visibility("default"))) void art_husk_set_class_loader_override(jobject loader) {
++  Thread::Current()->SetClassLoaderOverride(loader);
++}
++#endif
++
+ static ObjPtr<mirror::ClassLoader> GetClassLoader(const ScopedObjectAccess& soa)
+     REQUIRES_SHARED(Locks::mutator_lock_) {
+   ArtMethod* method = soa.Self()->GetCurrentMethod(nullptr);
+@@ -604,6 +611,13 @@
+   if (method == jni::DecodeArtMethod(WellKnownClasses::java_lang_Runtime_nativeLoad)) {
+     return soa.Decode<mirror::ClassLoader>(soa.Self()->GetClassLoaderOverride());
+   }
++#if defined(__APPLE__)
++  // husk-port: the guest linker's JNI_OnLoad (husk.NativeLibs), with the loading class's ClassLoader set as Runtime.nativeLoad
++  // sets it: the library's FindClass finds the app's classes
++  if (soa.Self()->GetClassLoaderOverride() != nullptr) {
++    return soa.Decode<mirror::ClassLoader>(soa.Self()->GetClassLoaderOverride());
++  }
++#endif
+   // If we have a method, use its ClassLoader for context.
+   if (method != nullptr) {
+     return method->GetDeclaringClass()->GetClassLoader();

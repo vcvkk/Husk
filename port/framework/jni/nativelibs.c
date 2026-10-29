@@ -33,9 +33,10 @@ static bool ready(void)
     return true;
 }
 
+void art_husk_set_class_loader_override(jobject loader);
 typedef jint (*onload_fn)(JavaVM *vm, void *reserved);
 /* (String file: libfoo.so) -> whether it is loaded (its constructors run, then its JNI_OnLoad) */
-static jboolean NL_load(JNIEnv *env, jclass cls, jstring jname)
+static jboolean NL_load(JNIEnv *env, jclass cls, jstring jname, jobject loader)
 {
     (void)cls;
     const char *name = jname ? (*env)->GetStringUTFChars(env, jname, NULL) : NULL;
@@ -55,8 +56,17 @@ static jboolean NL_load(JNIEnv *env, jclass cls, jstring jname)
         if (onload) {
             JavaVM *vm = NULL;
             (*env)->GetJavaVM(env, &vm);
+            /* its FindClass looks in the loading class's ClassLoader, as during Runtime.nativeLoad */
+            jobject gl = loader ? (*env)->NewGlobalRef(env, loader) : NULL;
+            art_husk_set_class_loader_override(gl);
             jint v = onload(vm, NULL);
-            if ((*env)->ExceptionCheck(env)) tl_log_line("husk-port: %s: JNI_OnLoad left an exception pending", name);
+            art_husk_set_class_loader_override(NULL);
+            if (gl) (*env)->DeleteGlobalRef(env, gl);
+            if ((*env)->ExceptionCheck(env)) {
+                tl_log_line("husk-port: %s: JNI_OnLoad left an exception pending:", name);
+                (*env)->ExceptionDescribe(env);
+                (*env)->ExceptionClear(env);
+            }
             tl_log_line("husk-port: %s: JNI_OnLoad -> %#x", name, (unsigned)v);
         }
     } else if (!ok) tl_log_line("husk-port: %s could not be loaded", name);
@@ -65,7 +75,7 @@ static jboolean NL_load(JNIEnv *env, jclass cls, jstring jname)
 }
 
 static const JNINativeMethod k_nativelibs[] = {
-    { "nativeLoad", "(Ljava/lang/String;)Z", (void *)NL_load },
+    { "nativeLoad", "(Ljava/lang/String;Ljava/lang/ClassLoader;)Z", (void *)NL_load },
 };
 bool husk_register_nativelibs(JNIEnv *env);
 bool husk_register_nativelibs(JNIEnv *env)
