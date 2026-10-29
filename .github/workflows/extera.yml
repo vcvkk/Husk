@@ -21,7 +21,8 @@ jobs:
       - name: Packages
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq libbsd-dev libelf-dev libicu-dev libssl-dev libexpat1-dev zip liblz4-dev liblzma-dev libcap-dev zlib1g-dev clang
+          sudo apt-get install -y -qq clang zlib1g-dev libbsd-dev libelf-dev libicu-dev libssl-dev libexpat1-dev zip liblz4-dev liblzma-dev \
+            libcap-dev libegl-dev libpng-dev
       - uses: actions/cache/restore@v4
         with:
           path: build/prefix
