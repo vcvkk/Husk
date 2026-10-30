@@ -349,24 +349,37 @@ static int b_epoll_create1(int flags)
 }
 static int b_epoll_create(int size) { if (size <= 0) { tl_set_guest_errno(22); return -1; } return b_epoll_create1(0); }
 
+/* Reading is level-triggered here whatever the caller asked: with EV_CLEAR on it, data that arrived while an EPOLL_CTL_MOD
+ * took the filter off and put it back, or after a reader stopped at a short read, gave no event until something else did
+ * (Telegram's tgnet, edge-triggered, read the first 152 bytes of a 100 KB file part, and its downloads stalled until timed out
+ * and cancelled). A level-triggered read only wakes a reader once more than it needed. Writing keeps EPOLLET's EV_CLEAR: a
+ * writable socket would otherwise wake its waiter all the time. MOD changes the filters in place. */
 static int b_epoll_ctl(int epfd, int op, int fd, const guest_epoll_event *ev)
 {
     struct kevent k[2];
-    int n = 0;
-    if (op == 2 || op == 3) {               /* DEL, or MOD: remove both filters first (one may not be there) */
+    if (op == 2) {                          /* DEL: both filters (one may not be there) */
         EV_SET(&k[0], fd, EVFILT_READ, EV_DELETE, 0, 0, NULL);
         EV_SET(&k[1], fd, EVFILT_WRITE, EV_DELETE, 0, 0, NULL);
         for (int i = 0; i < 2; i++) kevent(epfd, &k[i], 1, NULL, 0, NULL);
-        if (op == 2) return 0;
+        return 0;
     }
     if (!ev) { tl_set_guest_errno(14 /* EFAULT */); return -1; }
-    uint16_t flags = EV_ADD | EV_ENABLE | ((ev->events & EPOLLET) ? EV_CLEAR : 0) | ((ev->events & EPOLLONESHOT) ? EV_ONESHOT : 0);
+    uint16_t one = (ev->events & EPOLLONESHOT) ? EV_ONESHOT : 0;
     void *udata = (void *)(uintptr_t)ev->data;
-    if (ev->events & (EPOLLIN | EPOLLPRI | EPOLLRDHUP)) EV_SET(&k[n++], fd, EVFILT_READ, flags, 0, 0, udata);
-    if (ev->events & EPOLLOUT) EV_SET(&k[n++], fd, EVFILT_WRITE, flags, 0, 0, udata);
-    if (!n) EV_SET(&k[n++], fd, EVFILT_READ, flags | EV_DISABLE, 0, 0, udata);    /* hang-ups and errors only */
-    TL_ERRNO_BEGIN(); int r = kevent(epfd, k, n, NULL, 0, NULL); TL_ERRNO_END();
-    return r < 0 ? -1 : 0;
+    bool rd = (ev->events & (EPOLLIN | EPOLLPRI | EPOLLRDHUP)) != 0, wr = (ev->events & EPOLLOUT) != 0;
+    /* the read filter is always there (hang-ups and errors come on it), disabled when reading is not asked for */
+    EV_SET(&k[0], fd, EVFILT_READ, EV_ADD | (rd ? EV_ENABLE : EV_DISABLE) | one, 0, 0, udata);
+    TL_ERRNO_BEGIN(); int r = kevent(epfd, &k[0], 1, NULL, 0, NULL); TL_ERRNO_END();
+    if (r < 0) return -1;
+    if (wr) {
+        EV_SET(&k[1], fd, EVFILT_WRITE, EV_ADD | EV_ENABLE | ((ev->events & EPOLLET) ? EV_CLEAR : 0) | one, 0, 0, udata);
+        TL_ERRNO_BEGIN(); r = kevent(epfd, &k[1], 1, NULL, 0, NULL); TL_ERRNO_END();
+        if (r < 0) return -1;
+    } else if (op == 3) {
+        EV_SET(&k[1], fd, EVFILT_WRITE, EV_DELETE, 0, 0, NULL);
+        kevent(epfd, &k[1], 1, NULL, 0, NULL);
+    }
+    return 0;
 }
 
 static int b_epoll_wait(int epfd, guest_epoll_event *out, int max, int timeout_ms)
