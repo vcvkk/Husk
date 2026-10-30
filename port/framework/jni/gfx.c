@@ -539,7 +539,11 @@ static void clip_record(gcanvas *v, CGPathRef path, CGRect r, bool even_odd, boo
 static gcanvas *cv_new(gbitmap *b)
 {
     gcanvas *v = calloc(1, sizeof(*v));
-    v->bm = b; v->c = b->ctx;
+    /* a context of its own over the bitmap's memory: with the bitmap's one shared, each canvas made on it (a TextureView's
+     * buffers get a new one every frame) turned it over again, and every other one drew upside down */
+    v->bm = b;
+    v->c = CGBitmapContextCreate(b->px, (size_t)b->w, (size_t)b->h, 8, b->stride, rgb(), kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+    if (!v->c) { free(v); return NULL; }
     CGContextSaveGState(v->c);              /* the canvas's own level, undone when it is freed */
     CGContextTranslateCTM(v->c, 0, b->h);
     CGContextScaleCTM(v->c, 1, -1);
@@ -561,6 +565,7 @@ static void cv_free(gcanvas *v)
     for (int i = 0; i < v->nops; i++) if (v->ops[i].path) CGPathRelease(v->ops[i].path);
     free(v->ops);
     CGContextRestoreGState(v->c);
+    CGContextRelease(v->c);
     free(v);
 }
 static CGBlendMode blend_of(int mode);
