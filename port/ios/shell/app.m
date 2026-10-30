@@ -10,6 +10,7 @@
 //   app/framework-res.apk            the platform's resources (themes and the rest apps name as android:...)
 //
 // The log goes to Documents/husk-port.log (the Files app).
+#import <Metal/Metal.h>
 #import <QuartzCore/QuartzCore.h>
 #import <UIKit/UIKit.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
@@ -58,7 +59,49 @@ static void *AppMain(void *unused)
     return NULL;
 }
 
-// ---- the screen: the app's latest frame as the layer's contents; touches to it
+// ---- the screen: the app's latest frame drawn by Metal from its own memory (or as the layer's contents); touches to it
+
+/* Metal: a frame's buffer is wrapped as it is (whole pages, gfx.c) and read by a fragment shader pixel by pixel, the screen's
+ * pixel to the frame's: no copy, no texture (a frame's rows, w * 4 bytes, are not as Metal aligns a texture's). The frame is
+ * given back when the GPU is done with it. */
+static id<MTLDevice> gDev;
+static id<MTLCommandQueue> gQueue;
+static id<MTLRenderPipelineState> gPipe;
+static const char *kShader =
+    "#include <metal_stdlib>\n"
+    "using namespace metal;\n"
+    "struct VO { float4 p [[position]]; };\n"
+    "vertex VO frame_v(uint id [[vertex_id]]) {\n"
+    "    const float2 c[3] = { float2(-1, -1), float2(3, -1), float2(-1, 3) };\n"
+    "    VO o; o.p = float4(c[id], 0, 1); return o;\n"
+    "}\n"
+    "fragment half4 frame_f(VO in [[stage_in]], device const uchar4 *px [[buffer(0)]], constant uint2 &size [[buffer(1)]],\n"
+    "                       constant float2 &scale [[buffer(2)]]) {\n"
+    "    uint2 q = min(uint2(in.p.xy * scale), size - 1);\n"
+    "    return half4(px[q.y * size.x + q.x]) / 255.0h;\n"   /* RGBA, premultiplied, as the drawable takes it */
+    "}\n";
+static bool MetalReady(void)
+{
+    static int ready = -1;
+    if (ready >= 0) return ready;
+    ready = 0;
+    if (getenv("HUSK_PRESENT_CG")) return false;
+    gDev = MTLCreateSystemDefaultDevice();
+    if (!gDev) return false;
+    NSError *e = nil;
+    id<MTLLibrary> lib = [gDev newLibraryWithSource:@(kShader) options:nil error:&e];
+    if (!lib) { fprintf(stderr, "husk-port: Metal: %s\n", e.localizedDescription.UTF8String); return false; }
+    MTLRenderPipelineDescriptor *d = [MTLRenderPipelineDescriptor new];
+    d.vertexFunction = [lib newFunctionWithName:@"frame_v"];
+    d.fragmentFunction = [lib newFunctionWithName:@"frame_f"];
+    d.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
+    gPipe = [gDev newRenderPipelineStateWithDescriptor:d error:&e];
+    if (!gPipe) { fprintf(stderr, "husk-port: Metal: %s\n", e.localizedDescription.UTF8String); return false; }
+    gQueue = [gDev newCommandQueue];
+    ready = gQueue != nil;
+    if (ready) fprintf(stderr, "husk-port: frames shown through Metal (%s)\n", gDev.name.UTF8String);
+    return ready;
+}
 
 @interface FrameView : UIView
 @end
@@ -69,12 +112,24 @@ static void *AppMain(void *unused)
     int _nextId;
 }
 
++ (Class)layerClass { return MetalReady() ? CAMetalLayer.class : CALayer.class; }
+
 - (instancetype)initWithFrame:(CGRect)frame
 {
     if ((self = [super initWithFrame:frame])) {
         self.multipleTouchEnabled = YES;
         self.backgroundColor = UIColor.blackColor;
         self.layer.contentsGravity = kCAGravityResize;
+        if ([self.layer isKindOfClass:CAMetalLayer.class]) {
+            CAMetalLayer *m = (CAMetalLayer *)self.layer;
+            m.device = gDev;
+            m.pixelFormat = MTLPixelFormatBGRA8Unorm;
+            m.framebufferOnly = YES;
+            m.maximumDrawableCount = 3;
+            CGColorSpaceRef cs = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+            m.colorspace = cs;
+            CGColorSpaceRelease(cs);
+        }
         _ids = [NSMapTable strongToStrongObjectsMapTable];
         _link = [CADisplayLink displayLinkWithTarget:self selector:@selector(nextFrame:)];
         if (@available(iOS 15.0, *)) _link.preferredFrameRateRange = CAFrameRateRangeMake(60, 120, 120);
@@ -108,6 +163,7 @@ static void ReleaseFrame(void *info, const void *data, size_t size) { (void)data
     double t0 = gStats ? CACurrentMediaTime() : 0;
     int token;
     if (!husk_frame_hold(&px, &w, &h, &any, &token)) return;
+    if ([self.layer isKindOfClass:CAMetalLayer.class]) { [self showMetal:px w:w h:h any:any token:token]; if (gStats) FrameStat(t0, CACurrentMediaTime()); return; }
     CGImageRef img = NULL;
     if (any && w > 0 && h > 0) {
         // the frame's own buffer, not a copy: given back when Core Animation lets go of the image
@@ -124,6 +180,46 @@ static void ReleaseFrame(void *info, const void *data, size_t size) { (void)data
     [CATransaction commit];
     if (img) CGImageRelease(img);
     if (gStats) FrameStat(t0, CACurrentMediaTime());
+}
+
+- (void)layoutSubviews
+{
+    [super layoutSubviews];
+    if ([self.layer isKindOfClass:CAMetalLayer.class]) {
+        CGFloat k = self.window.screen.nativeScale ?: UIScreen.mainScreen.nativeScale;
+        ((CAMetalLayer *)self.layer).drawableSize = CGSizeMake(self.bounds.size.width * k, self.bounds.size.height * k);
+    }
+}
+
+- (void)showMetal:(const uint8_t *)px w:(int)w h:(int)h any:(bool)any token:(int)token
+{
+    CAMetalLayer *m = (CAMetalLayer *)self.layer;
+    id<CAMetalDrawable> drawable = [m nextDrawable];
+    if (!drawable) { husk_frame_release(token); return; }
+    MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
+    pass.colorAttachments[0].texture = drawable.texture;
+    pass.colorAttachments[0].loadAction = any ? MTLLoadActionDontCare : MTLLoadActionClear;
+    pass.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 1);
+    pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+    id<MTLCommandBuffer> cmd = [gQueue commandBuffer];
+    id<MTLRenderCommandEncoder> enc = [cmd renderCommandEncoderWithDescriptor:pass];
+    if (any && w > 0 && h > 0) {
+        size_t len = ((size_t)w * 4 * (size_t)h + 16383) & ~(size_t)16383;
+        id<MTLBuffer> buf = [gDev newBufferWithBytesNoCopy:(void *)px length:len options:MTLResourceStorageModeShared deallocator:nil];
+        if (buf) {
+            uint32_t size[2] = { (uint32_t)w, (uint32_t)h };
+            float scale[2] = { (float)w / (float)drawable.texture.width, (float)h / (float)drawable.texture.height };
+            [enc setRenderPipelineState:gPipe];
+            [enc setFragmentBuffer:buf offset:0 atIndex:0];
+            [enc setFragmentBytes:size length:sizeof size atIndex:1];
+            [enc setFragmentBytes:scale length:sizeof scale atIndex:2];
+            [enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+        }
+    }
+    [enc endEncoding];
+    [cmd presentDrawable:drawable];
+    [cmd addCompletedHandler:^(id<MTLCommandBuffer> b) { (void)b; husk_frame_release(token); }];
+    [cmd commit];
 }
 
 // a touch on a web view's page goes to it, in the container below

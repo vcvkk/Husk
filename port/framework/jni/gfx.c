@@ -3081,7 +3081,13 @@ NAT(G_present)
     int k = -1;
     for (int i = 0; i < NFB && k < 0; i++) if (i != S.cur && !S.refs[i]) k = i;
     if (k < 0) { pthread_mutex_unlock(&S.lock); return true; }     /* all held: the host is behind, this frame is skipped */
-    if (S.bw[k] != b->w || S.bh[k] != b->h) { free(S.buf[k]); S.buf[k] = malloc((size_t)b->w * 4 * (size_t)b->h); S.bw[k] = b->w; S.bh[k] = b->h; }
+    if (S.bw[k] != b->w || S.bh[k] != b->h) {
+        /* whole 16 KiB pages: the host wraps a frame in a Metal buffer without copying it, which wants those */
+        free(S.buf[k]); S.buf[k] = NULL;
+        size_t n = ((size_t)b->w * 4 * (size_t)b->h + 16383) & ~(size_t)16383;
+        if (posix_memalign((void **)&S.buf[k], 16384, n)) S.buf[k] = NULL;
+        S.bw[k] = b->w; S.bh[k] = b->h;
+    }
     uint8_t *dst = S.buf[k];
     pthread_mutex_unlock(&S.lock);
     if (!dst) return true;
