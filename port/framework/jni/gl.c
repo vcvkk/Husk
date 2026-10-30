@@ -209,8 +209,16 @@ static jboolean EN_readPixels(JNIEnv *env, jclass cls, jobject buf, jint w, jint
     void (*st)(int32_t, int32_t) = (void (*)(int32_t, int32_t))gl_fn("glPixelStorei");
     uint8_t *px = buf ? (*env)->GetDirectBufferAddress(env, buf) : NULL;
     if (!rd || !px || w <= 0 || h <= 0 || (*env)->GetDirectBufferCapacity(env, buf) < (jlong)w * h * 4) return JNI_FALSE;
-    if (st) st(0x0D05, 4);   /* PACK_ALIGNMENT: rows of w * 4 bytes, packed as they are */
+    /* the window's own pixels, whatever framebuffer the app left bound (its offscreen ones are often drawn upside down) */
+    void (*gi)(int32_t, int32_t *) = (void (*)(int32_t, int32_t *))gl_fn("glGetIntegerv");
+    void (*bind)(int32_t, uint32_t) = (void (*)(int32_t, uint32_t))gl_fn("glBindFramebuffer");
+    int32_t fb = 0, pack = 4;
+    if (gi) { gi(0x8CA6, &fb); gi(0x0D05, &pack); }   /* FRAMEBUFFER_BINDING, PACK_ALIGNMENT */
+    if (fb && bind) bind(0x8D40, 0);                   /* FRAMEBUFFER */
+    if (st) st(0x0D05, 4);   /* rows of w * 4 bytes, packed as they are */
     rd(0, 0, w, h, 0x1908, 0x1401, px);   /* RGBA, UNSIGNED_BYTE */
+    if (st && pack != 4) st(0x0D05, pack);
+    if (fb && bind) bind(0x8D40, (uint32_t)fb);
     size_t row = (size_t)w * 4;
     uint8_t *tmp = malloc(row);
     if (!tmp) return JNI_FALSE;
