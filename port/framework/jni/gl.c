@@ -227,6 +227,14 @@ static jboolean EN_readPixels(JNIEnv *env, jclass cls, jobject buf, jint w, jint
         memcpy(tmp, a, row); memcpy(a, b, row); memcpy(b, tmp, row);
     }
     free(tmp);
+    /* HUSK_GL_TRACE: each frame's hash, to the log (its first 400) */
+    static int trace = -1, traced;
+    if (trace < 0) trace = getenv("HUSK_GL_TRACE") != NULL;
+    if (trace && traced < 400) {
+        uint64_t hs = 0xcbf29ce484222325ull;
+        for (size_t i = 0; i < (size_t)w * h * 4; i += 4) hs = (hs ^ *(uint32_t *)(px + i)) * 0x100000001b3ull;
+        tl_log_line("gl: frame %d %dx%d hash %016llx", traced++, w, h, (unsigned long long)hs);
+    }
     return JNI_TRUE;
 }
 static jboolean EN_isRenderThread(JNIEnv *env, jclass cls) { (void)env; (void)cls; return JNI_FALSE; }

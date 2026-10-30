@@ -89,6 +89,7 @@ public class TextureView extends View {
         super.draw(c);
         SurfaceTexture t = mTexture;
         Bitmap f = t != null ? t.huskBeginDraw() : null;
+        if (f != null && android.graphics.SurfaceTexture.TRACE) android.util.Log.i("HuskGL", "TextureView draws buffer " + System.identityHashCode(f));
         if (f != null) {
             try {
                 int save = c.save();

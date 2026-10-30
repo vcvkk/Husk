@@ -22,6 +22,8 @@ public class SurfaceTexture {
     private android.os.Handler mHandler;
     /** The TextureView showing this texture, told when a frame arrives. */
     public android.view.View huskView;
+    /** HUSK_GL_TRACE: frames posted and shown, to the log */
+    public static final boolean TRACE = System.getenv("HUSK_GL_TRACE") != null;
     public SurfaceTexture(int texName) { this(texName, false); }
     public SurfaceTexture(int texName, boolean singleBufferMode) { mTex = texName; }
     public SurfaceTexture(boolean singleBufferMode) { mTex = 0; }
@@ -61,6 +63,7 @@ public class SurfaceTexture {
             if (!mLocked) return;
             mBackCanvas.restore();
             Bitmap f = mFront; mFront = mBack; mBack = f;
+            if (TRACE) android.util.Log.i("HuskGL", "posted into buffer " + System.identityHashCode(mFront) + ", next " + System.identityHashCode(mBack));
             if (mBack != null && (mBack.getWidth() != mFront.getWidth() || mBack.getHeight() != mFront.getHeight())) mBack = null;
             mBackCanvas = mBack != null ? new Canvas(mBack) : null;
             mLocked = false; mTimestamp = System.nanoTime();
