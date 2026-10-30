@@ -209,6 +209,203 @@ static const JNINativeMethod k_egl[] = {
     { "isRenderThread", "()Z", (void *)EN_isRenderThread }, { "hide", "()V", (void *)EN_hide },
 };
 
+/* ---- the GLES natives the generated tables leave out: Java strings and string arrays in, strings and mapped buffers out */
+#define GLF(var, ret, name, ...) static ret (*var)(__VA_ARGS__); if (!var) var = (ret (*)(__VA_ARGS__))gl_fn(name)
+/* an IntBuffer's elements from its position: a direct one's memory, else a heap one's array, pinned until put_ints */
+typedef struct { jintArray arr; jint *els; } ints_pin;
+static jint *get_ints(JNIEnv *env, jobject b, ints_pin *pin)
+{
+    pin->arr = NULL; pin->els = NULL;
+    if (!b) return NULL;
+    static jfieldID f_pos;
+    static jmethodID m_array, m_offset;
+    if (!f_pos) {
+        jclass c = (*env)->FindClass(env, "java/nio/Buffer");
+        f_pos = (*env)->GetFieldID(env, c, "position", "I");
+        m_array = (*env)->GetMethodID(env, c, "array", "()Ljava/lang/Object;");
+        m_offset = (*env)->GetMethodID(env, c, "arrayOffset", "()I");
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        (*env)->DeleteLocalRef(env, c);
+    }
+    jint pos = (*env)->GetIntField(env, b, f_pos);
+    jint *p = (*env)->GetDirectBufferAddress(env, b);
+    if (p) return p + pos;
+    pin->arr = (*env)->CallObjectMethod(env, b, m_array);
+    if ((*env)->ExceptionCheck(env) || !pin->arr) { (*env)->ExceptionClear(env); pin->arr = NULL; return NULL; }
+    jint off = (*env)->CallIntMethod(env, b, m_offset);
+    pin->els = (*env)->GetIntArrayElements(env, pin->arr, NULL);
+    return pin->els ? pin->els + off + pos : NULL;
+}
+static void put_ints(JNIEnv *env, ints_pin *pin) { if (pin->els) (*env)->ReleaseIntArrayElements(env, pin->arr, pin->els, 0); }
+/* a String[] as C strings, for one call */
+typedef struct { int n; const char **s; jstring *js; } strs;
+static strs get_strs(JNIEnv *env, jobjectArray a)
+{
+    strs r = { a ? (*env)->GetArrayLength(env, a) : 0, NULL, NULL };
+    r.s = calloc((size_t)r.n + 1, sizeof *r.s); r.js = calloc((size_t)r.n + 1, sizeof *r.js);
+    for (int i = 0; i < r.n; i++) {
+        r.js[i] = (*env)->GetObjectArrayElement(env, a, i);
+        r.s[i] = r.js[i] ? (*env)->GetStringUTFChars(env, r.js[i], NULL) : "";
+    }
+    return r;
+}
+static void put_strs(JNIEnv *env, strs *r)
+{
+    for (int i = 0; i < r->n; i++) if (r->js[i]) { (*env)->ReleaseStringUTFChars(env, r->js[i], r->s[i]); (*env)->DeleteLocalRef(env, r->js[i]); }
+    free(r->s); free(r->js);
+}
+
+static void GX_glShaderSource(JNIEnv *env, jclass cls, jint shader, jstring src)
+{
+    (void)cls;
+    GLF(f, void, "glShaderSource", uint32_t, int32_t, const char *const *, const int32_t *);
+    if (!f || !src) return;
+    const char *s = (*env)->GetStringUTFChars(env, src, NULL);
+    f((uint32_t)shader, 1, &s, NULL);
+    (*env)->ReleaseStringUTFChars(env, src, s);
+}
+/* an info log or a shader's source: its length by glGet*iv, then the text */
+static jstring gl_text(JNIEnv *env, const char *getiv, int32_t lenparam, const char *get, jint obj)
+{
+    void (*iv)(uint32_t, int32_t, int32_t *) = (void (*)(uint32_t, int32_t, int32_t *))gl_fn(getiv);
+    void (*text)(uint32_t, int32_t, int32_t *, char *) = (void (*)(uint32_t, int32_t, int32_t *, char *))gl_fn(get);
+    if (!iv || !text) return (*env)->NewStringUTF(env, "");
+    int32_t n = 0, got = 0;
+    iv((uint32_t)obj, lenparam, &n);
+    char *buf = calloc((size_t)(n > 0 ? n : 0) + 1, 1);
+    if (n > 0) text((uint32_t)obj, n, &got, buf);
+    jstring r = (*env)->NewStringUTF(env, buf);
+    free(buf);
+    return r;
+}
+static jstring GX_glGetProgramInfoLog(JNIEnv *env, jclass c, jint p) { (void)c; return gl_text(env, "glGetProgramiv", 0x8B84, "glGetProgramInfoLog", p); }
+static jstring GX_glGetShaderInfoLog(JNIEnv *env, jclass c, jint s) { (void)c; return gl_text(env, "glGetShaderiv", 0x8B84, "glGetShaderInfoLog", s); }
+static jstring GX_glGetShaderSource(JNIEnv *env, jclass c, jint s) { (void)c; return gl_text(env, "glGetShaderiv", 0x8B88, "glGetShaderSource", s); }
+/* glGetActiveAttrib/Uniform giving the name as a String */
+static jstring active(JNIEnv *env, bool uniform, jint prog, jint index, jint *size, jint *type)
+{
+    void (*iv)(uint32_t, int32_t, int32_t *) = (void (*)(uint32_t, int32_t, int32_t *))gl_fn("glGetProgramiv");
+    void (*get)(uint32_t, uint32_t, int32_t, int32_t *, int32_t *, uint32_t *, char *) =
+        (void (*)(uint32_t, uint32_t, int32_t, int32_t *, int32_t *, uint32_t *, char *))gl_fn(uniform ? "glGetActiveUniform" : "glGetActiveAttrib");
+    if (!iv || !get) return NULL;
+    int32_t n = 0, len = 0, sz = 0;
+    uint32_t ty = 0;
+    iv((uint32_t)prog, uniform ? 0x8B87 : 0x8B8A, &n);   /* ACTIVE_UNIFORM_MAX_LENGTH, ACTIVE_ATTRIBUTE_MAX_LENGTH */
+    char *buf = calloc((size_t)(n > 0 ? n : 0) + 1, 1);
+    get((uint32_t)prog, (uint32_t)index, n > 0 ? n : 1, &len, &sz, &ty, buf);
+    if (size) *size = sz;
+    if (type) *type = (jint)ty;
+    jstring r = (*env)->NewStringUTF(env, buf);
+    free(buf);
+    return r;
+}
+static jstring active_arr(JNIEnv *env, bool uniform, jint prog, jint index, jintArray size, jint so, jintArray type, jint to)
+{
+    jint sz = 0, ty = 0;
+    jstring r = active(env, uniform, prog, index, &sz, &ty);
+    if (size) (*env)->SetIntArrayRegion(env, size, so, 1, &sz);
+    if (type) (*env)->SetIntArrayRegion(env, type, to, 1, &ty);
+    return r;
+}
+static jstring active_buf(JNIEnv *env, bool uniform, jint prog, jint index, jobject size, jobject type)
+{
+    ints_pin ps, pt;
+    jint *s = get_ints(env, size, &ps), *t = get_ints(env, type, &pt);
+    jstring r = active(env, uniform, prog, index, s, t);
+    put_ints(env, &ps); put_ints(env, &pt);
+    return r;
+}
+static jstring GX_glGetActiveAttrib_0(JNIEnv *env, jclass c, jint p, jint i, jintArray s, jint so, jintArray t, jint to) { (void)c; return active_arr(env, false, p, i, s, so, t, to); }
+static jstring GX_glGetActiveAttrib_1(JNIEnv *env, jclass c, jint p, jint i, jobject s, jobject t) { (void)c; return active_buf(env, false, p, i, s, t); }
+static jstring GX_glGetActiveUniform_0(JNIEnv *env, jclass c, jint p, jint i, jintArray s, jint so, jintArray t, jint to) { (void)c; return active_arr(env, true, p, i, s, so, t, to); }
+static jstring GX_glGetActiveUniform_1(JNIEnv *env, jclass c, jint p, jint i, jobject s, jobject t) { (void)c; return active_buf(env, true, p, i, s, t); }
+static jstring GX_glGetString(JNIEnv *env, jclass c, jint name)
+{
+    (void)c;
+    GLF(f, const char *, "glGetString", int32_t);
+    const char *s = f ? f(name) : NULL;
+    return s ? (*env)->NewStringUTF(env, s) : NULL;
+}
+static const JNINativeMethod k_gx20[] = {
+    { "glShaderSource", "(ILjava/lang/String;)V", (void *)GX_glShaderSource },
+    { "glGetString", "(I)Ljava/lang/String;", (void *)GX_glGetString },
+    { "glGetProgramInfoLog", "(I)Ljava/lang/String;", (void *)GX_glGetProgramInfoLog },
+    { "glGetShaderInfoLog", "(I)Ljava/lang/String;", (void *)GX_glGetShaderInfoLog },
+    { "glGetShaderSource", "(I)Ljava/lang/String;", (void *)GX_glGetShaderSource },
+    { "glGetActiveAttrib", "(II[II[II)Ljava/lang/String;", (void *)GX_glGetActiveAttrib_0 },
+    { "glGetActiveAttrib", "(IILjava/nio/IntBuffer;Ljava/nio/IntBuffer;)Ljava/lang/String;", (void *)GX_glGetActiveAttrib_1 },
+    { "glGetActiveUniform", "(II[II[II)Ljava/lang/String;", (void *)GX_glGetActiveUniform_0 },
+    { "glGetActiveUniform", "(IILjava/nio/IntBuffer;Ljava/nio/IntBuffer;)Ljava/lang/String;", (void *)GX_glGetActiveUniform_1 },
+};
+
+/* a mapped buffer's memory as a direct ByteBuffer */
+static jobject GX_glMapBufferRange(JNIEnv *env, jclass c, jint target, jint offset, jint length, jint access)
+{
+    (void)c;
+    GLF(f, void *, "glMapBufferRange", int32_t, intptr_t, intptr_t, int32_t);
+    void *p = f ? f(target, offset, length, access) : NULL;
+    return p ? (*env)->NewDirectByteBuffer(env, p, length) : NULL;
+}
+static jobject GX_glGetBufferPointerv(JNIEnv *env, jclass c, jint target, jint pname)
+{
+    (void)c;
+    GLF(f, void, "glGetBufferPointerv", int32_t, int32_t, void **);
+    GLF(len, void, "glGetBufferParameteri64v", int32_t, int32_t, int64_t *);
+    void *p = NULL;
+    int64_t n = 0;
+    if (f) f(target, pname, &p);
+    if (len) len(target, 0x9120, &n);   /* BUFFER_MAP_LENGTH */
+    return p ? (*env)->NewDirectByteBuffer(env, p, n) : NULL;
+}
+static void GX_glTransformFeedbackVaryings(JNIEnv *env, jclass c, jint prog, jobjectArray v, jint mode)
+{
+    (void)c;
+    GLF(f, void, "glTransformFeedbackVaryings", uint32_t, int32_t, const char *const *, int32_t);
+    strs s = get_strs(env, v);
+    if (f) f((uint32_t)prog, s.n, s.s, mode);
+    put_strs(env, &s);
+}
+static void uniform_indices(JNIEnv *env, jint prog, jobjectArray names, jint *out)
+{
+    GLF(f, void, "glGetUniformIndices", uint32_t, int32_t, const char *const *, uint32_t *);
+    strs s = get_strs(env, names);
+    if (f && out) f((uint32_t)prog, s.n, s.s, (uint32_t *)out);
+    put_strs(env, &s);
+}
+static void GX_glGetUniformIndices_0(JNIEnv *env, jclass c, jint prog, jobjectArray names, jobject out)
+{
+    (void)c;
+    ints_pin p;
+    uniform_indices(env, prog, names, get_ints(env, out, &p));
+    put_ints(env, &p);
+}
+static void GX_glGetUniformIndices_1(JNIEnv *env, jclass c, jint prog, jobjectArray names, jintArray out, jint off)
+{
+    (void)c;
+    jint *e = out ? (*env)->GetIntArrayElements(env, out, NULL) : NULL;
+    uniform_indices(env, prog, names, e ? e + off : NULL);
+    if (e) (*env)->ReleaseIntArrayElements(env, out, e, 0);
+}
+static const JNINativeMethod k_gx30[] = {
+    { "glMapBufferRange", "(IIII)Ljava/nio/Buffer;", (void *)GX_glMapBufferRange },
+    { "glGetBufferPointerv", "(II)Ljava/nio/Buffer;", (void *)GX_glGetBufferPointerv },
+    { "glTransformFeedbackVaryings", "(I[Ljava/lang/String;I)V", (void *)GX_glTransformFeedbackVaryings },
+    { "glGetUniformIndices", "(I[Ljava/lang/String;Ljava/nio/IntBuffer;)V", (void *)GX_glGetUniformIndices_0 },
+    { "glGetUniformIndices", "(I[Ljava/lang/String;[II)V", (void *)GX_glGetUniformIndices_1 },
+};
+static jint GX_glCreateShaderProgramv(JNIEnv *env, jclass c, jint type, jobjectArray src)
+{
+    (void)c;
+    GLF(f, uint32_t, "glCreateShaderProgramv", int32_t, int32_t, const char *const *);
+    strs s = get_strs(env, src);
+    jint r = f ? (jint)f(type, s.n, s.s) : 0;
+    put_strs(env, &s);
+    return r;
+}
+static const JNINativeMethod k_gx31[] = {
+    { "glCreateShaderProgramv", "(I[Ljava/lang/String;)I", (void *)GX_glCreateShaderProgramv },
+};
+
 bool husk_register_gles20(JNIEnv *env), husk_register_gles30(JNIEnv *env), husk_register_gles31(JNIEnv *env), husk_register_gles32(JNIEnv *env),
      husk_register_gles10(JNIEnv *env), husk_register_gles10ext(JNIEnv *env), husk_register_gles11(JNIEnv *env), husk_register_gles11ext(JNIEnv *env);
 bool husk_register_gl(JNIEnv *env);
@@ -217,5 +414,10 @@ bool husk_register_gl(JNIEnv *env)
     bool ok = shim_register(env, "husk/EGLNative", k_egl, (int)(sizeof k_egl / sizeof *k_egl));
     ok &= husk_register_gles20(env); ok &= husk_register_gles30(env); ok &= husk_register_gles31(env); ok &= husk_register_gles32(env);
     ok &= husk_register_gles10(env); ok &= husk_register_gles10ext(env); ok &= husk_register_gles11(env); ok &= husk_register_gles11ext(env);
+#define N(k) (int)(sizeof k / sizeof *k)
+    ok &= shim_register(env, "android/opengl/GLES20", k_gx20, N(k_gx20));
+    ok &= shim_register(env, "android/opengl/GLES30", k_gx30, N(k_gx30));
+    ok &= shim_register(env, "android/opengl/GLES31", k_gx31, N(k_gx31));
+#undef N
     return ok;
 }
