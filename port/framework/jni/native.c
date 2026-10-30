@@ -496,6 +496,7 @@ bool husk_register_gfx(JNIEnv *env);   /* gfx_jni.c, from gen-jni.py */
 bool husk_register_sqlite(JNIEnv *env);   /* sqlite.c */
 bool husk_register_web(JNIEnv *env);      /* web_jni.m, from gen-jni.py */
 bool husk_register_audio(JNIEnv *env);    /* audio_jni.c, from gen-jni.py */
+bool husk_register_media(JNIEnv *env);    /* media_jni.c, from gen-jni.py */
 bool husk_register_nativelibs(JNIEnv *env);   /* nativelibs.c */
 void husk_native_libs_configure(const char *apk, const char *aot_dir);
 
@@ -506,6 +507,7 @@ bool husk_framework_register(JNIEnv *env)
     ok &= husk_register_sqlite(env);
     ok &= husk_register_web(env);
     ok &= husk_register_audio(env);
+    ok &= husk_register_media(env);
     ok &= husk_register_nativelibs(env);
     ok &= husk_register_gl(env);
     husk_native_libs_configure(A.cfg.apk, A.cfg.native_dir);

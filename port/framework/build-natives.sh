@@ -21,6 +21,8 @@ python3 "$HERE/jni/gen-jni.py" "$HERE/jni/gfx.c" k_gfx husk/Gfx husk_register_gf
 cp "$HERE/jni/gfx.c" "$OUT/gfx.c"
 python3 "$HERE/jni/gen-jni.py" "$HERE/jni/web.m" k_web husk/Web husk_register_web "$OUT/web_jni.m"
 python3 "$HERE/jni/gen-jni.py" "$HERE/jni/audio.c" k_audio husk/Audio husk_register_audio "$OUT/audio_jni.c"
+# android.media.MediaCodec's decoders (husk.MediaCodecNative: the main line's, VideoToolbox and AudioToolbox)
+python3 "$HERE/jni/gen-jni.py" "$HERE/jni/media.c" k_media husk/MediaCodecNative husk_register_media "$OUT/media_jni.c"
 # android.opengl.GLES10..GLES32's natives (jni/gles/, the main line's generated ones), through ANGLE (jni/gl.c)
 gles=()
 for g in gles20:GLES20 gles30:GLES30 gles31:GLES31 gles32:GLES32 gles10:GLES10 gles10ext:GLES10Ext gles11:GLES11 gles11ext:GLES11Ext; do
@@ -28,7 +30,7 @@ for g in gles20:GLES20 gles30:GLES30 gles31:GLES31 gles32:GLES32 gles10:GLES10 g
     gles+=("$OUT/${g%%:*}_jni.c")
 done
 objs=()
-for f in "$OUT/gfx_jni.c" "$OUT/web_jni.m" "$OUT/audio_jni.c" "${gles[@]}" "$HERE/jni/gl.c" "$HERE/jni/nativelibs.c" "$HERE/jni/shim.c" "$HERE/jni/native.c" "$HERE/jni/sqlite.c" "$HERE/jni/launch.c"; do
+for f in "$OUT/gfx_jni.c" "$OUT/web_jni.m" "$OUT/audio_jni.c" "$OUT/media_jni.c" "${gles[@]}" "$HERE/jni/gl.c" "$HERE/jni/nativelibs.c" "$HERE/jni/shim.c" "$HERE/jni/native.c" "$HERE/jni/sqlite.c" "$HERE/jni/launch.c"; do
     o="$OUT/$(basename "${f%.*}").o"
     case "$f" in *.m) arc=(-fobjc-arc) ;; *) arc=() ;; esac
     "${CC[@]}" ${arc[@]+"${arc[@]}"} -I"$HERE/jni" -I"$HERE/jni/gles" -c "$f" -o "$o"
@@ -50,6 +52,6 @@ if [ "$TARGET" = macos ] && [ -n "$ARTLIB" ]; then
     "${CC[@]}" "$HERE/host/mac-host.c" "$OUT/libhuskframework.a" -o "$OUT/mac-host" \
         -L"$ARTLIB" -lart -Wl,-force_load,"$ARTLIB/libsigchain.a" -lc++ -lz -lsqlite3 \
         -framework CoreFoundation -framework CoreGraphics -framework CoreText -framework ImageIO \
-        -framework Foundation -framework AppKit -framework WebKit -framework AudioToolbox -framework Security -Wl,-rpath,"$ARTLIB"
+        -framework Foundation -framework AppKit -framework WebKit -framework AudioToolbox -framework VideoToolbox -framework CoreMedia -framework CoreVideo -framework Accelerate -framework Security -Wl,-rpath,"$ARTLIB"
     echo "$OUT/mac-host"
 fi
