@@ -183,6 +183,7 @@ public final class AppRunner {
         a.huskCreate(null);
         if (!a.isFinishing()) { a.huskStart(); a.huskResume(); }
         debugAlert(a);
+        debugSql();
         if (prev != null && !a.isFinishing()) {
             final Activity p = prev;
             // the one below stops once the new one covers it (a translucent or floating window leaves it visible)
@@ -218,6 +219,46 @@ public final class AppRunner {
                 android.util.Log.i("Husk", "debug alert shown by " + builder);
                 if (d instanceof android.app.Dialog) sHandler.postDelayed(() -> dumpViews(((android.app.Dialog) d).getWindow().getDecorView(), ""), 1000);
             } catch (Throwable e) { android.util.Log.w("Husk", "debug alert: " + e); }
+        }, ms);
+    }
+    /* HUSK_DEBUG_SQL=SECONDS|SQL|SQL...: that long after launch, queries run on a Telegram-based app's own database (its
+     * MessagesStorage, on its storage queue), their rows to the log: to see what it keeps without reading its files */
+    private static boolean sDebugSql;
+    private static void debugSql() {
+        String v = System.getenv("HUSK_DEBUG_SQL");
+        if (v == null || sDebugSql) return;
+        sDebugSql = true;
+        final String[] parts = v.split("\\|");
+        long ms = (long) (Float.parseFloat(parts[0]) * 1000);
+        sHandler.postDelayed(() -> {
+            try {
+                Class<?> msc = Class.forName("org.telegram.messenger.MessagesStorage", true, classLoader());
+                final Object st = msc.getMethod("getInstance", int.class).invoke(null, 0);
+                Object queue = msc.getMethod("getStorageQueue").invoke(st);
+                queue.getClass().getMethod("postRunnable", Runnable.class).invoke(queue, (Runnable) () -> {
+                    for (int q = 1; q < parts.length; q++) {
+                        try {
+                            Object db = msc.getMethod("getDatabase").invoke(st);
+                            Object cur = db.getClass().getMethod("queryFinalized", String.class, Object[].class).invoke(db, parts[q], new Object[0]);
+                            java.lang.reflect.Method next = cur.getClass().getMethod("next"), str = cur.getClass().getMethod("stringValue", int.class);
+                            int rows = 0;
+                            android.util.Log.i("HuskSql", "> " + parts[q]);
+                            while ((Boolean) next.invoke(cur) && rows++ < 50) {
+                                StringBuilder b = new StringBuilder();
+                                for (int i = 0; i < 8; i++) {
+                                    Object x;
+                                    try { x = str.invoke(cur, i); } catch (Throwable e) { break; }
+                                    if (i > 0) b.append(" | ");
+                                    b.append(x);
+                                }
+                                android.util.Log.i("HuskSql", b.toString());
+                            }
+                            cur.getClass().getMethod("dispose").invoke(cur);
+                            android.util.Log.i("HuskSql", "(" + rows + " rows)");
+                        } catch (Throwable e) { android.util.Log.w("HuskSql", parts[q] + ": " + (e.getCause() != null ? e.getCause() : e)); }
+                    }
+                });
+            } catch (Throwable e) { android.util.Log.w("HuskSql", "debug sql: " + e); }
         }, ms);
     }
     /** A view tree to the log: each view's class, bounds, visibility, alpha, translation and scroll. */
