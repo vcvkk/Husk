@@ -1,0 +1,6 @@
+# The steps tests/extera.env's run takes (mac-host --script): seconds from the start, then the step.
+# Logs in to a Telegram test-server account: country code 999 makes exteraGram switch to the test servers;
+# a number 99966XYYYY there needs no SMS, its code is X five times.
+14 shot intro
+14.5 tap 540 2100
+22 shot phone

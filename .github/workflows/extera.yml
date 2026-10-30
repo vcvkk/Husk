@@ -3,12 +3,12 @@ name: exteraGram on macOS
 # exteraGram (Telegram with Python plugins: nearly all of it native libraries) on the macOS test host, under lldb so a crash
 # leaves its backtrace. The APK is not in the repository: the compile job takes it from Google Drive (tests/extera.env's
 # DRIVE_ID) and compiles it on a run's boot image (RUN_ID); the run job runs it, its libraries through the guest linker
-# (port/native: on a Mac with executable memory, as on a phone with JIT). A push changing tests/extera.env runs this.
+# (port/native: on a Mac with executable memory, as on a phone with JIT). A push changing tests/extera.env or its script runs this.
 
 on:
   push:
     branches: [husk-port]
-    paths: ['tests/extera.env']
+    paths: ['tests/extera.env', 'tests/extera.script']
 
 jobs:
   compile:
@@ -134,6 +134,13 @@ jobs:
           xargs build/so2dylib --macos build/aot-mac < build/so-py.txt 2>&1 | grep -v "^ld:" | tail -30
           for f in build/aot-mac/*.dylib; do codesign -s - -f "$f"; done
           echo "TL_NO_XMEM=1" >> "$GITHUB_ENV"; echo "TL_AOT_DIR=$PWD/build/aot-mac" >> "$GITHUB_ENV"
+      # the app's data (its login: a test-server account, tests/extera.script) from the last run; DATA_RESET=1 starts afresh
+      - uses: actions/cache/restore@v4
+        if: env.DATA_RESET != '1'
+        with:
+          path: build/data
+          key: extera-data-${{ github.run_id }}
+          restore-keys: extera-data-
       - name: Run it under lldb
         run: |
           set +e
@@ -148,13 +155,18 @@ jobs:
             -o 'settings set platform.plugin.darwin.ignored-exceptions EXC_BAD_ACCESS|EXC_BAD_INSTRUCTION|EXC_ARITHMETIC' \
             -o run -k 'thread backtrace all' -k 'register read' \
             -- build/fw/mac-host --art "$PWD/build/app/boot" --apk "$PWD/build/app/app/base.apk" --fwres "$PWD/build/app/app/framework-res.apk" \
-            --seconds $SECONDS --frames build/frames $HOST_ARGS > build/app-run.log 2>&1 &
+            --data "$PWD/build/data" --seconds $SECONDS --frames build/frames $HOST_ARGS ${SCRIPT:+--script "$PWD/$SCRIPT"} > build/app-run.log 2>&1 &
           run=$!
           if [ -n "$PROFILE_AT" ]; then sleep $PROFILE_AT; pid=$(pgrep -n mac-host) && sample $pid 5 -mayDie -file build/sample.txt > /dev/null 2>&1; fi
           wait $run
           echo "exit $?"
           tr -d '\000' < build/app-run.log | grep -av 'not in a known location\|Overlapping/invalid range\|FrameStats' | tail -300
           grep -a FrameStats build/app-run.log | tail -40 || true
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: build/data
+          key: extera-data-${{ github.run_id }}-${{ github.run_attempt }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:

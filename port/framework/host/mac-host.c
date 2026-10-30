@@ -4,7 +4,10 @@
  * files, a frame a second. For CI, where it shows what the iOS app would show.
  *
  *   mac-host --art DIR --apk APK [--fwres framework-res.apk] [--data DIR] [--size 1080x2400] [--density 3] [--seconds 20]
- *            [--frames DIR] [--tap X,Y@SECONDS]... [--type TEXT@SECONDS]... [--burst SECONDS]
+ *            [--frames DIR] [--tap X,Y@SECONDS]... [--type TEXT@SECONDS]... [--burst SECONDS] [--script FILE]
+ *
+ * --script: a line a step, "SECONDS COMMAND ARGS" (seconds from the start, tenths too; # comments):
+ *   tap X Y | swipe X1 Y1 X2 Y2 | type TEXT | enter | delete | back | shot NAME (a frame as NAME.png) | burst
  *
  * --art is a boot image directory (port/art/boot-image.sh's layout) with the framework in it;
  * the APK's compiled code is beside it, in oat/arm64/<apk name>.odex{,.dylib}.
@@ -23,6 +26,30 @@
 #include "../jni/husk-launch.h"
 
 static const char *g_art, *g_data;
+
+typedef struct { int at; char cmd[16]; char arg[256]; } step;
+
+static int read_script(const char *path, step **out)
+{
+    FILE *f = fopen(path, "r");
+    if (!f) { fprintf(stderr, "mac-host: no script %s\n", path); exit(2); }
+    int n = 0, cap = 0; step *s = NULL; char line[512];
+    while (fgets(line, sizeof line, f)) {
+        line[strcspn(line, "\r\n")] = 0;
+        float t; int used = 0;
+        if (line[0] == '#' || sscanf(line, "%f %n", &t, &used) != 1 || !used) continue;
+        if (n == cap) s = realloc(s, (size_t)(cap = cap ? cap * 2 : 32) * sizeof *s);
+        step *p = &s[n++];
+        memset(p, 0, sizeof *p);
+        p->at = (int)(t * 10 + 0.5f);
+        int u = 0;
+        sscanf(line + used, "%15s %n", p->cmd, &u);
+        if (u) snprintf(p->arg, sizeof p->arg, "%s", line + used + u);
+    }
+    fclose(f);
+    *out = s;
+    return n;
+}
 
 static void *app_main(void *unused)
 {
@@ -73,6 +100,7 @@ int main(int argc, char **argv)
     const char *frames = "frames";
     struct { float x, y; int at; } taps[16]; int ntaps = 0;
     struct { char text[256]; int at; } types[8]; int ntypes = 0;   /* text typed, as the keyboard commits it */
+    step *steps = NULL; int nsteps = 0;
     for (int i = 1; i + 1 < argc; i += 2) {
         const char *k = argv[i], *v = argv[i + 1];
         if (!strcmp(k, "--art")) g_art = v;
@@ -84,6 +112,7 @@ int main(int argc, char **argv)
         else if (!strcmp(k, "--seconds")) seconds = atoi(v);
         else if (!strcmp(k, "--frames")) frames = v;
         else if (!strcmp(k, "--burst")) burst = atoi(v);
+        else if (!strcmp(k, "--script")) nsteps = read_script(v, &steps);
         else if (!strcmp(k, "--tap") && ntaps < 16) {
             if (sscanf(v, "%f,%f@%d", &taps[ntaps].x, &taps[ntaps].y, &taps[ntaps].at) == 3) ntaps++;
         } else if (!strcmp(k, "--type") && ntypes < 8) {
@@ -120,6 +149,32 @@ int main(int argc, char **argv)
         for (int i = 0; i < ntypes; i++) if (types[i].at * 10 == tenth) {
             fprintf(stderr, "mac-host: type %s\n", types[i].text);
             husk_app_text(types[i].text);
+        }
+        for (int i = 0; i < nsteps; i++) if (steps[i].at == tenth) {
+            step *p = &steps[i];
+            float a[4] = { 0 };
+            fprintf(stderr, "mac-host: %.1fs %s %s\n", tenth / 10.0, p->cmd, p->arg);
+            if (!strcmp(p->cmd, "tap") && sscanf(p->arg, "%f %f", &a[0], &a[1]) == 2) {
+                husk_app_touch(0, 0, a[0], a[1]); usleep(50000); husk_app_touch(2, 0, a[0], a[1]);
+            } else if (!strcmp(p->cmd, "swipe") && sscanf(p->arg, "%f %f %f %f", &a[0], &a[1], &a[2], &a[3]) == 4) {
+                husk_app_touch(0, 0, a[0], a[1]);
+                for (int k = 1; k <= 10; k++) { usleep(16000); husk_app_touch(1, 0, a[0] + (a[2] - a[0]) * k / 10, a[1] + (a[3] - a[1]) * k / 10); }
+                husk_app_touch(2, 0, a[2], a[3]);
+            } else if (!strcmp(p->cmd, "type")) husk_app_text(p->arg);
+            else if (!strcmp(p->cmd, "enter")) husk_app_text_action();
+            else if (!strcmp(p->cmd, "delete")) husk_app_text_delete();
+            else if (!strcmp(p->cmd, "back")) husk_app_back();
+            else if (!strcmp(p->cmd, "burst")) burst = tenth / 10;
+            else if (!strcmp(p->cmd, "shot")) {
+                usleep(50000);
+                const uint8_t *px; int w, h; bool any;
+                if (husk_frame_take(&px, &w, &h, &any)) {
+                    char path[1400];
+                    snprintf(path, sizeof path, "%s/%s.png", frames, p->arg);
+                    if (any) write_png(path, px, w, h);
+                    husk_frame_done();
+                }
+            } else fprintf(stderr, "mac-host: unknown step %s\n", p->cmd);
         }
         if (burst >= 0 && tenth == burst * 10)
             for (int k = 0; k < 24; k++) {
