@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.Canvas
 import androidx.compose.ui.graphics.asImageBitmap
@@ -78,6 +79,8 @@ class MainActivity : ComponentActivity() {
                                  start = Offset(0f, 0f), end = Offset(size.width, size.height)),
                                  topLeft = Offset(12f, 12f), size = Size(size.width - 24f, size.height - 24f), style = Stroke(18.5f))
                     }
+                    // OpenGL ES through ANGLE (GLTest): a GLSurfaceView in the top right corner
+                    androidx.compose.ui.viewinterop.AndroidView({ GLTest(it) }, Modifier.align(Alignment.TopEnd).padding(top = 48.dp, end = 16.dp).size(120.dp))
                     // text measured and laid out at heavy weights and large sizes, as DepCalc's titles; above, where it moves nothing
                     Column(Modifier.align(Alignment.TopStart).padding(top = 48.dp)) {
                         Text("Ещё", Modifier.padding(24.dp, 6.dp), style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.Black, letterSpacing = (-2).sp)

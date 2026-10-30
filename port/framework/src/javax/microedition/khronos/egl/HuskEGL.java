@@ -86,7 +86,6 @@ final class HuskEGL implements EGL11 {
         long h = husk.EGLNative.createSurface(size[0], size[1]);
         if (h == 0) { err(EGL_BAD_ALLOC); return EGL_NO_SURFACE; }
         Surface s = new Surface(); s.handle = h; s.w = size[0]; s.h = size[1]; s.view = v;
-        if (v != null) v.huskSetGL(true);
         return s;
     }
     public EGLSurface eglCreatePbufferSurface(EGLDisplay d, EGLConfig c, int[] attribs) {
@@ -112,6 +111,8 @@ final class HuskEGL implements EGL11 {
     }
     public boolean eglSwapBuffers(EGLDisplay d, EGLSurface s) {
         if (s instanceof Surface && ((Surface) s).texture != null && ((Surface) s).handle != 0) return readBack((Surface) s);
+        /* a SurfaceView's: read back into its frames, as a TextureView's, drawn where the view is among the window's views */
+        if (s instanceof Surface && ((Surface) s).view != null && ((Surface) s).handle != 0) return readBack((Surface) s);
         if (render() || !(s instanceof Surface) || ((Surface) s).handle == 0) return true;
         Surface su = (Surface) s;
         Object[] cur = sCurrent.get();
@@ -147,13 +148,13 @@ final class HuskEGL implements EGL11 {
         su.pixels.rewind();
         if (su.frame == null || su.frame.getWidth() != w || su.frame.getHeight() != h) su.frame = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888);
         su.frame.copyPixelsFromBuffer(su.pixels);
-        android.graphics.Canvas c = su.texture.huskLock(null);
+        android.graphics.Canvas c = su.texture != null ? su.texture.huskLock(null) : su.view.getHolder().lockCanvas();
         if (c == null) return true;
         try {
             c.save(); c.scale(1, -1, c.getWidth() / 2f, c.getHeight() / 2f);
             c.drawBitmap(su.frame, null, new android.graphics.Rect(0, 0, c.getWidth(), c.getHeight()), null);
             c.restore();
-        } finally { su.texture.huskPost(c); }
+        } finally { if (su.texture != null) su.texture.huskPost(c); else su.view.getHolder().unlockCanvasAndPost(c); }
         return true;
     }
 }

@@ -48,15 +48,24 @@ jobj *shim_in(jobject ref, char kind)
     JNIEnv *env = t_call->env;
     jobj *o = new_jobj();
     o->ref = ref;
-    if ((*env)->IsInstanceOf(env, ref, (*env)->FindClass(env, "java/lang/String"))) {
+    /* the classes told apart, looked up once (every object parameter of every native call came here: a GL call with an array
+     * did ten FindClass) */
+    static jclass k_string, k_objs, k_prim[8];
+    static const struct { const char *desc; char elem; } prims[] = {
+        { "[I", 'I' }, { "[F", 'F' }, { "[B", 'B' }, { "[J", 'J' }, { "[S", 'S' }, { "[C", 'C' }, { "[Z", 'Z' }, { "[D", 'D' },
+    };
+    if (!k_string) {
+        jclass t;
+        for (size_t i = 0; i < 8; i++) { t = (*env)->FindClass(env, prims[i].desc); k_prim[i] = (*env)->NewGlobalRef(env, t); (*env)->DeleteLocalRef(env, t); }
+        t = (*env)->FindClass(env, "[Ljava/lang/Object;"); k_objs = (*env)->NewGlobalRef(env, t); (*env)->DeleteLocalRef(env, t);
+        t = (*env)->FindClass(env, "java/lang/String"); k_string = (*env)->NewGlobalRef(env, t); (*env)->DeleteLocalRef(env, t);
+    }
+    if ((*env)->IsInstanceOf(env, ref, k_string)) {
         o->kind = TL_K_STRING;
         return o;
     }
     (void)kind;
-    jclass oc = (*env)->FindClass(env, "[Ljava/lang/Object;");
-    bool objs = (*env)->IsInstanceOf(env, ref, oc);
-    (*env)->DeleteLocalRef(env, oc);
-    if (objs) {
+    if ((*env)->IsInstanceOf(env, ref, k_objs)) {
         o->kind = TL_K_OBJ_ARRAY;
         o->oarr.len = (uint32_t)(*env)->GetArrayLength(env, (jarray)ref);
         o->oarr.v = calloc(o->oarr.len ? o->oarr.len : 1, sizeof *o->oarr.v);
@@ -64,23 +73,15 @@ jobj *shim_in(jobject ref, char kind)
             o->oarr.v[i] = shim_in((*env)->GetObjectArrayElement(env, (jobjectArray)ref, (jsize)i), 'L');
         return o;
     }
-    jclass c = (*env)->GetObjectClass(env, ref);
-    static const struct { const char *desc; char elem; } prims[] = {
-        { "[I", 'I' }, { "[F", 'F' }, { "[B", 'B' }, { "[J", 'J' }, { "[S", 'S' }, { "[C", 'C' }, { "[Z", 'Z' }, { "[D", 'D' },
-    };
-    for (size_t i = 0; i < sizeof prims / sizeof *prims; i++) {
-        jclass pc = (*env)->FindClass(env, prims[i].desc);
-        if ((*env)->IsInstanceOf(env, ref, pc)) {
+    for (size_t i = 0; i < 8; i++) {
+        if ((*env)->IsInstanceOf(env, ref, k_prim[i])) {
             o->kind = TL_K_PRIM_ARRAY;
             o->arr.elem = prims[i].elem;
             o->arr.len = (uint32_t)(*env)->GetArrayLength(env, (jarray)ref);
             o->arr.data = elements(env, (jarray)ref, o->arr.elem, true);
-            (*env)->DeleteLocalRef(env, pc);
             break;
         }
-        (*env)->DeleteLocalRef(env, pc);
     }
-    (*env)->DeleteLocalRef(env, c);
     return o;
 }
 

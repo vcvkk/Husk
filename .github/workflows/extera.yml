@@ -110,6 +110,10 @@ jobs:
           rm -rf build/app/app && tar -xzf build/extera-macos.tgz -C build/app
           (cd build/ipa && unzip -q ComposeHello.ipa 'Payload/*/art/etc/*') && cp -R build/ipa/Payload/*/art/etc build/app/boot/
           for f in build/app/boot/arm64/*.dylib build/app/app/oat/arm64/*.dylib; do codesign -s - -f "$f"; done
+      - uses: actions/cache/restore@v4
+        with:
+          path: build/angle-macos
+          key: angle-macos-${{ hashFiles('port/gl/build-angle.sh') }}
       - name: Natives and the test host
         run: port/framework/build-natives.sh macos build/fw build/darwin/include/nativehelper "$PWD/build/darwin/lib"
       # NOJIT=1: as on a phone with no JIT (iOS 26 without a debugger): no executable memory, the libraries from macOS dylibs made
@@ -129,6 +133,7 @@ jobs:
           set +e
           mkdir -p build/frames
           export HUSK_FRAME_STATS=1 HUSK_AUDIO_STATS=1
+          [ -f build/angle-macos/lib/libANGLE-shared.dylib ] && export HUSK_ANGLE_DIR="$PWD/build/angle-macos/lib"
           unset JAVA_HOME
           perl -e 'alarm shift; exec @ARGV' $(( SECONDS + 60 )) lldb --batch \
             -o 'process handle SIGSEGV -s false -p true -n false' -o 'process handle SIGBUS -s false -p true -n false' \

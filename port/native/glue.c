@@ -19,7 +19,8 @@
 const tl_bionic_entry tl_tab_egl[] = { TL_END };
 const tl_bionic_entry tl_tab_opensles[] = { TL_END };
 const tl_bionic_entry tl_tab_jvm[] = { TL_END };
-void *tl_egl_resolve(const char *name) { (void)name; return NULL; }
+/* the framework's (jni/gl.c: GL and EGL through ANGLE) where it is linked in; none for the layer on its own (so2dylib) */
+__attribute__((weak)) void *tl_egl_resolve(const char *name) { (void)name; return NULL; }
 void *tl_vk_resolve(const char *name) { (void)name; return NULL; }
 bool tl_vk_available(void) { return false; }
 

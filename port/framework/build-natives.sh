@@ -21,11 +21,17 @@ python3 "$HERE/jni/gen-jni.py" "$HERE/jni/gfx.c" k_gfx husk/Gfx husk_register_gf
 cp "$HERE/jni/gfx.c" "$OUT/gfx.c"
 python3 "$HERE/jni/gen-jni.py" "$HERE/jni/web.m" k_web husk/Web husk_register_web "$OUT/web_jni.m"
 python3 "$HERE/jni/gen-jni.py" "$HERE/jni/audio.c" k_audio husk/Audio husk_register_audio "$OUT/audio_jni.c"
+# android.opengl.GLES10..GLES32's natives (jni/gles/, the main line's generated ones), through ANGLE (jni/gl.c)
+gles=()
+for g in gles20:GLES20 gles30:GLES30 gles31:GLES31 gles32:GLES32 gles10:GLES10 gles10ext:GLES10Ext gles11:GLES11 gles11ext:GLES11Ext; do
+    python3 "$HERE/jni/gen-jni.py" "$HERE/jni/gles/${g%%:*}.c" "k_${g%%:*}" "android/opengl/${g##*:}" "husk_register_${g%%:*}" "$OUT/${g%%:*}_jni.c" > /dev/null
+    gles+=("$OUT/${g%%:*}_jni.c")
+done
 objs=()
-for f in "$OUT/gfx_jni.c" "$OUT/web_jni.m" "$OUT/audio_jni.c" "$HERE/jni/nativelibs.c" "$HERE/jni/shim.c" "$HERE/jni/native.c" "$HERE/jni/sqlite.c" "$HERE/jni/launch.c"; do
+for f in "$OUT/gfx_jni.c" "$OUT/web_jni.m" "$OUT/audio_jni.c" "${gles[@]}" "$HERE/jni/gl.c" "$HERE/jni/nativelibs.c" "$HERE/jni/shim.c" "$HERE/jni/native.c" "$HERE/jni/sqlite.c" "$HERE/jni/launch.c"; do
     o="$OUT/$(basename "${f%.*}").o"
     case "$f" in *.m) arc=(-fobjc-arc) ;; *) arc=() ;; esac
-    "${CC[@]}" ${arc[@]+"${arc[@]}"} -I"$HERE/jni" -c "$f" -o "$o"
+    "${CC[@]}" ${arc[@]+"${arc[@]}"} -I"$HERE/jni" -I"$HERE/jni/gles" -c "$f" -o "$o"
     objs+=("$o")
 done
 # the guest linker and its bionic (port/native/tl, Husk's main line's), its calls to its own Java world's JNI renamed (glue.c)

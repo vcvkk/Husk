@@ -8,7 +8,11 @@ import javax.microedition.khronos.egl.EGLDisplay;
 import javax.microedition.khronos.egl.EGLSurface;
 import javax.microedition.khronos.opengles.GL10;
 
-/** The renderer runs on Husk's GL thread (husk-tl-dvm-android.c), which owns the EGL context on the app's screen. */
+/**
+ * The renderer runs on a GL thread of its own, as on Android: an EGL context through ANGLE (husk.EGLNative, jni/gl.c), a window
+ * surface the view's size, onSurfaceCreated, onSurfaceChanged and onDrawFrame, and each frame read back into the view (HuskEGL's
+ * eglSwapBuffers) where the window's views are drawn.
+ */
 public class GLSurfaceView extends android.view.SurfaceView implements android.view.SurfaceHolder.Callback2 {
     public static final int RENDERMODE_WHEN_DIRTY = 0, RENDERMODE_CONTINUOUSLY = 1, DEBUG_CHECK_GL_ERROR = 1, DEBUG_LOG_GL_CALLS = 2;
     public interface Renderer { void onSurfaceCreated(GL10 gl, EGLConfig config); void onSurfaceChanged(GL10 gl, int w, int h); void onDrawFrame(GL10 gl); }
@@ -49,10 +53,13 @@ public class GLSurfaceView extends android.view.SurfaceView implements android.v
     public boolean getPreserveEGLContextOnPause() { return true; }
     public void setRenderMode(int m) { renderMode = m; dirty = true; }
     public int getRenderMode() { return renderMode; }
-    public void requestRender() { dirty = true; husk.Native.requestRender(); }
+    public void requestRender() { dirty = true; synchronized (signal) { signal.notifyAll(); } }
+    private final Object signal = new Object();
+    private volatile boolean detached;
     public void onPause() { paused = true; }
     public void onResume() { paused = false; dirty = true; }
-    public void queueEvent(Runnable r) { synchronized (queue) { queue.add(r); } husk.Native.requestRender(); }
+    public void queueEvent(Runnable r) { synchronized (queue) { queue.add(r); } requestRender(); }
+    @Override protected void onDetachedFromWindow() { detached = true; requestRender(); super.onDetachedFromWindow(); }
     @Override protected void onAttachedToWindow() { super.onAttachedToWindow(); start(); }
     private void start() {
         if (renderer == null || started) return;
@@ -73,7 +80,53 @@ public class GLSurfaceView extends android.view.SurfaceView implements android.v
                 version = 2;
             }
         }
-        husk.Native.startGL(this, renderer, version);
+        detached = false;
+        new GLThread().start();
+    }
+
+    /** The GL thread: its context, the surface at the view's size (made again when that changes), the frames. */
+    private final class GLThread extends Thread {
+        GLThread() { super("GLThread " + Integer.toHexString(System.identityHashCode(GLSurfaceView.this))); }
+        @Override public void run() {
+            EGL10 egl = (EGL10) EGLContext.getEGL();
+            EGLDisplay d = egl.eglGetDisplay(EGL10.EGL_DEFAULT_DISPLAY);
+            egl.eglInitialize(d, new int[2]);
+            EGLConfig[] cfg = new EGLConfig[1];
+            egl.eglChooseConfig(d, null, cfg, 1, new int[1]);
+            int[] attr = { 0x3098, Math.max(1, version), EGL10.EGL_NONE };
+            EGLContext ctx = null;
+            try { ctx = contextFactory != null ? contextFactory.createContext(egl, d, cfg[0]) : egl.eglCreateContext(d, cfg[0], EGL10.EGL_NO_CONTEXT, attr); }
+            catch (RuntimeException e) { android.util.Log.w("GLSurfaceView", "the app's EGLContextFactory threw: " + e); }
+            if (ctx == null || ctx == EGL10.EGL_NO_CONTEXT) { android.util.Log.w("GLSurfaceView", "no GL ES " + version + " context"); return; }
+            GL10 gl = (GL10) ctx.getGL();
+            EGLSurface surf = null;
+            int lw = -1, lh = -1;
+            boolean created = false;
+            long frame = (long) (1e9 / husk.Native.refreshRate());
+            while (!detached) {
+                long t0 = System.nanoTime();
+                huskTakeResize();
+                int[] sz = huskSurfaceSize();
+                if (sz[0] != lw || sz[1] != lh) {
+                    if (surf != null) egl.eglDestroySurface(d, surf);
+                    surf = egl.eglCreateWindowSurface(d, cfg[0], getHolder(), null);
+                    if (surf == EGL10.EGL_NO_SURFACE || !egl.eglMakeCurrent(d, surf, surf, ctx)) { android.util.Log.w("GLSurfaceView", "no surface " + sz[0] + "x" + sz[1]); break; }
+                    if (!created) { renderer.onSurfaceCreated(gl, cfg[0]); created = true; }
+                    renderer.onSurfaceChanged(gl, sz[0], sz[1]);
+                    lw = sz[0]; lh = sz[1]; dirty = true;
+                }
+                if (huskBeginFrame()) { renderer.onDrawFrame(gl); egl.eglSwapBuffers(d, surf); }
+                long left = renderMode == RENDERMODE_CONTINUOUSLY && !paused ? frame - (System.nanoTime() - t0) : 100_000_000L;
+                if (left > 0) synchronized (signal) {
+                    if (!dirty || renderMode == RENDERMODE_CONTINUOUSLY) try { signal.wait(left / 1_000_000L, (int) (left % 1_000_000L)); } catch (InterruptedException e) { break; }
+                }
+            }
+            egl.eglMakeCurrent(d, EGL10.EGL_NO_SURFACE, EGL10.EGL_NO_SURFACE, EGL10.EGL_NO_CONTEXT);
+            if (surf != null) egl.eglDestroySurface(d, surf);
+            if (contextFactory != null) try { contextFactory.destroyContext(egl, d, ctx); } catch (RuntimeException e) {}
+            else egl.eglDestroyContext(d, ctx);
+            started = false;
+        }
     }
 
     private static HuskGL10 sGL;

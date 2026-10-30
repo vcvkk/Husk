@@ -9,13 +9,14 @@
 #   --runtime  ART's runtime for iOS: DIR/lib/*.dylib and libsigchain.a, DIR/include/nativehelper
 #   --files    port/framework/ci-app.sh's iOS output: boot/ (jars/, arm64/, boot.classpath), app/
 #   --natives  the framework's natives for iOS (port/framework/build-natives.sh ios)
+#   --angle    (optional) ANGLE for iOS (port/gl/build-angle.sh): DIR/lib/libANGLE-shared.dylib, into Frameworks, for apps' GL
 # Run on macOS with Xcode.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 while [ $# -gt 0 ]; do
     case "$1" in
         --runtime) RT="$2";; --files) FILES="$2";; --natives) NATIVES="$2";; --name) NAME="$2";;
-        --id) ID="$2";; --out) OUT="$2";;
+        --id) ID="$2";; --out) OUT="$2";; --angle) ANGLE="$2";;
         *) echo "unknown option $1" >&2; exit 2;;
     esac
     shift 2
@@ -23,6 +24,7 @@ done
 SDK=$(xcrun --sdk iphoneos --show-sdk-path)
 WORK=$(mktemp -d); APP="$WORK/Payload/$NAME.app"
 mkdir -p "$APP/Frameworks" "$APP/art"
+[ -n "${ANGLE:-}" ] && [ -f "$ANGLE/lib/libANGLE-shared.dylib" ] && cp "$ANGLE/lib/libANGLE-shared.dylib" "$APP/Frameworks/"
 
 xcrun --sdk iphoneos clang -target arm64-apple-ios14.0 -isysroot "$SDK" -fobjc-arc -O2 \
     -I"$RT/include/nativehelper" -I"$ROOT/port/framework/jni" -I"$ROOT/port/native/ios" "$ROOT/port/ios/shell/app.m" "$NATIVES" -o "$APP/$NAME" \

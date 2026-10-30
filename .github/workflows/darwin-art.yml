@@ -615,6 +615,11 @@ jobs:
           tar -xzf build/darwin-runtime.tgz -C build
           mkdir -p build/app && tar -xzf build/macos.tgz -C build/app
           for f in build/app/boot/arm64/*.dylib build/app/app/oat/arm64/*.dylib; do codesign -s - -f "$f"; done
+      # ANGLE for apps' OpenGL ES (the ANGLE workflow's, by its script's hash), if built
+      - uses: actions/cache/restore@v4
+        with:
+          path: build/angle-macos
+          key: angle-macos-${{ hashFiles('port/gl/build-angle.sh') }}
       - name: Natives and the test host
         run: port/framework/build-natives.sh macos build/fw build/darwin/include/nativehelper "$PWD/build/darwin/lib"
       - name: CoreGraphics pixel formats
@@ -623,6 +628,7 @@ jobs:
         run: |
           set +e
           export HUSK_FRAME_STATS=1   # FrameStats lines: where a frame's time goes
+          [ -f build/angle-macos/lib/libANGLE-shared.dylib ] && export HUSK_ANGLE_DIR="$PWD/build/angle-macos/lib"
           perl -e 'alarm shift; exec @ARGV' 120 build/fw/mac-host --art "$PWD/build/app/boot" --apk "$PWD/build/app/app/base.apk" --fwres "$PWD/build/app/app/framework-res.apk" \
             --seconds 15 --frames build/frames --tap 400,760@3 --type "Привет 👋@5" --tap 540,1300@8 > build/app-run.log 2>&1 &
           host=$!
@@ -660,13 +666,17 @@ jobs:
         with:
           name: app-ios
           path: build
+      - uses: actions/cache/restore@v4
+        with:
+          path: build/angle-ios
+          key: angle-ios-${{ hashFiles('port/gl/build-angle.sh') }}
       - name: Natives and the app
         run: |
           tar -xzf build/ios-runtime.tgz -C build
           mkdir -p build/app && tar -xzf build/ios.tgz -C build/app
           port/framework/build-natives.sh ios build/fw-ios build/ios-runtime/include/nativehelper
           port/ios/pack-app.sh --runtime build/ios-runtime --files build/app --natives build/fw-ios/libhuskframework.a \
-            --name ComposeHello --id dev.huskport.composehello --out build/ComposeHello.ipa
+            --name ComposeHello --id dev.huskport.composehello --out build/ComposeHello.ipa --angle build/angle-ios
       - uses: actions/upload-artifact@v4
         with:
           name: ComposeHello-ipa
