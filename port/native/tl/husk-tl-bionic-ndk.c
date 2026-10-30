@@ -895,6 +895,9 @@ const tl_bionic_entry tl_tab_ndk[] = {
     TL_DIRECT(inflate), TL_DIRECT(inflateEnd), TL_DIRECT(inflateInit2_), TL_DIRECT(inflateInit_), TL_DIRECT(zError),
     TL_DIRECT(compressBound), TL_DIRECT(zlibVersion), TL_DIRECT(compress), TL_DIRECT(compress2), TL_DIRECT(uncompress), TL_DIRECT(crc32), TL_DIRECT(adler32),
     TL_DIRECT(inflateReset), TL_DIRECT(inflateReset2), TL_DIRECT(deflateReset), TL_DIRECT(inflateSync), TL_DIRECT(deflateParams), TL_DIRECT(deflateSetDictionary), TL_DIRECT(inflateSetDictionary),
+    /* gzip files (Telegram's Lottie unpacks .tgs stickers with these): the app's paths are this system's */
+    TL_DIRECT(gzopen), TL_DIRECT(gzdopen), TL_DIRECT(gzread), TL_DIRECT(gzwrite), TL_DIRECT(gzclose), TL_DIRECT(gzgets), TL_DIRECT(gzeof),
+    TL_DIRECT(gzseek), TL_DIRECT(gztell), TL_DIRECT(gzrewind), TL_DIRECT(gzerror), TL_DIRECT(gzbuffer),
     /* looper */
     TL_WRAP("ALooper_prepare", b_ALooper_prepare), TL_WRAP("ALooper_forThread", b_ALooper_forThread),
     TL_WRAP("ALooper_acquire", b_ALooper_acquire), TL_WRAP("ALooper_release", b_ALooper_release),
