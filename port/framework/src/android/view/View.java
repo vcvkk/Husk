@@ -969,7 +969,7 @@ public class View implements Drawable.Callback, KeyEvent.Callback {
     // ---- drawing
     /* As Android's invalidateInternal: the rectangle forms do not call the overridable invalidate(), which subclasses often
        override to invalidate their drawables (whose invalidateSelf comes back through invalidateDrawable) */
-    private void invalidateHusk() {
+    void invalidateHusk() {
         mPrivateFlags |= PFLAG_DIRTY;
         if (mRoot != null) mRoot.invalidate();
     }
@@ -1700,7 +1700,7 @@ public class View implements Drawable.Callback, KeyEvent.Callback {
     protected void initializeScrollbars(android.content.res.TypedArray p0) {}
     protected void initializeScrollbarsInternal(android.content.res.TypedArray p0) {}
     protected void internalSetPadding(int p0, int p1, int p2, int p3) {}
-    public void invalidate(boolean p0) {}
+    public void invalidate(boolean p0) { invalidateHusk(); }
     protected void invalidateParentCaches() {}
     protected void invalidateParentIfNeeded() {}
     protected void invalidateParentIfNeededAndWasQuickRejected() {}

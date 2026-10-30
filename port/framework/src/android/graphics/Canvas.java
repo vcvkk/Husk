@@ -31,7 +31,8 @@ public class Canvas {
     public void huskRelease() { setBitmap(null); }
     @Override protected void finalize() throws Throwable { if (mNative != 0) husk.Gfx.cvFree(mNative); mNative = 0; super.finalize(); }
 
-    public boolean isHardwareAccelerated() { return false; }
+    /** Husk: false, but to the code husk.HwCanvas names (the class asking: VMStack.getStackClass1 is its caller's) */
+    public boolean isHardwareAccelerated() { return husk.HwCanvas.wants(dalvik.system.VMStack.getStackClass1()); }
     public boolean isOpaque() { return false; }
     public int getWidth() { return mBitmap == null ? 0 : mBitmap.getWidth(); }
     public int getHeight() { return mBitmap == null ? 0 : mBitmap.getHeight(); }

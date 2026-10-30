@@ -134,7 +134,7 @@ public abstract class ViewGroup extends View implements ViewParent, ViewManager 
     public void addView(View v, LayoutParams p) { addView(v, -1, p); }
     public void addView(View v, int index, LayoutParams p) {
         requestLayout();
-        invalidate();
+        invalidate(true);
         addViewInner(v, index, p, false);
     }
     protected boolean addViewInLayout(View v, int index, LayoutParams p) { return addViewInLayout(v, index, p, false); }
@@ -179,12 +179,12 @@ public abstract class ViewGroup extends View implements ViewParent, ViewManager 
         System.arraycopy(mChildren, index + 1, mChildren, index, mChildrenCount - index - 1);
         mChildren[--mChildrenCount] = null;
     }
-    public void removeView(View v) { int i = indexOfChild(v); if (i >= 0) { removeViewInternal(i); requestLayout(); invalidate(); } }
+    public void removeView(View v) { int i = indexOfChild(v); if (i >= 0) { removeViewInternal(i); requestLayout(); invalidate(true); } }
     public void removeViewInLayout(View v) { int i = indexOfChild(v); if (i >= 0) removeViewInternal(i); }
     public void removeViewsInLayout(int start, int count) { for (int i = start + count - 1; i >= start; i--) removeViewInternal(i); }
-    public void removeViewAt(int index) { removeViewInternal(index); requestLayout(); invalidate(); }
-    public void removeViews(int start, int count) { for (int i = start + count - 1; i >= start; i--) removeViewInternal(i); requestLayout(); invalidate(); }
-    public void removeAllViews() { removeAllViewsInLayout(); requestLayout(); invalidate(); }
+    public void removeViewAt(int index) { removeViewInternal(index); requestLayout(); invalidate(true); }
+    public void removeViews(int start, int count) { for (int i = start + count - 1; i >= start; i--) removeViewInternal(i); requestLayout(); invalidate(true); }
+    public void removeAllViews() { removeAllViewsInLayout(); requestLayout(); invalidate(true); }
     public void removeAllViewsInLayout() { for (int i = mChildrenCount - 1; i >= 0; i--) removeViewInternal(i); }
     private void removeViewInternal(int index) {
         View v = mChildren[index];

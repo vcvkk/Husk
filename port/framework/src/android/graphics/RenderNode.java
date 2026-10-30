@@ -20,8 +20,9 @@ public final class RenderNode {
     private Outline mOutline;
     private Paint mLayerPaint;
     private RenderEffect mEffect;
-    private Bitmap mBitmap;
+    private Bitmap mBitmap, mBlurred;
     private RecordingCanvas mCanvas;
+    private Paint mBlurPaint;
     private boolean mHasDisplayList;
     public long mNativeRenderNode;
 
@@ -50,7 +51,7 @@ public final class RenderNode {
     }
     public void end(RecordingCanvas canvas) { endRecording(); }
     public boolean hasDisplayList() { return mHasDisplayList; }
-    public void discardDisplayList() { mHasDisplayList = false; if (mBitmap != null) mBitmap.recycle(); mBitmap = null; }
+    public void discardDisplayList() { mHasDisplayList = false; if (mBitmap != null) mBitmap.recycle(); mBitmap = null; if (mBlurred != null) mBlurred.recycle(); mBlurred = null; }
     public boolean isAttached() { return false; }
     public long getUniqueId() { return mId; }
     public long computeApproximateMemoryUsage() { return mBitmap == null ? 0 : (long) mBitmap.getByteCount(); }
@@ -82,9 +83,29 @@ public final class RenderNode {
             p = mLayerPaint != null ? new Paint(mLayerPaint) : new Paint();
             p.setAlpha(Math.round(mAlpha * (mLayerPaint != null ? mLayerPaint.getAlpha() : 255)));
         }
-        c.drawBitmap(mBitmap, 0, 0, p);
+        float blur = mEffect == null ? 0 : Math.max(mEffect.mBlurX, mEffect.mBlurY);
+        if (blur >= 2f) drawBlurred(c, blur, p);
+        else c.drawBitmap(mBitmap, 0, 0, p);
         c.restoreToCount(save);
         if (husk.DrawStats.ON) { husk.DrawStats.nodesDrawn++; husk.DrawStats.nodeDrawNs += System.nanoTime() - t0; }
+    }
+
+    /* A blur as the content shrunk by about its radius (each pixel the average of those it covers) and drawn back filtered */
+    private void drawBlurred(Canvas c, float radius, Paint p) {
+        int w = mBitmap.getWidth(), h = mBitmap.getHeight();
+        float k = Math.min(32f, radius / 2f);
+        int sw = Math.max(1, Math.round(w / k)), sh = Math.max(1, Math.round(h / k));
+        if (mBlurred == null || mBlurred.getWidth() != sw || mBlurred.getHeight() != sh) {
+            if (mBlurred != null) mBlurred.recycle();
+            mBlurred = Bitmap.createBitmap(sw, sh, Bitmap.Config.ARGB_8888);
+        } else mBlurred.eraseColor(0);
+        if (mBlurPaint == null) mBlurPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
+        Canvas small = new Canvas(mBlurred);
+        small.drawBitmap(mBitmap, null, new Rect(0, 0, sw, sh), mBlurPaint);
+        small.huskRelease();
+        Paint q = p != null ? p : mBlurPaint;
+        q.setFilterBitmap(true);
+        c.drawBitmap(mBlurred, null, new Rect(0, 0, w, h), q);
     }
 
     // ---- position
