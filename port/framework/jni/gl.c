@@ -85,6 +85,9 @@ void *gl_fn(const char *name) { return tl_egl_resolve(name); }
 
 /* ---- the bindings' arguments */
 const char *gl_str(jobj *s) { return s ? tl_jni_string(s) : NULL; }
+/* glGetString and the like give Java a string: the interpreter's name for it, the shim's way */
+jobj *dvm_new_string_utf8(const char *s);
+jobj *dvm_new_string_utf8(const char *s) { return tl_jni_new_string(s); }
 static size_t esize(char e) { return e == 'J' || e == 'D' ? 8 : e == 'S' || e == 'C' ? 2 : e == 'B' || e == 'Z' ? 1 : 4; }
 void *gl_array(jobj *a, int32_t off)
 {
