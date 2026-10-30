@@ -23,6 +23,9 @@ if [ ! -d "$WK" ]; then
 fi
 cd "$WK/Source/ThirdParty/ANGLE"
 LOG="$OUT/angle-build.log"
+# WebKit's tree is built with the newest Xcode: its thread-safety annotations on std::mutex need a libc++ that has them, and its
+# warnings are errors. Neither changes what is built.
+NOWARN="-Wno-unguarded-availability-new -Wno-thread-safety-attributes -Wno-thread-safety-analysis -Wno-error"
 build () {
     local ld=()
     [ -n "${1:-}" ] && ld=("OTHER_LDFLAGS=\$(inherited) -Wl,-alias_list,$1")
@@ -30,7 +33,8 @@ build () {
     env -i PATH="$PATH" HOME="$HOME" xcodebuild archive -archivePath ANGLE -scheme ANGLE -sdk $SDK -arch arm64 -configuration Release \
         WEBCORE_LIBRARY_DIR=/usr/local/lib NORMAL_UMBRELLA_FRAMEWORKS_DIR= CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
         WK_AVAILABILITY_OVERLAY_FLAGS= WK_AVAILABILITY_OVERLAY_SWIFT_FLAGS= "${DEPLOY[@]}" \
-        OTHER_CFLAGS='$(inherited) -Wno-unguarded-availability-new' OTHER_CPLUSPLUSFLAGS='$(inherited) -Wno-unguarded-availability-new' \
+        GCC_TREAT_WARNINGS_AS_ERRORS=NO \
+        OTHER_CFLAGS="\$(inherited) $NOWARN" OTHER_CPLUSPLUSFLAGS="\$(inherited) $NOWARN" \
         ${ld[@]+"${ld[@]}"} > "$LOG" 2>&1 || { echo "ANGLE build failed:" >&2; grep -a "error:\|^ld: " "$LOG" | head -20 >&2; exit 1; }
 }
 build ""
