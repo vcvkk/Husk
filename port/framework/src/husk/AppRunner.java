@@ -182,12 +182,38 @@ public final class AppRunner {
         sStack.add(a);
         a.huskCreate(null);
         if (!a.isFinishing()) { a.huskStart(); a.huskResume(); }
+        debugAlert(a);
         if (prev != null && !a.isFinishing()) {
             final Activity p = prev;
             // the one below stops once the new one covers it (a translucent or floating window leaves it visible)
             if (!a.getWindow().isFloating()) p.huskStop();
         }
         return a;
+    }
+    /* HUSK_DEBUG_ALERT=SECONDS[:BUILDER]: that long after the first activity starts, an alert with a title, a message and two
+     * buttons made by an AlertDialog.Builder of that class (the platform's when none; an app's own, e.g. Telegram's
+     * org.telegram.ui.ActionBar.AlertDialog$Builder, works the same), to see an app's dialogs drawn without reaching them */
+    private static boolean sDebugAlert;
+    private static void debugAlert(final Activity a) {
+        String v = System.getenv("HUSK_DEBUG_ALERT");
+        if (v == null || sDebugAlert) return;
+        sDebugAlert = true;
+        int c = v.indexOf(':');
+        final String builder = c < 0 ? "android.app.AlertDialog$Builder" : v.substring(c + 1);
+        long ms = (long) (Float.parseFloat(c < 0 ? v : v.substring(0, c)) * 1000);
+        sHandler.postDelayed(() -> {
+            try {
+                Activity t = top() != null ? top() : a;
+                Class<?> b = Class.forName(builder, true, classLoader());
+                Object o = b.getConstructor(Context.class).newInstance(t);
+                b.getMethod("setTitle", CharSequence.class).invoke(o, "Clear local database");
+                b.getMethod("setMessage", CharSequence.class).invoke(o, "This will delete the text messages kept on this device. The chats stay in the cloud.");
+                b.getMethod("setPositiveButton", CharSequence.class, android.content.DialogInterface.OnClickListener.class).invoke(o, "Clear", null);
+                b.getMethod("setNegativeButton", CharSequence.class, android.content.DialogInterface.OnClickListener.class).invoke(o, "Cancel", null);
+                b.getMethod("show").invoke(o);
+                android.util.Log.i("Husk", "debug alert shown by " + builder);
+            } catch (Throwable e) { android.util.Log.w("Husk", "debug alert: " + e); }
+        }, ms);
     }
     /** The component an activity was started as: its class, or the alias it was reached through. */
     private static String startedAs(Activity a) {
