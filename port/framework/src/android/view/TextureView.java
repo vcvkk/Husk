@@ -85,11 +85,15 @@ public class TextureView extends View {
         if (mCanvasSurface != null) { mCanvasSurface.release(); mCanvasSurface = null; }
         mShown = null;
     }
+    private static int sDumps;
     @Override public void draw(Canvas c) {
         super.draw(c);
         SurfaceTexture t = mTexture;
         Bitmap f = t != null ? t.huskBeginDraw() : null;
-        if (f != null && android.graphics.SurfaceTexture.TRACE) android.util.Log.i("HuskGL", "TextureView draws buffer " + System.identityHashCode(f));
+        if (f != null && android.graphics.SurfaceTexture.TRACE) {
+            android.util.Log.i("HuskGL", "TextureView draws buffer " + System.identityHashCode(f) + " into " + c.getWidth() + "x" + c.getHeight() + " at " + getWidth() + "x" + getHeight());
+            android.graphics.SurfaceTexture.huskDump(f, "shown-" + (sDumps++));
+        }
         if (f != null) {
             try {
                 int save = c.save();

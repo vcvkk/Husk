@@ -11,7 +11,7 @@ final class HuskEGL implements EGL11 {
     static final class Surface extends EGLSurface {
         long handle; int w, h; android.view.SurfaceView view;
         android.graphics.SurfaceTexture texture;           /* a TextureView's: each swap reads the frame back into it */
-        java.nio.ByteBuffer pixels; android.graphics.Bitmap frame;
+        java.nio.ByteBuffer pixels; android.graphics.Bitmap frame; int dumps;
     }
     static final class Context extends EGLContext {
         long handle; int version;
@@ -149,6 +149,7 @@ final class HuskEGL implements EGL11 {
         su.pixels.rewind();
         if (su.frame == null || su.frame.getWidth() != w || su.frame.getHeight() != h) su.frame = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888);
         su.frame.copyPixelsFromBuffer(su.pixels);
+        if (android.graphics.SurfaceTexture.TRACE) android.graphics.SurfaceTexture.huskDump(su.frame, "gl-" + (su.dumps++));
         android.graphics.Canvas c = su.texture != null ? su.texture.huskLock(null) : su.view.getHolder().lockCanvas();
         if (c == null) return true;
         try {

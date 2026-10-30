@@ -132,7 +132,7 @@ jobs:
         run: |
           set +e
           mkdir -p build/frames
-          export HUSK_FRAME_STATS=1 HUSK_AUDIO_STATS=1 HUSK_GL_TRACE=1
+          export HUSK_FRAME_STATS=1 HUSK_AUDIO_STATS=1 HUSK_GL_TRACE=$PWD/build/frames
           [ -f build/angle-macos/lib/libANGLE-shared.dylib ] && export HUSK_ANGLE_DIR="$PWD/build/angle-macos/lib"
           unset JAVA_HOME
           perl -e 'alarm shift; exec @ARGV' $(( SECONDS + 60 )) lldb --batch \

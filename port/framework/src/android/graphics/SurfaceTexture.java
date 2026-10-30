@@ -24,6 +24,15 @@ public class SurfaceTexture {
     public android.view.View huskView;
     /** HUSK_GL_TRACE: frames posted and shown, to the log */
     public static final boolean TRACE = System.getenv("HUSK_GL_TRACE") != null;
+    /** HUSK_GL_TRACE: a frame, as a PNG in $HUSK_GL_TRACE (a directory), the first few of each name's */
+    public static void huskDump(Bitmap b, String name) {
+        String dir = System.getenv("HUSK_GL_TRACE");
+        if (dir == null || !dir.startsWith("/") || b == null) return;
+        int n; try { n = Integer.parseInt(name.replaceAll("[^0-9]", "")); } catch (NumberFormatException e) { n = 0; }
+        if (n < 100 || n >= 106) return;
+        try (java.io.FileOutputStream o = new java.io.FileOutputStream(dir + "/" + name + ".png")) { b.compress(Bitmap.CompressFormat.PNG, 100, o); }
+        catch (java.io.IOException e) {}
+    }
     public SurfaceTexture(int texName) { this(texName, false); }
     public SurfaceTexture(int texName, boolean singleBufferMode) { mTex = texName; }
     public SurfaceTexture(boolean singleBufferMode) { mTex = 0; }
