@@ -81,7 +81,12 @@ public final class DecorView extends FrameLayout {
         }
         mContent = new FrameLayout(c);
         mContent.setId(android.R.id.content);
-        mStack.addView(mContent, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f));
+        /* the rest of the window under a bar: by weight in a window of the screen's size; in a floating one (a dialog, sized to
+         * what it holds) matching its parent as Android's screen_simple does: weight measured the content again at the
+         * height it had wrapped to, exactly, and Telegram's alerts gave that height to each of their parts (a title, then
+         * the message and buttons below where the window ends) */
+        mStack.addView(mContent, mWindow.isFloating() ? new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
+                                                     : new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f));
         addView(mStack, new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
         return mContent;
     }
