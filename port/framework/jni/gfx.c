@@ -53,6 +53,7 @@ typedef struct gbitmap {
     uint8_t *px;
     CGContextRef ctx;               /* drawn into by a Canvas; also how its pixels become a CGImage */
     struct gscache *cache;          /* blit: the bitmap scaled for its last size drawn */
+    atomic_int refs;                /* its own, and one per image over its pixels (bm_image): the last frees them */
 } gbitmap;
 
 static CGColorSpaceRef rgb(void)
@@ -66,6 +67,7 @@ static gbitmap *bm_new(int w, int h)
 {
     if (w <= 0 || h <= 0 || (int64_t)w * h > (1ll << 28)) return NULL;
     gbitmap *b = calloc(1, sizeof(*b));
+    atomic_init(&b->refs, 1);
     b->w = w; b->h = h; b->stride = (size_t)w * 4;
     b->px = calloc((size_t)h, b->stride);
     if (!b->px) { free(b); return NULL; }
@@ -110,28 +112,31 @@ int tl_AndroidBitmap_unlockPixels(void *env, void *bitmap) { return bm_of_java(e
 int32_t tl_AndroidBitmap_getDataSpace(void *env, void *bitmap) { (void)env; (void)bitmap; return 142671872; /* ADATASPACE_SRGB */ }
 
 static void bm_cache_free(gbitmap *b);
+static void bm_unref(gbitmap *b) { if (atomic_fetch_sub(&b->refs, 1) == 1) { free(b->px); free(b); } }
 static void bm_free(gbitmap *b)
 {
     if (!b) return;
-    CGContextRelease(b->ctx);
+    CGContextRelease(b->ctx); b->ctx = NULL;
     bm_cache_free(b);
-    free(b->px);
-    free(b);
+    bm_unref(b);                    /* its pixels stay while an image over them does (a shader's, after recycle()) */
 }
-/* The bitmap's pixels as they are now, for one draw: not CGBitmapContextCreateImage, whose image CoreGraphics keeps and hands out
- * again while it thinks the context unchanged; but Husk's own raster paths, copyPixelsFromBuffer, AndroidBitmap_lockPixels
- * and GL frames read back write the pixels without it knowing, and the stale image came back (exteraGram's intro showed its
- * first frame again and again). An image over the memory itself, made each time, always shows what is there. */
+static void bm_image_gone(void *info, const void *data, size_t size) { (void)data; (void)size; bm_unref(info); }
+/* The bitmap's pixels as they are, live: not CGBitmapContextCreateImage, whose image CoreGraphics keeps and hands out again while
+ * it thinks the context unchanged; but Husk's own raster paths, copyPixelsFromBuffer, AndroidBitmap_lockPixels and GL frames
+ * read back write the pixels without it knowing, and the stale image came back (exteraGram's intro showed its first frame
+ * again and again). An image over the memory itself always shows what is there, as Android's BitmapShader does too
+ * (Telegram's round avatars: a shader made before the picture is decoded into its bitmap). */
 static CGImageRef bm_image(gbitmap *b)
 {
-    CGDataProviderRef d = CGDataProviderCreateWithData(NULL, b->px, b->stride * (size_t)b->h, NULL);
-    if (!d) return NULL;
+    atomic_fetch_add(&b->refs, 1);
+    CGDataProviderRef d = CGDataProviderCreateWithData(b, b->px, b->stride * (size_t)b->h, bm_image_gone);
+    if (!d) { bm_unref(b); return NULL; }
     CGImageRef img = CGImageCreate((size_t)b->w, (size_t)b->h, 8, 32, b->stride, rgb(),
                                    kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big, d, NULL, false, kCGRenderingIntentDefault);
     CGDataProviderRelease(d);
     return img;
 }
-/* a copy of the pixels, for an image kept past the call (a bitmap shader's) */
+/* a copy of the pixels: a bitmap drawn onto itself */
 static CGImageRef bm_image_copy(gbitmap *b)
 {
     CFDataRef data = CFDataCreate(NULL, b->px, (CFIndex)(b->stride * (size_t)b->h));
@@ -2924,7 +2929,7 @@ NAT(G_shBitmap)
     gbitmap *b = H(gbitmap, 0);
     gshader *s = calloc(1, sizeof(*s));
     s->kind = SH_BITMAP; s->tile = a[1].i; s->local = CGAffineTransformIdentity;
-    if (b) { s->image = bm_image_copy(b); s->iw = b->w; s->ih = b->h; }
+    if (b) { s->image = bm_image(b); s->iw = b->w; s->ih = b->h; }
     *ret = J((int64_t)(uintptr_t)s);
     return true;
 }
