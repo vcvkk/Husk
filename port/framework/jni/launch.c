@@ -89,7 +89,7 @@ bool husk_vm_start(const char *art, const char *data_dir, const char *const *ext
     snprintf(path, sizeof path, "%s/vm.options", art);
     FILE *f = fopen(path, "r");
     if (f) {
-        char line[1024];
+        char line[8192];             /* an env: line can be long (HUSK_DEBUG_SQL's queries) */
         while (nmore < 32 && fgets(line, sizeof line, f)) {
             line[strcspn(line, "\r\n")] = 0;
             if (!strncmp(line, "env:", 4)) { char *eq = strchr(line + 4, '='); if (eq) { *eq = 0; setenv(line + 4, eq + 1, 1); } }
