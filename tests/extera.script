@@ -1,6 +1,28 @@
 # The steps tests/extera.env's run takes (mac-host --script): seconds from the start, then the step.
 # Logs in to a Telegram test-server account: country code 999 makes exteraGram switch to the test servers;
-# a number 99966XYYYY there needs no SMS, its code is X five times.
+# a number 99966XYYYY there needs no SMS, its code is X five times. Coordinates are in the 1080x2400 frame.
 14 shot intro
 14.5 tap 540 2100
-22 shot phone
+20 shot phone
+20.5 tap 804 2130
+21 tap 804 2130
+21.5 tap 804 2130
+22 shot code999
+22.5 tap 600 1078
+23 tap 804 1970
+23.5 tap 804 1970
+24 tap 456 1810
+24.5 tap 108 2130
+25 tap 804 1810
+25.5 tap 804 2130
+26 tap 108 1810
+26.5 shot number
+27 tap 936 1596
+33 shot sent
+33.5 type 22222
+34 shot code
+40 shot after-code
+40.5 type Husk
+41.5 shot name
+42 enter
+48 shot after-name
