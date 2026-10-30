@@ -218,7 +218,10 @@ static int b_connect(int fd, const void *g, socklen_t glen)
     socklen_t n = sa_to_darwin(g, glen, &s);
     if (!n) { tl_set_guest_errno(G_EAFNOSUPPORT); return -1; }
     TL_ERRNO_BEGIN(); int r = connect(fd, (struct sockaddr *)&s, n); int e = errno; TL_ERRNO_END();
-    { char ip[64] = "?"; if (s.ss_family == AF_INET) inet_ntop(AF_INET, &((struct sockaddr_in *)&s)->sin_addr, ip, sizeof(ip)); NTRACE("connect(fd %d, %s) -> %d errno %d", fd, ip, r, e); }
+    { char ip[64] = "?"; int port = 0;
+      if (s.ss_family == AF_INET) { inet_ntop(AF_INET, &((struct sockaddr_in *)&s)->sin_addr, ip, sizeof(ip)); port = ntohs(((struct sockaddr_in *)&s)->sin_port); }
+      else if (s.ss_family == AF_INET6) { inet_ntop(AF_INET6, &((struct sockaddr_in6 *)&s)->sin6_addr, ip, sizeof(ip)); port = ntohs(((struct sockaddr_in6 *)&s)->sin6_port); }
+      NTRACE("connect(fd %d, %s port %d) -> %d errno %d", fd, ip, port, r, e); }
     return r;
 }
 

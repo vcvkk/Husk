@@ -12,7 +12,20 @@ public final class HuskSharedPreferences implements SharedPreferences {
     private static final java.util.concurrent.ExecutorService WRITER = java.util.concurrent.Executors.newSingleThreadExecutor(r -> { Thread t = new Thread(r, "SharedPreferencesWriter"); t.setDaemon(true); return t; });
     private final java.util.concurrent.atomic.AtomicBoolean writePending = new java.util.concurrent.atomic.AtomicBoolean();
 
-    public HuskSharedPreferences(File f) { file = f; load(); }
+    public HuskSharedPreferences(File f) { file = f; load(); overrides(); }
+    /* HUSK_PREFS=name:key=value,...: preferences forced in the file of that name (true and false as booleans), for debugging
+     * an app as its own settings would (exteraGram's logs: HUSK_PREFS=systemConfig:logsEnabled=true) */
+    private void overrides() {
+        String o = System.getenv("HUSK_PREFS");
+        if (o == null) return;
+        String name = file.getName().endsWith(".xml") ? file.getName().substring(0, file.getName().length() - 4) : file.getName();
+        for (String e : o.split(",")) {
+            int c = e.indexOf(':'), q = e.indexOf('=');
+            if (c < 0 || q < c || !e.substring(0, c).equals(name)) continue;
+            String k = e.substring(c + 1, q), v = e.substring(q + 1);
+            map.put(k, v.equals("true") || v.equals("false") ? (Object) Boolean.valueOf(v) : v);
+        }
+    }
 
     private static String esc(String s) { return s.replace("\\", "\\\\").replace("\n", "\\n"); }
     private static String unesc(String s) {
