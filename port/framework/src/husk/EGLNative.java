@@ -9,6 +9,8 @@ public final class EGLNative {
     public static native void destroySurface(long surf);
     public static native boolean makeCurrent(long surf, long ctx);
     public static native boolean swap(long surf, long ctx, int x, int y, int w, int h);
+    /** The current surface's pixels, RGBA, rows from the top. */
+    public static native boolean readPixels(java.nio.ByteBuffer buf, int w, int h);
     public static native boolean isRenderThread();
     public static native void hide();
 }

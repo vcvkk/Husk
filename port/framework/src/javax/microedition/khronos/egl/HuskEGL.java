@@ -139,21 +139,22 @@ final class HuskEGL implements EGL11 {
     public boolean eglWaitNative(int engine, Object bindTarget) { return true; }
     public boolean eglCopyBuffers(EGLDisplay d, EGLSurface s, Object target) { return true; }
     public EGLSurface eglCreatePixmapSurface(EGLDisplay d, EGLConfig c, Object pixmap, int[] attribs) { return EGL_NO_SURFACE; }
-    /* a TextureView's frame: read back while its context is current, flipped (GL rows run bottom-up), and posted to the texture */
+    /* a TextureView's frame: read back while its context is current (rows turned top first there) and posted to the texture,
+     * one to one where the sizes agree */
     private static boolean readBack(Surface su) {
         int w = su.w, h = su.h;
         if (su.pixels == null || su.pixels.capacity() != w * h * 4) su.pixels = java.nio.ByteBuffer.allocateDirect(w * h * 4).order(java.nio.ByteOrder.nativeOrder());
         su.pixels.clear();
-        android.opengl.GLES20.glReadPixels(0, 0, w, h, android.opengl.GLES20.GL_RGBA, android.opengl.GLES20.GL_UNSIGNED_BYTE, su.pixels);
+        if (!husk.EGLNative.readPixels(su.pixels, w, h)) return true;
         su.pixels.rewind();
         if (su.frame == null || su.frame.getWidth() != w || su.frame.getHeight() != h) su.frame = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888);
         su.frame.copyPixelsFromBuffer(su.pixels);
         android.graphics.Canvas c = su.texture != null ? su.texture.huskLock(null) : su.view.getHolder().lockCanvas();
         if (c == null) return true;
         try {
-            c.save(); c.scale(1, -1, c.getWidth() / 2f, c.getHeight() / 2f);
-            c.drawBitmap(su.frame, null, new android.graphics.Rect(0, 0, c.getWidth(), c.getHeight()), null);
-            c.restore();
+            c.drawColor(0, android.graphics.PorterDuff.Mode.CLEAR);
+            if (c.getWidth() == w && c.getHeight() == h) c.drawBitmap(su.frame, 0, 0, null);
+            else c.drawBitmap(su.frame, null, new android.graphics.Rect(0, 0, c.getWidth(), c.getHeight()), null);
         } finally { if (su.texture != null) su.texture.huskPost(c); else su.view.getHolder().unlockCanvasAndPost(c); }
         return true;
     }

@@ -2388,6 +2388,7 @@ typedef struct gscache {
     uint32_t *px;
 } gscache;
 static uint64_t g_frame = 1;          /* frames presented (G_present) */
+static pthread_t g_presenter;         /* the thread presenting them: within one of its frames a bitmap is taken to stay as it was */
 static void bm_cache_free(gbitmap *b) { if (b->cache) { free(b->cache->px); free(b->cache); b->cache = NULL; } }
 static uint64_t src_hash(const gbitmap *s, int x0, int y0, int x1, int y1)
 {
@@ -2411,7 +2412,8 @@ static const uint32_t *scaled(gbitmap *src, float sl, float st, float sr, float 
     gscache *k = src->cache;
     bool same = k && k->sl == sl && k->st == st && k->sr == sr && k->sb == sb && k->w == W && k->h == H
              && k->flipx == flipx && k->flipy == flipy && k->filter == filter;
-    if (same && k->frame == g_frame) return k->px;
+    /* other threads (an app's GL or video one, posting frames into the same bitmap) change a bitmap more often than that */
+    if (same && k->frame == g_frame && pthread_equal(pthread_self(), g_presenter)) return k->px;
     uint64_t hash = src_hash(src, hx0, hy0, hx1, hy1);
     if (same && k->hash == hash) { k->frame = g_frame; return k->px; }
     if (!k) { k = src->cache = calloc(1, sizeof *k); if (!k) return NULL; }
@@ -3037,6 +3039,7 @@ NAT(G_present)
 {
     (void)self; (void)ret;
     g_frame++;
+    g_presenter = pthread_self();
     gbitmap *b = H(gbitmap, 0);
     if (!b) { atomic_store(&S.any, false); atomic_store(&S.fresh, true); return true; }
     pthread_mutex_lock(&S.lock);

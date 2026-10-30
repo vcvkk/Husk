@@ -200,12 +200,34 @@ static jboolean EN_swap(JNIEnv *env, jclass cls, jlong s, jlong c, jint x, jint 
     (void)env; (void)cls; (void)s; (void)c; (void)x; (void)y; (void)w; (void)h;
     return JNI_TRUE;
 }
+/* the current surface's w x h pixels into a direct buffer, rows from the top (GL's run from the bottom) */
+static jboolean EN_readPixels(JNIEnv *env, jclass cls, jobject buf, jint w, jint h)
+{
+    (void)cls;
+    void (*rd)(int32_t, int32_t, int32_t, int32_t, int32_t, int32_t, void *) =
+        (void (*)(int32_t, int32_t, int32_t, int32_t, int32_t, int32_t, void *))gl_fn("glReadPixels");
+    void (*st)(int32_t, int32_t) = (void (*)(int32_t, int32_t))gl_fn("glPixelStorei");
+    uint8_t *px = buf ? (*env)->GetDirectBufferAddress(env, buf) : NULL;
+    if (!rd || !px || w <= 0 || h <= 0 || (*env)->GetDirectBufferCapacity(env, buf) < (jlong)w * h * 4) return JNI_FALSE;
+    if (st) st(0x0D05, 4);   /* PACK_ALIGNMENT: rows of w * 4 bytes, packed as they are */
+    rd(0, 0, w, h, 0x1908, 0x1401, px);   /* RGBA, UNSIGNED_BYTE */
+    size_t row = (size_t)w * 4;
+    uint8_t *tmp = malloc(row);
+    if (!tmp) return JNI_FALSE;
+    for (int y = 0; y < h / 2; y++) {
+        uint8_t *a = px + (size_t)y * row, *b = px + (size_t)(h - 1 - y) * row;
+        memcpy(tmp, a, row); memcpy(a, b, row); memcpy(b, tmp, row);
+    }
+    free(tmp);
+    return JNI_TRUE;
+}
 static jboolean EN_isRenderThread(JNIEnv *env, jclass cls) { (void)env; (void)cls; return JNI_FALSE; }
 static void EN_hide(JNIEnv *env, jclass cls) { (void)env; (void)cls; }
 static const JNINativeMethod k_egl[] = {
     { "createContext", "(IJ)J", (void *)EN_createContext }, { "destroyContext", "(J)V", (void *)EN_destroyContext },
     { "createSurface", "(II)J", (void *)EN_createSurface }, { "destroySurface", "(J)V", (void *)EN_destroySurface },
     { "makeCurrent", "(JJ)Z", (void *)EN_makeCurrent }, { "swap", "(JJIIII)Z", (void *)EN_swap },
+    { "readPixels", "(Ljava/nio/ByteBuffer;II)Z", (void *)EN_readPixels },
     { "isRenderThread", "()Z", (void *)EN_isRenderThread }, { "hide", "()V", (void *)EN_hide },
 };
 
