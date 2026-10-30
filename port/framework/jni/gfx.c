@@ -2420,6 +2420,41 @@ static const uint32_t *scaled(gbitmap *src, float sl, float st, float sr, float 
     k->hash = hash; k->frame = g_frame;
     double kx = (sr - sl) / W, ky = (sb - st) / H;
     int smaxx = src->w - 1, smaxy = src->h - 1;
+    uint32_t *out = k->px;
+    /* Much smaller, filtered: each pixel the average of the source pixels it covers (a box filter), as Android's scaled draws
+     * look. Telegram's blurs draw a screen's worth shrunk 4 or 8 times every frame; CoreGraphics' filtering took 4 to 6 ms of it. */
+    if (filter && (kx > 1.5 || ky > 1.5)) {
+        int32_t *xa = malloc((size_t)(W + 1) * sizeof *xa);
+        if (!xa) return NULL;
+        for (int c = 0; c <= W; c++) {
+            int x = (int)lrint(sl + c * kx);
+            xa[c] = x < hx0 ? hx0 : x > hx1 ? hx1 : x;
+        }
+        par_rows((int64_t)(hx1 - hx0) * (hy1 - hy0), 0, H, ^(int r0, int r1) {
+            for (int r = r0; r < r1; r++) {
+                int rr = flipy ? H - 1 - r : r;
+                int ya = (int)lrint(st + rr * ky), yb = (int)lrint(st + (rr + 1) * ky);
+                if (ya < hy0) ya = hy0;
+                if (yb > hy1) yb = hy1;
+                if (yb <= ya) { yb = ya + 1; if (yb > hy1) { yb = hy1; ya = yb - 1; } }
+                uint32_t *o = out + (size_t)r * W;
+                for (int c = 0; c < W; c++) {
+                    int cc = flipx ? W - 1 - c : c;
+                    int x0 = xa[cc], x1 = xa[cc + 1];
+                    if (x1 <= x0) { x1 = x0 + 1; if (x1 > hx1) { x1 = hx1; x0 = x1 - 1; } }
+                    uint32_t s0 = 0, s1 = 0, s2 = 0, s3 = 0;
+                    for (int y = ya; y < yb; y++) {
+                        const uint32_t *row = (const uint32_t *)(src->px + (size_t)y * src->stride);
+                        for (int x = x0; x < x1; x++) { uint32_t v = row[x]; s0 += v & 255; s1 += (v >> 8) & 255; s2 += (v >> 16) & 255; s3 += v >> 24; }
+                    }
+                    uint32_t n = (uint32_t)((x1 - x0) * (yb - ya)), h = n / 2;
+                    o[c] = (s0 + h) / n | ((s1 + h) / n) << 8 | ((s2 + h) / n) << 16 | ((s3 + h) / n) << 24;
+                }
+            }
+        });
+        free(xa);
+        return out;
+    }
     int32_t *xi = malloc((size_t)W * sizeof *xi);
     uint8_t *xf = malloc((size_t)W);
     if (!xi || !xf) { free(xi); free(xf); return NULL; }
@@ -2433,25 +2468,27 @@ static const uint32_t *scaled(gbitmap *src, float sl, float st, float sr, float 
         if (x >= smaxx) { x = smaxx; w = 0; }
         xi[c] = x; xf[c] = (uint8_t)w;
     }
-    for (int r = 0; r < H; r++) {
-        double sy = st + ((flipy ? H - 1 - r : r) + 0.5) * ky;
-        int y0; uint32_t fy = 0;
-        if (!filter) { y0 = (int)floor(sy); y0 = y0 < 0 ? 0 : y0 > smaxy ? smaxy : y0; }
-        else {
-            double f = sy - 0.5, fl = floor(f);
-            y0 = (int)fl; fy = (uint32_t)lrint((f - fl) * 256);
-            if (fy >= 256) { y0++; fy = 0; }
-            if (y0 < 0) { y0 = 0; fy = 0; }
-            if (y0 >= smaxy) { y0 = smaxy; fy = 0; }
+    par_rows((int64_t)W * H, 0, H, ^(int r0, int r1) {
+        for (int r = r0; r < r1; r++) {
+            double sy = st + ((flipy ? H - 1 - r : r) + 0.5) * ky;
+            int y0; uint32_t fy = 0;
+            if (!filter) { y0 = (int)floor(sy); y0 = y0 < 0 ? 0 : y0 > smaxy ? smaxy : y0; }
+            else {
+                double f = sy - 0.5, fl = floor(f);
+                y0 = (int)fl; fy = (uint32_t)lrint((f - fl) * 256);
+                if (fy >= 256) { y0++; fy = 0; }
+                if (y0 < 0) { y0 = 0; fy = 0; }
+                if (y0 >= smaxy) { y0 = smaxy; fy = 0; }
+            }
+            const uint32_t *s0 = (const uint32_t *)(src->px + (size_t)y0 * src->stride);
+            const uint32_t *s1 = (const uint32_t *)(src->px + (size_t)(fy ? y0 + 1 : y0) * src->stride);
+            uint32_t *o = out + (size_t)r * W;
+            for (int c = 0; c < W; c++) {
+                int x = xi[c], x1 = xf[c] ? x + 1 : x;
+                o[c] = (!xf[c] && !fy) ? s0[x] : bilerp(s0[x], s0[x1], s1[x], s1[x1], xf[c], fy);
+            }
         }
-        const uint32_t *s0 = (const uint32_t *)(src->px + (size_t)y0 * src->stride);
-        const uint32_t *s1 = (const uint32_t *)(src->px + (size_t)(fy ? y0 + 1 : y0) * src->stride);
-        uint32_t *o = k->px + (size_t)r * W;
-        for (int c = 0; c < W; c++) {
-            int x = xi[c], x1 = xf[c] ? x + 1 : x;
-            o[c] = (!xf[c] && !fy) ? s0[x] : bilerp(s0[x], s0[x1], s1[x], s1[x1], xf[c], fy);
-        }
-    }
+    });
     free(xi); free(xf);
     return k->px;
 }
@@ -2503,7 +2540,7 @@ static bool blit_(gcanvas *v, gbitmap *src, float sl, float st, float sr, float 
     if (fabs(mx1 - mx0) < 1e-6 || fabs(my1 - my0) < 1e-6) return true;
     bool filter = (p[P_FLAGS] & PF_FILTER) != 0;
     double kx = (sr - sl) / (mx1 - mx0), ky = (sb - st) / (my1 - my0);
-    if (filter && (fabs(kx) > 2 || fabs(ky) > 2)) { g_bs[BS_SHRUNK]++; return false; }   /* much smaller: CoreGraphics' filtering */
+    /* much smaller: scaled() averages the pixels each covers (it was CoreGraphics' filtering, BS_SHRUNK) */
     /* one to one on whole pixels: the source itself; else the source scaled to the destination's size, laid on whole pixels
      * (half a pixel at most from where it would be: nothing to see, and the scaled copy stays good while it moves) */
     bool exact = fabs(kx - 1) < 1e-6 && fabs(ky - 1) < 1e-6
