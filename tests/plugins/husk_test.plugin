@@ -1,0 +1,121 @@
+"""
+Husk test plugin for exteraGram: does Python run on the port, do its native modules load (each is a dylib made ahead of
+time on iOS without JIT), do the plugin engine's own hooks work (sending a message, the drawer menu, settings, bulletins),
+and does a Java method hook (Xposed: the part the port does not have yet) work.
+
+    In a chat, send ".husk" -- the message is replaced by the report.
+    The drawer menu's "Husk test" item shows the report in a bulletin.
+    The settings have a button for each check.
+"""
+
+import platform
+import sys
+import time
+import traceback
+
+from base_plugin import BasePlugin, HookResult, HookStrategy, MenuItemData, MenuItemType
+from ui.bulletin import BulletinHelper
+from ui.settings import Header, Input, Switch, Text, Divider
+
+__id__ = "husk_test"
+__name__ = "Husk Test"
+__description__ = "Checks Python, its native modules and the plugin hooks on the Husk iOS port. Send .husk in any chat."
+__author__ = "Husk port"
+__version__ = "1.0"
+__min_version__ = "11.12.0"
+__icon__ = "exteraPlugins/1"
+
+MODULES = ["ssl", "sqlite3", "ctypes", "json", "hashlib", "zlib", "decimal", "datetime", "socket", "lxml.etree", "PIL.Image", "yaml"]
+
+
+def check_modules():
+    ok, bad = [], []
+    for name in MODULES:
+        t0 = time.perf_counter()
+        try:
+            __import__(name)
+            ok.append("%s %.0f ms" % (name, (time.perf_counter() - t0) * 1000))
+        except Exception as e:
+            bad.append("%s: %s" % (name, e))
+    return ok, bad
+
+
+def report():
+    ok, bad = check_modules()
+    lines = [
+        "Husk test plugin",
+        "Python %s on %s" % (platform.python_version(), platform.machine() or "?"),
+        "modules ok %d/%d" % (len(ok), len(MODULES)),
+    ]
+    lines += ["  " + s for s in ok]
+    if bad:
+        lines.append("failed:")
+        lines += ["  " + s for s in bad]
+    try:
+        import ssl
+        lines.append(ssl.OPENSSL_VERSION)
+    except Exception:
+        pass
+    try:
+        import sqlite3
+        db = sqlite3.connect(":memory:")
+        db.execute("create table t (x)")
+        db.executemany("insert into t values (?)", [(i,) for i in range(1000)])
+        lines.append("sqlite %s: count %d" % (sqlite3.sqlite_version, db.execute("select count(*) from t").fetchone()[0]))
+    except Exception as e:
+        lines.append("sqlite: %s" % e)
+    return "\n".join(lines)
+
+
+class HuskTestPlugin(BasePlugin):
+    def on_plugin_load(self):
+        print("husk_test: loaded, Python", sys.version)
+        self.add_on_send_message_hook()
+        try:
+            self.add_menu_item(MenuItemData(menu_type=MenuItemType.DRAWER_MENU, text="Husk test", icon="msg_info",
+                                            on_click=lambda ctx: self._show_report()))
+        except Exception:
+            print("husk_test: menu item:", traceback.format_exc())
+        BulletinHelper.show_success("Husk test plugin loaded (Python %s)" % platform.python_version())
+
+    def _show_report(self):
+        r = report()
+        print(r)
+        BulletinHelper.show_info(r.replace("\n", " | ")[:400])
+
+    def on_send_message_hook(self, account, params):
+        if not self.get_setting("enabled", True) or not isinstance(params.message, str):
+            return HookResult()
+        if not params.message.strip().startswith(self.get_setting("command", ".husk")):
+            return HookResult()
+        params.message = report()
+        return HookResult(strategy=HookStrategy.MODIFY, params=params)
+
+    def _try_java_hook(self):
+        # A method hook through Xposed: exteraGram's own way for plugins to change the app. Expected to fail on the port for now.
+        try:
+            from hook_utils import find_class
+            cls = find_class("org.telegram.messenger.AndroidUtilities")
+            method = cls.getClass().getDeclaredMethod("isTablet")
+            plugin = self
+
+            class Hook:
+                def after_hooked_method(self, param):
+                    pass
+
+            self.hook_method(method, Hook())
+            BulletinHelper.show_success("Java method hook installed")
+        except Exception as e:
+            print("husk_test: java hook:", traceback.format_exc())
+            BulletinHelper.show_error("Java method hook failed: %s" % e)
+
+    def create_settings(self):
+        return [
+            Header(text="Husk test"),
+            Switch(key="enabled", text="Replace the command when sent", default=True,
+                   subtext="Send the command in any chat to get the report"),
+            Input(key="command", text="Command", default=".husk"),
+            Divider(),
+            Text(text="Show report", icon="msg_info", on_click=lambda view: self._show_report()),
+            Text(text="Try a Java method hook (Xposed)", icon="msg_settings", on_click=lambda view: self._try_java_hook()),
+        ]
