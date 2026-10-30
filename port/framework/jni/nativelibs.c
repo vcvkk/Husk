@@ -14,9 +14,47 @@ void husk_native_libs_configure(const char *apk, const char *aot_dir)
     g_aot_dir = aot_dir ? strdup(aot_dir) : NULL;
 }
 
+/* Java method hooks: ART's own (patch 0015), for apps that hook their methods the way LSPlant does; exteraGram's plugins
+ * declare them on dev.exterahook.runtime.bridge.JniBridgeBindings, whose native side (shadowhook over libart's code) cannot
+ * work here */
+const JNINativeMethod *art_husk_hook_natives(int *count);
+static void *hook_native(const char *short_name)
+{
+    static const char pre[] = "Java_dev_exterahook_runtime_bridge_JniBridgeBindings_";
+    if (strncmp(short_name, pre, sizeof pre - 1)) return NULL;
+    int n = 0;
+    const JNINativeMethod *k = art_husk_hook_natives(&n);
+    for (int i = 0; i < n; i++) if (!strcmp(k[i].name, short_name + sizeof pre - 1)) return k[i].fnPtr;
+    return NULL;
+}
+/* and over what a library's JNI_OnLoad registered for that class, once it is there */
+static void hook_bindings(JNIEnv *env, jobject loader)
+{
+    if (!loader) return;
+    jclass lc = (*env)->FindClass(env, "java/lang/ClassLoader");
+    jmethodID load = lc ? (*env)->GetMethodID(env, lc, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;") : NULL;
+    jstring name = (*env)->NewStringUTF(env, "dev.exterahook.runtime.bridge.JniBridgeBindings");
+    jclass c = load && name ? (jclass)(*env)->CallObjectMethod(env, loader, load, name) : NULL;
+    if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); c = NULL; }
+    if (c) {
+        int n = 0, ok = 0;
+        const JNINativeMethod *k = art_husk_hook_natives(&n);
+        for (int i = 0; i < n; i++) {
+            if ((*env)->RegisterNatives(env, c, &k[i], 1) == 0) ok++;
+            else (*env)->ExceptionClear(env);
+        }
+        tl_log_line("husk-port: Java method hooks: %d of %d of JniBridgeBindings' natives are ART's", ok, n);
+        (*env)->DeleteLocalRef(env, c);
+    }
+    if (name) (*env)->DeleteLocalRef(env, name);
+    if (lc) (*env)->DeleteLocalRef(env, lc);
+}
+
 /* ART asks for a native method's code after its own libraries: the guest libraries' Java_... functions */
 static void *lookup(const char *short_name, const char *long_name)
 {
+    void *h = hook_native(short_name);
+    if (h) return h;
     void *p = tl_ld_sym(NULL, short_name);
     if (!p && long_name) p = tl_ld_sym(NULL, long_name);
     return p;
@@ -68,6 +106,7 @@ static jboolean NL_load(JNIEnv *env, jclass cls, jstring jname, jobject loader)
                 (*env)->ExceptionClear(env);
             }
             tl_log_line("husk-port: %s: JNI_OnLoad -> %#x", name, (unsigned)v);
+            hook_bindings(env, loader);
         }
     } else if (!ok) tl_log_line("husk-port: %s could not be loaded", name);
     (*env)->ReleaseStringUTFChars(env, jname, name);

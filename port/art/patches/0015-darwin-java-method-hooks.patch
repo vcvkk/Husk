@@ -1,0 +1,329 @@
+diff --git a/art/runtime/interpreter/interpreter.cc b/art/runtime/interpreter/interpreter.cc
+index db116f5..182a581 100644
+--- a/art/runtime/interpreter/interpreter.cc
++++ b/art/runtime/interpreter/interpreter.cc
+@@ -16,6 +16,10 @@
+ 
+ #include "interpreter.h"
+ 
++#include <atomic>
++#include <mutex>
++#include <unordered_map>
++
+ #include <limits>
+ #include <string_view>
+ 
+@@ -37,6 +41,22 @@
+ #include "thread-inl.h"
+ #include "unstarted_runtime.h"
+ 
++#include "art_method-inl.h"
++#include "class_linker-inl.h"
++#include "class_root.h"
++#include "entrypoints/runtime_asm_entrypoints.h"
++#include "handle_scope-inl.h"
++#include "hidden_api.h"
++#include "jni/java_vm_ext.h"
++#include "jni/jni_internal.h"
++#include "linear_alloc.h"
++#include "mirror/accessible_object.h"
++#include "mirror/class-inl.h"
++#include "mirror/method.h"
++#include "mirror/object_array-alloc-inl.h"
++#include "mirror/object_array-inl.h"
++#include "reflection.h"
++
+ namespace art {
+ namespace interpreter {
+ 
+@@ -244,6 +264,104 @@ static constexpr InterpreterImplKind kInterpreterImplKind = kSwitchImplKind;
+ static constexpr InterpreterImplKind kInterpreterImplKind = kMterpImplKind;
+ #endif
+ 
++
++/*
++ * Husk: Java method hooks without generated code, for apps that hook their own methods the way LSPlant does (exteraGram's
++ * plugins: dev.exterahook.runtime.bridge.JniBridgeBindings). A hooked method's entry point is the interpreter bridge, so every
++ * call to it -- from compiled code, the interpreter, reflection, JNI -- arrives in Execute, which calls the hook's callback
++ * instead: Object callback(Object[] args), args being this (unless static) and the parameters, boxed. The original stays
++ * callable through a copy of its ArtMethod (private, so called directly), handed back as a java.lang.reflect.Method.
++ * Calls compiled inline, or to intrinsics, do not see a hook (Husk compiles apps without inlining).
++ */
++namespace {
++struct HuskHook {
++  jobject hooker;          // a global reference
++  ArtMethod* callback;
++  ArtMethod* backup;
++  const void* entry;       // the method's entry point before
++};
++std::mutex g_husk_hooks_lock;
++std::unordered_map<ArtMethod*, HuskHook>* g_husk_hooks = new std::unordered_map<ArtMethod*, HuskHook>();
++std::atomic<bool> g_husk_any_hook{false};
++}  // namespace
++
++bool HuskIsHooked(ArtMethod* method) {
++  if (LIKELY(!g_husk_any_hook.load(std::memory_order_relaxed))) {
++    return false;
++  }
++  std::lock_guard<std::mutex> l(g_husk_hooks_lock);
++  return g_husk_hooks->count(method) != 0;
++}
++
++static JValue HuskHookDispatch(Thread* self, const CodeItemDataAccessor& accessor, ShadowFrame& shadow_frame)
++    REQUIRES_SHARED(Locks::mutator_lock_) {
++  ArtMethod* method = shadow_frame.GetMethod();
++  HuskHook hook;
++  {
++    std::lock_guard<std::mutex> l(g_husk_hooks_lock);
++    auto it = g_husk_hooks->find(method);
++    if (it == g_husk_hooks->end()) {
++      return JValue();
++    }
++    hook = it->second;
++  }
++  uint32_t shorty_len = 0;
++  const char* shorty = method->GetShorty(&shorty_len);
++  const bool is_static = method->IsStatic();
++  const int32_t nargs = (is_static ? 0 : 1) + static_cast<int32_t>(shorty_len) - 1;
++  StackHandleScope<1> hs(self);
++  Handle<mirror::ObjectArray<mirror::Object>> args = hs.NewHandle(
++      mirror::ObjectArray<mirror::Object>::Alloc(self, GetClassRoot<mirror::ObjectArray<mirror::Object>>(), nargs));
++  if (args == nullptr) {
++    return JValue();  // out of memory, pending
++  }
++  size_t reg = accessor.RegistersSize() - accessor.InsSize();
++  int32_t k = 0;
++  if (!is_static) {
++    args->Set<false>(k++, shadow_frame.GetVRegReference(reg++));
++  }
++  for (uint32_t i = 1; i < shorty_len; ++i) {
++    JValue v;
++    ObjPtr<mirror::Object> o;
++    switch (shorty[i]) {
++      case 'L': case '[': o = shadow_frame.GetVRegReference(reg++); break;
++      case 'J': v.SetJ(shadow_frame.GetVRegLong(reg)); reg += 2; o = BoxPrimitive(Primitive::kPrimLong, v); break;
++      case 'D': v.SetD(shadow_frame.GetVRegDouble(reg)); reg += 2; o = BoxPrimitive(Primitive::kPrimDouble, v); break;
++      case 'F': v.SetF(shadow_frame.GetVRegFloat(reg++)); o = BoxPrimitive(Primitive::kPrimFloat, v); break;
++      case 'Z': v.SetZ(shadow_frame.GetVReg(reg++) != 0); o = BoxPrimitive(Primitive::kPrimBoolean, v); break;
++      case 'B': v.SetB(static_cast<int8_t>(shadow_frame.GetVReg(reg++))); o = BoxPrimitive(Primitive::kPrimByte, v); break;
++      case 'C': v.SetC(static_cast<uint16_t>(shadow_frame.GetVReg(reg++))); o = BoxPrimitive(Primitive::kPrimChar, v); break;
++      case 'S': v.SetS(static_cast<int16_t>(shadow_frame.GetVReg(reg++))); o = BoxPrimitive(Primitive::kPrimShort, v); break;
++      default: v.SetI(shadow_frame.GetVReg(reg++)); o = BoxPrimitive(Primitive::kPrimInt, v); break;
++    }
++    if (self->IsExceptionPending()) {
++      return JValue();
++    }
++    args->Set<false>(k++, o);
++  }
++  JValue result;
++  {
++    ScopedObjectAccessUnchecked soa(self);
++    jvalue jargs[1];
++    jargs[0].l = soa.AddLocalReference<jobject>(args.Get());
++    result = InvokeVirtualOrInterfaceWithJValues(soa, hook.hooker, jni::EncodeArtMethod(hook.callback), jargs);
++    soa.Env()->DeleteLocalRef(jargs[0].l);
++  }
++  if (self->IsExceptionPending()) {
++    return JValue();
++  }
++  const char rt = shorty[0];
++  if (rt == 'V' || rt == 'L' || rt == '[') {
++    return rt == 'V' ? JValue() : result;
++  }
++  JValue unboxed;
++  ObjPtr<mirror::Class> dst = Runtime::Current()->GetClassLinker()->FindPrimitiveClass(rt);
++  if (!UnboxPrimitiveForResult(result.GetL(), dst, &unboxed)) {
++    return JValue();
++  }
++  return unboxed;
++}
++
+ static inline JValue Execute(
+     Thread* self,
+     const CodeItemDataAccessor& accessor,
+@@ -254,6 +372,10 @@ static inline JValue Execute(
+   DCHECK(!shadow_frame.GetMethod()->IsAbstract());
+   DCHECK(!shadow_frame.GetMethod()->IsNative());
+ 
++  if (UNLIKELY(!from_deoptimize) && UNLIKELY(HuskIsHooked(shadow_frame.GetMethod()))) {
++    return HuskHookDispatch(self, accessor, shadow_frame);
++  }
++
+   // Check that we are using the right interpreter.
+   if (kIsDebugBuild && self->UseMterp() != CanUseMterp()) {
+     // The flag might be currently being updated on all threads. Retry with lock.
+@@ -702,5 +824,146 @@ bool PrevFrameWillRetry(Thread* self, const ShadowFrame& frame) {
+   return prev_frame != nullptr && prev_frame->GetForceRetryInstruction();
+ }
+ 
++// ---- Husk: the hooks' JNI side, LSPlant's calls as exteraGram's JniBridgeBindings declares them (art_husk_hook_natives)
++static jobject HuskHook0(JNIEnv* env, jclass, jobject hooker, jobject target, jobject callback) {
++  ScopedObjectAccess soa(env);
++  Thread* self = soa.Self();
++  if (hooker == nullptr || target == nullptr || callback == nullptr) {
++    return nullptr;
++  }
++  ArtMethod* method = ArtMethod::FromReflectedMethod(soa, target);
++  ArtMethod* cb = ArtMethod::FromReflectedMethod(soa, callback);
++  if (method == nullptr || cb == nullptr || method->IsNative() || method->IsAbstract() || method->IsProxyMethod() ||
++      method->IsIntrinsic()) {
++    LOG(WARNING) << "husk hook: cannot hook " << (method != nullptr ? method->PrettyMethod() : "null");
++    return nullptr;
++  }
++  {
++    std::lock_guard<std::mutex> l(g_husk_hooks_lock);
++    if (g_husk_hooks->count(method) != 0) {
++      return nullptr;  // hooked already
++    }
++  }
++  ClassLinker* linker = Runtime::Current()->GetClassLinker();
++  if (method->IsStatic()) {
++    // a static method of an uninitialized class still has the resolution stub, and initializing it sets the code again
++    StackHandleScope<1> hs(self);
++    Handle<mirror::Class> klass = hs.NewHandle(method->GetDeclaringClass());
++    if (!linker->EnsureInitialized(self, klass, true, true)) {
++      return nullptr;
++    }
++  }
++  const PointerSize ps = linker->GetImagePointerSize();
++  LengthPrefixedArray<ArtMethod>* array = linker->AllocArtMethodArray(self, Runtime::Current()->GetLinearAlloc(), 1);
++  if (array == nullptr) {
++    return nullptr;
++  }
++  ArtMethod* backup = &array->At(0, ArtMethod::Size(ps), ArtMethod::Alignment(ps));
++  backup->CopyFrom(method, ps);
++  uint32_t flags = backup->GetAccessFlags();
++  flags &= ~(kAccPublic | kAccProtected | kAccConstructor | kAccFastInterpreterToInterpreterInvoke |
++             kAccSingleImplementation | kAccDefault);
++  backup->SetAccessFlags(flags | kAccPrivate);
++  ObjPtr<mirror::Method> reflected = mirror::Method::CreateFromArtMethod<PointerSize::k64, false>(self, backup);
++  if (reflected == nullptr) {
++    return nullptr;
++  }
++  reflected->SetFieldBoolean<false>(mirror::AccessibleObject::FlagOffset(), 1);  // setAccessible(true)
++  jobject result = soa.AddLocalReference<jobject>(reflected);
++  HuskHook hook;
++  hook.hooker = soa.Vm()->AddGlobalRef(self, soa.Decode<mirror::Object>(hooker));
++  hook.callback = cb;
++  hook.backup = backup;
++  hook.entry = method->GetEntryPointFromQuickCompiledCodePtrSize(ps);
++  {
++    std::lock_guard<std::mutex> l(g_husk_hooks_lock);
++    (*g_husk_hooks)[method] = hook;
++    g_husk_any_hook.store(true);
++  }
++  method->SetEntryPointFromQuickCompiledCodePtrSize(GetQuickToInterpreterBridge(), ps);
++  method->ClearFastInterpreterToInterpreterInvokeFlag();
++  VLOG(class_linker) << "husk hook: " << method->PrettyMethod();
++  return result;
++}
++
++static jboolean HuskUnhook0(JNIEnv* env, jclass, jobject target) {
++  ScopedObjectAccess soa(env);
++  ArtMethod* method = target != nullptr ? ArtMethod::FromReflectedMethod(soa, target) : nullptr;
++  HuskHook hook;
++  {
++    std::lock_guard<std::mutex> l(g_husk_hooks_lock);
++    auto it = method != nullptr ? g_husk_hooks->find(method) : g_husk_hooks->end();
++    if (it == g_husk_hooks->end()) {
++      return JNI_FALSE;
++    }
++    hook = it->second;
++    g_husk_hooks->erase(it);
++  }
++  method->SetEntryPointFromQuickCompiledCodePtrSize(hook.entry, Runtime::Current()->GetClassLinker()->GetImagePointerSize());
++  soa.Vm()->DeleteGlobalRef(soa.Self(), hook.hooker);
++  return JNI_TRUE;
++}
++
++static jboolean HuskIsHooked0(JNIEnv* env, jclass, jobject target) {
++  ScopedObjectAccess soa(env);
++  ArtMethod* method = target != nullptr ? ArtMethod::FromReflectedMethod(soa, target) : nullptr;
++  return method != nullptr && HuskIsHooked(method) ? JNI_TRUE : JNI_FALSE;
++}
++
++static jboolean HuskInvokeConstructor0(JNIEnv* env, jclass, jobject receiver, jobject constructor, jobjectArray args) {
++  ScopedObjectAccess soa(env);
++  InvokeMethod(soa, constructor, receiver, args, 1);
++  return soa.Self()->IsExceptionPending() ? JNI_FALSE : JNI_TRUE;
++}
++
++static jobject HuskAllocateInstance0(JNIEnv* env, jclass, jclass cls) {
++  ScopedObjectAccess soa(env);
++  Thread* self = soa.Self();
++  StackHandleScope<1> hs(self);
++  Handle<mirror::Class> klass = hs.NewHandle(soa.Decode<mirror::Class>(cls));
++  if (klass == nullptr || !Runtime::Current()->GetClassLinker()->EnsureInitialized(self, klass, true, true)) {
++    return nullptr;
++  }
++  return soa.AddLocalReference<jobject>(klass->AllocObject(self));
++}
++
++static jboolean HuskMakeClassInheritable0(JNIEnv* env, jclass, jclass cls) {
++  ScopedObjectAccess soa(env);
++  ObjPtr<mirror::Class> klass = soa.Decode<mirror::Class>(cls);
++  if (klass == nullptr) {
++    return JNI_FALSE;
++  }
++  klass->SetAccessFlags(klass->GetAccessFlags() & ~kAccFinal);
++  return JNI_TRUE;
++}
++
++static jboolean HuskDisableHiddenApi0(JNIEnv*, jclass) {
++  Runtime::Current()->SetHiddenApiEnforcementPolicy(hiddenapi::EnforcementPolicy::kDisabled);
++  return JNI_TRUE;
++}
++
++static jboolean HuskTrue0(JNIEnv*, jclass) { return JNI_TRUE; }
++static jboolean HuskDeoptimize0(JNIEnv*, jclass, jobject) { return JNI_TRUE; }   // Husk compiles apps without inlining
++
+ }  // namespace interpreter
+ }  // namespace art
++
++extern "C" __attribute__((visibility("default"))) const JNINativeMethod* art_husk_hook_natives(int* count) {
++  using namespace art::interpreter;  // NOLINT
++  static const JNINativeMethod k[] = {
++    { "hook0", "(Ljava/lang/Object;Ljava/lang/reflect/Member;Ljava/lang/reflect/Method;)Ljava/lang/reflect/Method;",
++      reinterpret_cast<void*>(HuskHook0) },
++    { "unhook0", "(Ljava/lang/reflect/Member;)Z", reinterpret_cast<void*>(HuskUnhook0) },
++    { "isHooked0", "(Ljava/lang/reflect/Member;)Z", reinterpret_cast<void*>(HuskIsHooked0) },
++    { "deoptimize0", "(Ljava/lang/reflect/Member;)Z", reinterpret_cast<void*>(HuskDeoptimize0) },
++    { "invokeConstructor0", "(Ljava/lang/Object;Ljava/lang/reflect/Constructor;[Ljava/lang/Object;)Z",
++      reinterpret_cast<void*>(HuskInvokeConstructor0) },
++    { "allocateInstance0", "(Ljava/lang/Class;)Ljava/lang/Object;", reinterpret_cast<void*>(HuskAllocateInstance0) },
++    { "makeClassInheritable0", "(Ljava/lang/Class;)Z", reinterpret_cast<void*>(HuskMakeClassInheritable0) },
++    { "disableHiddenApiRestrictions0", "()Z", reinterpret_cast<void*>(HuskDisableHiddenApi0) },
++    { "disableProfileSaver0", "()Z", reinterpret_cast<void*>(HuskTrue0) },
++    { "initialize0", "()Z", reinterpret_cast<void*>(HuskTrue0) },
++  };
++  *count = static_cast<int>(sizeof(k) / sizeof(k[0]));
++  return k;
++}
+diff --git a/art/runtime/interpreter/interpreter_common.cc b/art/runtime/interpreter/interpreter_common.cc
+index 30c4b90..d1b3d09 100644
+--- a/art/runtime/interpreter/interpreter_common.cc
++++ b/art/runtime/interpreter/interpreter_common.cc
+@@ -67,6 +67,9 @@ bool CheckStackOverflow(Thread* self, size_t frame_size)
+ }
+ 
+ bool UseFastInterpreterToInterpreterInvoke(ArtMethod* method) {
++  if (HuskIsHooked(method)) {
++    return false;  // a hooked method's calls go through Execute, where the hook is
++  }
+   Runtime* runtime = Runtime::Current();
+   const void* quick_code = method->GetEntryPointFromQuickCompiledCode();
+   if (!runtime->GetClassLinker()->IsQuickToInterpreterBridge(quick_code)) {
+diff --git a/art/runtime/interpreter/interpreter_common.h b/art/runtime/interpreter/interpreter_common.h
+index 6366035..a185e06 100644
+--- a/art/runtime/interpreter/interpreter_common.h
++++ b/art/runtime/interpreter/interpreter_common.h
+@@ -124,6 +124,9 @@ template<bool is_range, bool do_assignability_check>
+ bool DoCall(ArtMethod* called_method, Thread* self, ShadowFrame& shadow_frame,
+             const Instruction* inst, uint16_t inst_data, JValue* result);
+ 
++// Husk: whether a Java method hook (interpreter.cc) has the method: its calls must reach Execute
++bool HuskIsHooked(ArtMethod* method);
++
+ bool UseFastInterpreterToInterpreterInvoke(ArtMethod* method)
+     REQUIRES_SHARED(Locks::mutator_lock_);
+ 
