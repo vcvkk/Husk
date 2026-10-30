@@ -1,0 +1,34 @@
+name: ANGLE
+
+# ANGLE (EGL and OpenGL ES over Metal) for iOS and macOS, from WebKit's tree (port/gl/build-angle.sh): what apps' OpenGL ES runs
+# on here. Long to build, so kept by the script's hash.
+
+on:
+  push:
+    branches: [husk-port]
+    paths: ['port/gl/build-angle.sh', '.github/workflows/angle.yml']
+  workflow_dispatch:
+
+jobs:
+  angle:
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [ios, macos]
+    runs-on: macos-15
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        id: angle
+        with:
+          path: build/angle-${{ matrix.target }}
+          key: angle-${{ matrix.target }}-${{ hashFiles('port/gl/build-angle.sh') }}
+      - name: Build
+        if: steps.angle.outputs.cache-hit != 'true'
+        run: port/gl/build-angle.sh ${{ matrix.target }} build/angle-${{ matrix.target }}
+      - run: tar -czf build/angle-${{ matrix.target }}.tgz -C build angle-${{ matrix.target }}/lib angle-${{ matrix.target }}/include
+      - uses: actions/upload-artifact@v4
+        with:
+          name: angle-${{ matrix.target }}
+          path: build/angle-${{ matrix.target }}.tgz
