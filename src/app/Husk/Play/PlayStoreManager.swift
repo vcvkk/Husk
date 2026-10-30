@@ -23,6 +23,19 @@ final class PlayStoreManager: ObservableObject {
     @Published var downloadProgress: [String: Double] = [:]
     // Installing packages
     @Published var installingPackages: Set<String> = []
+    // Running downloads by package, so the Store can stop them; their titles for the Downloads list
+    private var downloadTasks: [String: Task<Void, Never>] = [:]
+    @Published private(set) var downloadTitles: [String: String] = [:]
+
+    /// Stops a running download; it ends without an error message.
+    func cancelDownload(_ pkg: String) {
+        downloadTasks[pkg]?.cancel()
+        downloadTasks[pkg] = nil
+        downloadProgress.removeValue(forKey: pkg)
+        installingPackages.remove(pkg)
+        downloadTitles.removeValue(forKey: pkg)
+        HuskLog.log("store", "Cancelled the download of \(pkg)")
+    }
 
     init() {
         loadSavedSession()
@@ -120,7 +133,7 @@ final class PlayStoreManager: ObservableObject {
         } catch {
             isLoading = false
             statusMessage = nil
-            errorMessage = "Guest sign-in failed: \(error.localizedDescription)"
+            errorMessage = error.localizedDescription
             HuskLog.log("store", "Aurora guest sign-in error: \(error.localizedDescription)")
         }
     }
@@ -135,6 +148,7 @@ final class PlayStoreManager: ObservableObject {
                 saveSession(fresh)
                 await loadBrowseApps()
             } catch {
+                errorMessage = error.localizedDescription
                 HuskLog.log("store", "Failed to refresh Aurora guest token: \(error.localizedDescription)")
             }
             return
@@ -199,8 +213,9 @@ final class PlayStoreManager: ObservableObject {
 
         downloadProgress[pkg] = 0.05
         installingPackages.insert(pkg)
+        downloadTitles[pkg] = app.title
 
-        Task {
+        downloadTasks[pkg] = Task {
             do {
                 // If versionCode is 0, fetch details first to get current versionCode
                 var versionCode = app.versionCode
@@ -221,15 +236,21 @@ final class PlayStoreManager: ObservableObject {
                     self?.downloadProgress[pkg] = p
                 }
 
+                try Task.checkCancellation()
                 HuskLog.log("store", "Downloaded \(files.count) files for \(pkg), handing to IncomingFiles")
                 self.downloadProgress.removeValue(forKey: pkg)
                 self.installingPackages.remove(pkg)
+                self.downloadTasks[pkg] = nil
+                self.downloadTitles.removeValue(forKey: pkg)
 
                 // Hand to Husk's IncomingFiles flow, which automatically presents IncomingChooser!
                 IncomingFiles.shared.receive(files)
             } catch {
                 self.downloadProgress.removeValue(forKey: pkg)
                 self.installingPackages.remove(pkg)
+                self.downloadTasks[pkg] = nil
+                self.downloadTitles.removeValue(forKey: pkg)
+                if Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled { return }
                 self.errorMessage = "Failed to download \(app.title): \(error.localizedDescription)"
                 HuskLog.log("store", "Download error for \(pkg): \(error.localizedDescription)")
             }

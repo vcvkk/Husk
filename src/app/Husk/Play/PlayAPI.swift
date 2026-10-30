@@ -87,9 +87,14 @@ enum PlayAPI {
 
         req.httpBody = try? JSONSerialization.data(withJSONObject: deviceProps)
 
-        let (data, response) = try await urlSession.data(for: req)
+        // The dispenser is a free service of the Aurora Store project; when Google refuses its shared accounts it answers 5xx for
+        // hours, so the message says what is down and that signing in still works
+        let unavailable = "The anonymous login service (Aurora's token dispenser) is not working right now"
+        let advice = "Sign in with a Google account instead, or try again later."
+        let data: Data, response: URLResponse
+        do { (data, response) = try await urlSession.data(for: req) } catch { throw PlayError("\(unavailable) (\(error.localizedDescription)). \(advice)") }
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-            throw PlayError("Aurora token dispenser returned HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0).")
+            throw PlayError("\(unavailable) (HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)). \(advice)")
         }
 
         struct DispenserResponse: Decodable {
@@ -290,13 +295,48 @@ enum PlayAPI {
         public let summary: String
         public let iconURL: String?
         public let screenshotURLs: [String]
-        public let versionCode: Int
+        public var versionCode: Int
         public let versionString: String
         public let sizeBytes: Int64
         public let downloads: String
         public let rating: Double
         public let formattedPrice: String
         public let isFree: Bool
+        /// The rest of the page, when Play sent it (details always does; lists sometimes)
+        public var feature: String? = nil            // the 1024x500 banner
+        public var screenshotRatios: [Double] = []   // width / height, per screenshot, 0 when unknown
+        public var trailer: (url: String, thumbnail: String?)? = nil
+        public var tagline = ""
+        public var downloadsShort = ""               // "1B+"
+        public var reviews = ""                      // "37M"
+        public var updated = ""
+        public var released = ""
+        public var whatsNew = ""
+        public var contentRating = ""
+        public var ads = ""                          // "Contains ads"
+        public var purchases = ""                    // "$0.99 - $99.99 per item"
+        public var tags: [String] = []
+        public var highlights: [String] = []
+        public var award = ""                        // "Editors' Choice"
+        public var email = ""
+        public var website = ""
+        public var privacy = ""
+        public var isGame = false
+
+        /// "1B+", "500M+", "10K+": Play's short form, or the long one shortened.
+        public var installs: String {
+            if !downloadsShort.isEmpty { return downloadsShort }
+            let digits = downloads.filter(\.isNumber)
+            guard let n = Double(digits), n > 0 else { return downloads }
+            for (size, unit) in [(1e9, "B"), (1e6, "M"), (1e3, "K")] where n >= size {
+                let v = n / size
+                return (v == v.rounded() ? String(Int(v)) : String(format: "%.1f", v)) + unit + "+"
+            }
+            return String(Int(n)) + "+"
+        }
+
+        public static func == (a: PlayApp, b: PlayApp) -> Bool { a.id == b.id && a.versionCode == b.versionCode && a.summary == b.summary }
+        public func hash(into h: inout Hasher) { h.combine(id) }
 
         public static func isValidPackageName(_ id: String) -> Bool {
             id.range(of: "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]+)+$", options: .regularExpression) != nil
@@ -314,19 +354,24 @@ enum PlayAPI {
             let dev = doc.string(6) ?? ""
             let desc = doc.string(7) ?? ""
 
-            // Images: field 10 (imageType 4 = icon, 1 or 2 = screenshot)
+            // Images: field 10 (1 screenshot, 2 feature banner, 3 trailer, 4 icon, 13 trailer thumbnail)
             var icon: String? = nil
+            var feature: String? = nil
             var screenshots: [String] = []
+            var ratios: [Double] = []
+            var trailer: String? = nil, trailerThumb: String? = nil
             for img in doc.messages(10) {
-                let imgType = img.int(1) ?? 0
-                if let url = img.string(5), url.hasPrefix("http") {
-                    if imgType == 4 && icon == nil {
-                        icon = url
-                    } else if imgType == 1 || imgType == 2 {
-                        screenshots.append(url)
-                    } else if icon == nil {
-                        icon = url
-                    }
+                guard let url = img.string(5), url.hasPrefix("http") else { continue }
+                switch img.int(1) ?? 0 {
+                case 4: if icon == nil { icon = url }
+                case 1:
+                    screenshots.append(url)
+                    let w = Double(img.message(2)?.int(3) ?? 0), h = Double(img.message(2)?.int(4) ?? 0)
+                    ratios.append(w > 0 && h > 0 ? w / h : 0)
+                case 2: if feature == nil { feature = url }
+                case 3: if trailer == nil { trailer = url }
+                case 13: if trailerThumb == nil { trailerThumb = url }
+                default: if icon == nil { icon = url }
                 }
             }
 
@@ -358,7 +403,7 @@ enum PlayAPI {
                 }
             }
 
-            return PlayApp(
+            var app = PlayApp(
                 id: id,
                 title: title,
                 developer: dev,
@@ -373,6 +418,33 @@ enum PlayAPI {
                 formattedPrice: price,
                 isFree: isFree
             )
+            app.feature = feature
+            app.screenshotRatios = ratios
+            if let trailer { app.trailer = (trailer, trailerThumb) }
+            app.tagline = doc.string(27) ?? ""
+            app.downloadsShort = appDetails?.string(61) ?? ""
+            app.reviews = doc.message(14)?.string(18) ?? ""
+            app.updated = appDetails?.string(16) ?? ""
+            app.released = appDetails?.message(64)?.string(1) ?? ""
+            app.whatsNew = appDetails?.string(15) ?? ""
+            app.contentRating = doc.message(50)?.string(1) ?? ""
+            app.ads = appDetails?.string(30) ?? ""
+            app.purchases = appDetails?.string(67) ?? ""
+            // genre groups (Action, Platformer...; Arcade; Single player; Offline): each group's names, in order
+            var tags: [String] = []
+            for group in appDetails?.message(66)?.fields.sorted(by: { $0.key < $1.key }) ?? [] {
+                for case .bytes(let d) in group.value {
+                    for tag in ProtoMessage(d).messages(1) { if let t = tag.string(1), !tags.contains(t) { tags.append(t) } }
+                }
+            }
+            app.tags = tags
+            app.highlights = appDetails?.message(41)?.strings(1) ?? []
+            app.award = appDetails?.message(41)?.string(4) ?? ""
+            app.email = appDetails?.string(11) ?? ""
+            app.website = appDetails?.string(12) ?? ""
+            app.privacy = doc.message(15)?.string(18) ?? ""
+            app.isGame = appDetails?.string(18) == "GAME"
+            return app
         }
 
         public static func parseApps(from message: ProtoMessage) -> [PlayApp] {
@@ -420,6 +492,8 @@ enum PlayAPI {
         "com.fingersoft.hillclimb",
         "org.libretro.retroarch"
     ]
+    /// The featured ones that are apps rather than games (the Store's Apps pill).
+    static let featuredAppPackages: Set<String> = ["org.videolan.vlc", "org.libretro.retroarch"]
 
     /// Browse top / featured apps
     static func browse(session: PlaySession) async throws -> [PlayApp] {
@@ -620,27 +694,8 @@ enum PlayAPI {
         let detResp = payload.message(2)
         if let doc = detResp?.message(4), var app = PlayApp.from(doc: doc) {
             // Extract latest versionCode from prefetch/cluster info (field 6.2.11.2) if not in appDetails
-            if app.versionCode <= 0 {
-                let f6 = detResp?.message(6)
-                let f2 = f6?.message(2)
-                let f11 = f2?.message(11)
-                if let vc = f11?.int(2), vc > 0 {
-                    app = PlayApp(
-                        id: app.id,
-                        title: app.title,
-                        developer: app.developer,
-                        summary: app.summary,
-                        iconURL: app.iconURL,
-                        screenshotURLs: app.screenshotURLs,
-                        versionCode: Int(vc),
-                        versionString: app.versionString,
-                        sizeBytes: app.sizeBytes,
-                        downloads: app.downloads,
-                        rating: app.rating,
-                        formattedPrice: app.formattedPrice,
-                        isFree: app.isFree
-                    )
-                }
+            if app.versionCode <= 0, let vc = detResp?.message(6)?.message(2)?.message(11)?.int(2), vc > 0 {
+                app.versionCode = Int(vc)
             }
             return app
         }
@@ -659,6 +714,14 @@ enum PlayAPI {
         public let size: Int64
         public let splits: [SplitFile]
         public let downloadAuthCookie: (name: String, value: String)?
+        /// Expansion files (OBB): a game's data kept beside the APK, "main" and sometimes "patch"
+        public struct ExpansionFile {
+            public let isPatch: Bool
+            public let versionCode: Int64
+            public let size: Int64
+            public let downloadUrl: String
+        }
+        public var expansions: [ExpansionFile] = []
     }
 
     /// "Purchase" (license) a free app so Google Play allows delivery. Returns encoded delivery token if provided.
@@ -701,6 +764,17 @@ enum PlayAPI {
             throw PlayError("Google Play did not return download information.")
         }
 
+        if ProcessInfo.processInfo.environment["HUSK_PLAY_DUMP"] != nil {
+            // what Play sent, field by field (asset packs and expansion files are in fields Husk did not read)
+            func dump(_ m: ProtoMessage, _ indent: String, _ depth: Int) {
+                for k in m.fields.keys.sorted() {
+                    let subs = m.messages(k)
+                    print("\(indent)\(k): \(subs.isEmpty || depth > 2 ? (m.string(k).map { String($0.prefix(80)) } ?? m.int(k).map(String.init) ?? "?") : "\(subs.count) message(s)")")
+                    if depth <= 2 { for sub in subs.prefix(6) { dump(sub, indent + "    ", depth + 1) } }
+                }
+            }
+            print("delivery response:"); if let r = delivResp { dump(r, "  ", 0) }
+        }
         let downloadUrl = deliveryDataMsg.string(3)
         let downloadSize = deliveryDataMsg.int(1) ?? 0
 
@@ -722,12 +796,23 @@ enum PlayAPI {
             cookie = (cName, cVal)
         }
 
-        return DeliveryData(
+        // Expansion files: field 4 (AppFileMetadata: 1 file type, 0 main and 1 patch; 2 version code; 3 size; 4 URL)
+        var expansions: [DeliveryData.ExpansionFile] = []
+        for f in deliveryDataMsg.messages(4) {
+            if let url = f.string(4) {
+                expansions.append(DeliveryData.ExpansionFile(isPatch: f.int(1) == 1, versionCode: f.int(2) ?? Int64(versionCode),
+                                                             size: f.int(3) ?? 0, downloadUrl: url))
+            }
+        }
+
+        var data = DeliveryData(
             downloadUrl: downloadUrl,
             size: downloadSize,
             splits: splits,
             downloadAuthCookie: cookie
         )
+        data.expansions = expansions
+        return data
     }
 
     /// Downloads the APK (and splits if present) into a temporary directory and returns the list of file URLs.
@@ -735,6 +820,7 @@ enum PlayAPI {
         packageName: String,
         versionCode: Int,
         session: PlaySession,
+        stagingDirectory: URL? = nil,
         progress: (@MainActor (Double) -> Void)? = nil
     ) async throws -> [URL] {
         // Purchase first to obtain delivery token, then request delivery
@@ -753,13 +839,19 @@ enum PlayAPI {
         for split in deliveryData.splits {
             downloadsToMake.append(("\(packageName).\(split.name).apk", split.downloadUrl, split.size))
         }
+        // Expansion files keep the name Android gives them; the store puts them where the game looks (obb/ beside the APKs)
+        for x in deliveryData.expansions {
+            downloadsToMake.append(("\(x.isPatch ? "patch" : "main").\(x.versionCode).\(packageName).obb", x.downloadUrl, x.size))
+        }
 
         guard !downloadsToMake.isEmpty else {
             throw PlayError("No download URLs available for \(packageName).")
         }
 
         let totalExpectedBytes = downloadsToMake.reduce(Int64(0)) { $0 + max(0, $1.size) }
-        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("PlayDownload_\(UUID().uuidString)", isDirectory: true)
+        // stagingDirectory: a folder on the destination's disk (the Mac downloader's games go to an external one; the temporary
+        // folder is always on the internal disk)
+        let tempDir = (stagingDirectory ?? FileManager.default.temporaryDirectory).appendingPathComponent("PlayDownload_\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
         var downloadedFiles: [URL] = []
@@ -774,11 +866,11 @@ enum PlayAPI {
             }
 
             let fileDest = tempDir.appendingPathComponent(item.name)
-            let (tempLocalURL, resp) = try await URLSession.shared.download(for: req)
-            guard (resp as? HTTPURLResponse)?.statusCode == 200 else {
-                throw PlayError("Failed to download \(item.name) (HTTP \((resp as? HTTPURLResponse)?.statusCode ?? 0))")
+            let status = try await FileStreamer.download(req, to: fileDest)
+            guard status == 200 else {
+                try? FileManager.default.removeItem(at: fileDest)
+                throw PlayError("Failed to download \(item.name) (HTTP \(status))")
             }
-            try FileManager.default.moveItem(at: tempLocalURL, to: fileDest)
             downloadedFiles.append(fileDest)
 
             totalBytesWritten += item.size
@@ -793,3 +885,58 @@ enum PlayAPI {
     }
 }
 
+
+
+/// Writes a download straight into its file as it arrives. A download task would first put the whole file in the system's temporary
+/// folder and then move it: twice the space at the peak, and on the internal disk whatever the destination (the Mac downloader's
+/// games go to an external one).
+private final class FileStreamer: NSObject, URLSessionDataDelegate {
+    private let handle: FileHandle
+    private var status = 0
+    private var failure: Error?
+    private var continuation: CheckedContinuation<Int, Error>?
+
+    private init(handle: FileHandle) { self.handle = handle }
+
+    static func download(_ request: URLRequest, to destination: URL) async throws -> Int {
+        FileManager.default.createFile(atPath: destination.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: destination)
+        let streamer = FileStreamer(handle: handle)
+        let session = URLSession(configuration: .default, delegate: streamer, delegateQueue: nil)
+        defer { session.finishTasksAndInvalidate(); try? handle.close() }
+        do {
+            // Cancelling the download's Task (the Store's stop button) cancels the transfer
+            return try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    streamer.continuation = continuation
+                    session.dataTask(with: request).resume()
+                }
+            } onCancel: {
+                session.invalidateAndCancel()
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: destination)
+            throw error
+        }
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
+                    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        completionHandler(status == 200 ? .allow : .cancel)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        guard failure == nil else { return }
+        do { try handle.write(contentsOf: data) } catch { failure = error; dataTask.cancel() }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        let c = continuation
+        continuation = nil
+        if let failure { c?.resume(throwing: failure) }
+        else if status != 200 { c?.resume(returning: status) }
+        else if let error { c?.resume(throwing: error) }
+        else { c?.resume(returning: status) }
+    }
+}

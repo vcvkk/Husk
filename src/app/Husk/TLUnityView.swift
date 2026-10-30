@@ -3,6 +3,7 @@ import SwiftUI
 import UIKit
 import QuartzCore
 import AVFoundation
+import UniformTypeIdentifiers
 
 /// The engines the native runtime drives. Both draw into a CAMetalLayer through ANGLE, and both are one game per
 /// process: an engine cannot be unloaded once it has started.
@@ -15,6 +16,9 @@ enum TLNativeEngine {
     case ue4       // Minecraft Dungeons and other Unreal Engine 4 games: landscape, touch and controllers, Vulkan on MoltenVK
     case godot     // A Godot 3 or 4 game: the manifest says which way up, OpenGL ES through ANGLE, multi-touch
     case nativeactivity // A game that is a NativeActivity library of its own (Open Golf): the manifest says which way up, OpenGL ES through ANGLE
+    case gamemaker // A GameMaker game: YoYo's runner draws with OpenGL ES through ANGLE; options.ini says which way up
+    case java      // A Java app (libGDX games): Husk's own Dalvik runtime runs its code, GLSurfaceView draws through ANGLE
+    case flutter   // A Flutter app: the engine and the app's Dart run natively, Impeller draws through ANGLE; portrait unless the manifest says
 }
 
 /// A Unity game's screen: one CAMetalLayer that the game's own GL (ANGLE over Metal) presents into.
@@ -25,6 +29,12 @@ enum TLNativeEngine {
 final class TLUnityUIView: UIView, UIKeyInput {
     override class var layerClass: AnyClass { CAMetalLayer.self }
 
+    /// A touch on a Java app's web page goes to the WKWebView under this view.
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        if engine == .java, husk_java_web_hit(Float(point.x), Float(point.y)) != 0 { return nil }
+        return super.hitTest(point, with: event)
+    }
+
     /// The cocos2d-x or SDL game on screen, which the game's keyboard requests (they arrive on its own thread) are routed to.
     nonisolated(unsafe) static weak var cocosView: TLUnityUIView?
 
@@ -32,10 +42,15 @@ final class TLUnityUIView: UIView, UIKeyInput {
     /// The app's other APKs -- splits, an asset pack -- which an SDL game's libraries and data may be in.
     private let extraApks: [String]
     private let dataDir: String
-    private let engine: TLNativeEngine
+    let engine: TLNativeEngine
     /// A portrait game is told its size when the screen is taller than wide, as a landscape one is when it is wider.
     private let portrait: Bool
-    private var launched = false
+    private(set) var launched = false
+    /// The size, in points, the game was told it has as it started. Every engine but Flutter keeps it for good, so a window
+    /// that is resized later scales the picture instead (TLWindowHost).
+    private(set) var launchedSize: CGSize?
+    /// In a floating window rather than full screen: no notch or home indicator to keep clear of.
+    var windowed = false
     /// Where the corner statistics go when this view does not draw them itself (a landscape game has its own bar).
     var onStats: ((String) -> Void)?
     /// Active touches by UITouch identity, each given a small stable id like Android's pointer ids.
@@ -83,7 +98,10 @@ final class TLUnityUIView: UIView, UIKeyInput {
         stats.isUserInteractionEnabled = false
         stats.text = " "
         if engine == .unity { addSubview(stats) }
-        if engine == .cocos {
+        if engine == .unity {
+            TLUnityUIView.cocosView = self
+            TLUnityUIView.installUnityKeyboardHandler()
+        } else if engine == .cocos {
             TLUnityUIView.cocosView = self
             TLUnityUIView.installKeyboardHandler()
         } else if engine == .sdl {
@@ -92,6 +110,32 @@ final class TLUnityUIView: UIView, UIKeyInput {
         } else if engine == .minecraft {
             TLUnityUIView.cocosView = self
             TLUnityUIView.installGameActivityKeyboardHandler()
+        } else if engine == .java {
+            TLUnityUIView.cocosView = self
+            TLUnityUIView.installJavaHandlers()
+            // Android's back gesture: a swipe in from the left edge.
+            let back = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(edgeSwiped(_:)))
+            back.edges = .left
+            addGestureRecognizer(back)
+            // The keyboard covers the bottom of the app: its views are told (an adjustResize window shrinks above it).
+            for name in [UIResponder.keyboardWillChangeFrameNotification, UIResponder.keyboardWillHideNotification] {
+                NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                    self?.keyboardMoved(note)
+                }
+            }
+        } else if engine == .flutter {
+            TLUnityUIView.cocosView = self
+            TLUnityUIView.installFlutterHandlers()
+            // Android's back gesture: a swipe in from the left edge.
+            let back = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(edgeSwiped(_:)))
+            back.edges = .left
+            addGestureRecognizer(back)
+            // The keyboard covers the bottom of the app: Flutter is told, and moves the focused field above it.
+            for name in [UIResponder.keyboardWillChangeFrameNotification, UIResponder.keyboardWillHideNotification] {
+                NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                    self?.keyboardMoved(note)
+                }
+            }
         }
         // The GPU is not the app's while it is in the background: stop drawing, and carry on when it returns.
         NotificationCenter.default.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { _ in
@@ -103,6 +147,51 @@ final class TLUnityUIView: UIView, UIKeyInput {
     }
 
     @objc private func threeFingerTapped() { onThreeFingerTap?() }
+
+    /// A Java app's WebViews (WKWebViews) live in a view right under this one, where the app's window leaves a hole for them.
+    /// Touches on a page go straight to it, so the back swipe and the three-finger tap are on that view too.
+    private var webHost: UIView?
+    private func attachWebHost(fresh: Bool) {
+        guard let superview else { return }
+        webHost?.removeFromSuperview()
+        let host = UIView(frame: frame)
+        host.backgroundColor = .black
+        superview.insertSubview(host, belowSubview: self)
+        let back = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(edgeSwiped(_:)))
+        back.edges = .left
+        host.addGestureRecognizer(back)
+        let threeFingers = UITapGestureRecognizer(target: self, action: #selector(threeFingerTapped))
+        threeFingers.numberOfTouchesRequired = 3
+        threeFingers.cancelsTouchesInView = false
+        threeFingers.delaysTouchesBegan = false
+        threeFingers.delaysTouchesEnded = false
+        host.addGestureRecognizer(threeFingers)
+        webHost = host
+        husk_java_web_attach(Unmanaged.passUnretained(self).toOpaque(), Unmanaged.passUnretained(host).toOpaque(), Float(contentScaleFactor), fresh ? 1 : 0)
+    }
+
+    override func willMove(toSuperview newSuperview: UIView?) {
+        super.willMove(toSuperview: newSuperview)
+        if newSuperview == nil { webHost?.removeFromSuperview() }
+    }
+
+    @objc private func edgeSwiped(_ g: UIScreenEdgePanGestureRecognizer) {
+        if g.state == .ended, g.translation(in: self).x > 60 { if engine == .java { husk_java_back() } else { husk_flutter_back() } }
+    }
+
+    private func keyboardMoved(_ note: Notification) {
+        guard let window, let end = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
+        let hiding = note.name == UIResponder.keyboardWillHideNotification
+        let mine = convert(bounds, to: window)
+        let covered = hiding ? 0 : max(0, mine.maxY - window.convert(end, from: nil).minY)
+        if engine == .java {
+            let k = contentScaleFactor, inset = windowed ? UIEdgeInsets.zero : window.safeAreaInsets
+            husk_java_set_insets(Int32(inset.left * k), Int32(inset.top * k), Int32(inset.right * k), Int32(inset.bottom * k), Int32((covered * k).rounded()))
+            if hiding, isFirstResponder == false { husk_java_keyboard_closed() }
+            return
+        }
+        husk_flutter_set_keyboard_inset(Int32((covered * contentScaleFactor).rounded()))
+    }
 
     deinit { statsTimer?.invalidate(); NotificationCenter.default.removeObserver(self) }
 
@@ -121,12 +210,16 @@ final class TLUnityUIView: UIView, UIKeyInput {
     override func layoutSubviews() {
         super.layoutSubviews()
         stats.frame = CGRect(x: bounds.width - 148, y: bounds.height - 22, width: 142, height: 16)
+        if let webHost, webHost.frame != frame { webHost.frame = frame }
         guard bounds.width > 0, bounds.height > 0 else { return }
         let w = Int((bounds.width * contentScaleFactor).rounded())
         let h = Int((bounds.height * contentScaleFactor).rounded())
         // An Unreal game draws with MoltenVK, which sizes this layer itself to the swapchain it made; sizing it back here on every layout would leave the layer and the
         // swapchain disagreeing from then on.
         if !(engine == .ue4 && launched) { (layer as? CAMetalLayer)?.drawableSize = CGSize(width: w, height: h) }
+        // Flutter lays itself out again at any size, as an Android view does when its window changes: a window being resized, the
+        // screen turning.
+        if engine == .flutter, launched { husk_flutter_resize(Int32(w), Int32(h)) }
         // A landscape game is told its size once, when it starts, so it must not start while the screen is still
         // turning: wait for a surface that is wider than it is tall.
         // Unity games too: Fruit Ninja is a landscape one. If the screen has not turned after two seconds it is not going to,
@@ -158,6 +251,7 @@ final class TLUnityUIView: UIView, UIKeyInput {
 
     private func launch(width: Int, height: Int) {
         launched = true
+        launchedSize = bounds.size
         let angle = (Bundle.main.privateFrameworksPath ?? "") + "/libANGLE-shared.dylib"
         let ca = Bundle.main.path(forResource: "cacert", ofType: "pem") ?? ""
         try? FileManager.default.createDirectory(atPath: dataDir, withIntermediateDirectories: true)
@@ -165,6 +259,7 @@ final class TLUnityUIView: UIView, UIKeyInput {
         if husk_unity_state() != Int32(HUSK_UNITY_IDLE) {
             // Already started this run: the engine cannot be loaded twice, so just show it again.
             HuskLog.log("tl", "unity: already started; resuming")
+            if engine == .java { attachWebHost(fresh: false) }
             return
         }
         // The game plays through the silent switch, like the guest's own audio, and mixes with other audio. Unity games too:
@@ -174,18 +269,24 @@ final class TLUnityUIView: UIView, UIKeyInput {
             try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
             try? session.setActive(true)
         }
-        HuskLog.log("tl", "native: launching \(apk) at \(width)x\(height) (\(engine == .cocos ? "cocos2d-x" : engine == .minecraft ? "gameactivity" : engine == .sdl ? "sdl" : engine == .ue4 ? "ue4" : engine == .gta ? "gta" : engine == .godot ? "godot" : engine == .nativeactivity ? "nativeactivity" : "unity"))")
+        HuskLog.log("tl", "native: launching \(apk) at \(width)x\(height) (\(engine == .cocos ? "cocos2d-x" : engine == .minecraft ? "gameactivity" : engine == .sdl ? "sdl" : engine == .ue4 ? "ue4" : engine == .gta ? "gta" : engine == .godot ? "godot" : engine == .nativeactivity ? "nativeactivity" : engine == .flutter ? "flutter" : engine == .gamemaker ? "gamemaker" : engine == .java ? "java" : "unity"))")
         // Splits and the asset pack are part of the app, whatever its engine; the game's libraries and data may be in any of
         // them (a Google Play install keeps a Unity game's libraries in one split and its data in an asset pack).
-        for extra in extraApks.prefix(3) { husk_native_add_package(extra) }
+        JITLess.prepareLaunch()
+        for extra in extraApks.prefix(15) { husk_native_add_package(extra) }
         // Android's shared storage, one folder for every game: a game that keeps its data in a folder of its own on /sdcard finds it
         // in Husk's "Shared Storage", which can be filled from Files or Finder.
         husk_native_set_shared_storage(TranslationLayer.sharedStorage.path)
+        // The CA certificates and system fonts Android keeps under /system, as the app carries them.
+        if let sys = Bundle.main.resourcePath.map({ $0 + "/android-system" }), FileManager.default.fileExists(atPath: sys) {
+            husk_native_set_system_files(sys + "/cacerts", sys)
+        }
+        husk_native_set_extra_fonts(CJKFonts.directory.path)
         let started: Bool
         switch engine {
         case .sdl:
             // The notch and the rounded corners, in the surface's pixels: the game keeps its controls out of them.
-            if let inset = window?.safeAreaInsets {
+            if let inset = windowed ? UIEdgeInsets.zero : window?.safeAreaInsets {
                 let k = contentScaleFactor
                 husk_sdl_set_safe_insets(Int32(inset.left * k), Int32(inset.top * k), Int32(inset.right * k), Int32(inset.bottom * k))
             }
@@ -205,6 +306,26 @@ final class TLUnityUIView: UIView, UIKeyInput {
             husk_cocos_set_geode(geode?.zip, geode?.launcher)
             if geode != nil { HuskLog.log("geode", "loading Geode into the game") }
             started = husk_cocos_launch(apk, dataDir, layerPtr, Int32(width), Int32(height), angle, ca)
+        case .java:
+            // Husk's Dalvik runtime: libcore, ICU and Husk's Java framework, carried in the app.
+            husk_java_set_runtime((Bundle.main.resourcePath ?? "") + "/java-runtime", Float(contentScaleFactor))
+            husk_java_set_night_mode(traitCollection.userInterfaceStyle == .dark ? 1 : 0)
+            // The notch and the home indicator, in surface pixels: the app's window keeps its content out of them.
+            if let inset = windowed ? UIEdgeInsets.zero : window?.safeAreaInsets {
+                let k = contentScaleFactor
+                husk_java_set_insets(Int32(inset.left * k), Int32(inset.top * k), Int32(inset.right * k), Int32(inset.bottom * k), 0)
+            }
+            attachWebHost(fresh: true)
+            started = husk_java_launch(apk, dataDir, layerPtr, Int32(width), Int32(height), angle, ca)
+        case .gamemaker: started = husk_gamemaker_launch(apk, dataDir, layerPtr, Int32(width), Int32(height), angle, ca)
+        case .flutter:
+            // The screen's scale is the app's device pixel ratio, and the notch and home indicator its padding, in surface pixels.
+            husk_flutter_set_pixel_ratio(Float(contentScaleFactor))
+            if let inset = windowed ? UIEdgeInsets.zero : window?.safeAreaInsets {
+                let k = contentScaleFactor
+                husk_flutter_set_insets(Int32(inset.top * k), Int32(inset.right * k), Int32(inset.bottom * k), Int32(inset.left * k))
+            }
+            started = husk_flutter_launch(apk, dataDir, layerPtr, Int32(width), Int32(height), angle, ca)
         case .minecraft: started = husk_gameactivity_launch(apk, dataDir, layerPtr, Int32(width), Int32(height), angle, ca)
         case .unity: started = husk_unity_launch(apk, dataDir, layerPtr, Int32(width), Int32(height), angle, ca)
         }
@@ -215,7 +336,7 @@ final class TLUnityUIView: UIView, UIKeyInput {
 
     /// A game asks for the keyboard when its text field is tapped. The keyboard belongs to this view; what it types goes
     /// to the game, and a strip above the keyboard shows the text, because in landscape the keyboard covers the game's field.
-    override var canBecomeFirstResponder: Bool { engine == .cocos || engine == .sdl || engine == .minecraft }
+    override var canBecomeFirstResponder: Bool { engine == .cocos || engine == .sdl || engine == .minecraft || engine == .flutter || engine == .java || engine == .unity }
     var hasText: Bool { true }
     var autocorrectionType: UITextAutocorrectionType = .no
     var autocapitalizationType: UITextAutocapitalizationType = .none
@@ -226,6 +347,7 @@ final class TLUnityUIView: UIView, UIKeyInput {
     var keyboardType: UIKeyboardType = .default
     var keyboardAppearance: UIKeyboardAppearance = .dark
     var returnKeyType: UIReturnKeyType = .done
+    var isSecureTextEntry = false
 
     private var typed = ""
     private lazy var typedLabel: UILabel = {
@@ -251,32 +373,229 @@ final class TLUnityUIView: UIView, UIKeyInput {
         bar.addSubview(done)
         return bar
     }()
-    override var inputAccessoryView: UIView? { engine == .cocos || engine == .sdl || engine == .minecraft ? keyboardBar : nil }
+    override var inputAccessoryView: UIView? { engine == .cocos || engine == .sdl || engine == .minecraft || engine == .unity ? keyboardBar : nil }
+
+    /// The keyboard was opened from the screen's keyboard button, not by a field in the app: what is typed then is key presses for
+    /// apps that read keys themselves (an SDL game's menus, a terminal), where the engine has keys to send.
+    var openedByHand = false
+
+    /// Whether the screen's keyboard button can do anything for this engine.
+    var offersKeyboardButton: Bool { canBecomeFirstResponder }
+
+    /// The keyboard button: opens the keyboard when it is away (for an app that never asks for it), puts it away when it is up.
+    func toggleKeyboardByHand() {
+        if isFirstResponder { _ = resignFirstResponder(); return }
+        openedByHand = true
+        keyboardType = .default
+        isSecureTextEntry = false
+        returnKeyType = .default
+        setTyped("")
+        if !becomeFirstResponder() { openedByHand = false }
+    }
+
+    /// Android key codes for what the keyboard types (US layout), with whether shift goes with it.
+    private static func androidKey(_ ch: Character) -> (code: Int32, shift: Bool)? {
+        if let a = ch.asciiValue {
+            switch a {
+            case 97...122: return (29 + Int32(a - 97), false)          // a-z
+            case 65...90: return (29 + Int32(a - 65), true)           // A-Z
+            case 48...57: return (7 + Int32(a - 48), false)           // 0-9
+            default: break
+            }
+        }
+        let shifted: [Character: Int32] = ["!": 8, "@": 9, "#": 10, "$": 11, "%": 12, "^": 13, "&": 14, "*": 15, "(": 16, ")": 7,
+                                           "<": 55, ">": 56, "~": 68, "_": 69, "+": 70, "{": 71, "}": 72, "|": 73, ":": 74, "\"": 75, "?": 76]
+        let plain: [Character: Int32] = [",": 55, ".": 56, "\t": 61, " ": 62, "\n": 66, "`": 68, "-": 69, "=": 70, "[": 71, "]": 72,
+                                         "\\": 73, ";": 74, "'": 75, "/": 76]
+        if let c = plain[ch] { return (c, false) }
+        if let c = shifted[ch] { return (c, true) }
+        return nil
+    }
+    private func pressSDLKeys(_ text: String) {
+        for ch in text {
+            guard let k = Self.androidKey(ch) else { continue }
+            if k.shift { husk_sdl_key(59, 1) }                     // KEYCODE_SHIFT_LEFT
+            husk_sdl_key(k.code, 1); husk_sdl_key(k.code, 0)
+            if k.shift { husk_sdl_key(59, 0) }
+        }
+    }
 
     func insertText(_ text: String) {
-        if text == "\n" { finishTyping(); return }
+        if openedByHand, engine == .sdl { pressSDLKeys(text); return }
+        if engine == .java {
+            // The app's own text field shows what is typed; Return is the field's action (a new line in a multi-line one).
+            if text == "\n" { husk_java_text_action() } else { husk_java_insert_text(text) }
+            return
+        }
+        if engine == .flutter {
+            // Flutter's field draws the text itself: no strip over the keyboard, and Return is the field's action.
+            if text == "\n", !husk_flutter_text_multiline() { husk_flutter_text_action() } else { husk_flutter_insert_text(text) }
+            return
+        }
+        if text == "\n", !(engine == .unity && unityMultiline) { finishTyping(); return }
+        if engine == .unity {
+            // The game's field may refuse characters past its limit: the strip shows what the field holds.
+            husk_unity_insert_text(text)
+            var buf = [CChar](repeating: 0, count: 4096)
+            husk_unity_text(&buf, UInt(buf.count))
+            let field = String(cString: buf)
+            setTyped(isSecureTextEntry ? String(repeating: "•", count: field.count) : field)
+            return
+        }
         typed += text
         typedLabel.text = typed
         if engine == .sdl { husk_sdl_commit_text(text) } else if engine == .minecraft { husk_ga_insert_text(text) } else { husk_cocos_insert_text(text) }
     }
 
     func deleteBackward() {
+        if openedByHand, engine == .sdl { husk_sdl_key(67, 1); husk_sdl_key(67, 0); return }   // KEYCODE_DEL
+        if engine == .java { husk_java_delete_backward(); return }
+        if engine == .flutter { husk_flutter_delete_backward(); return }
+        if engine == .unity { husk_unity_delete_backward() }
         if !typed.isEmpty { typed.removeLast() }
         typedLabel.text = typed
         if engine == .sdl { husk_sdl_key(67, 1); husk_sdl_key(67, 0) }   // KEYCODE_DEL
         else if engine == .minecraft { husk_ga_delete_backward() }
-        else { husk_cocos_delete_backward() }
+        else if engine != .unity { husk_cocos_delete_backward() }
     }
 
     private func setTyped(_ text: String) { typed = text; typedLabel.text = text }
 
     /// Return, or the Done button: what Android's "done" action does -- the game gets a newline, and the keyboard goes.
     private func finishTyping() {
-        if engine == .sdl { husk_sdl_key(66, 1); husk_sdl_key(66, 0) }   // KEYCODE_ENTER
+        if engine == .unity { husk_unity_finish_text(1) }   // the dialog's OK: the field keeps the text, and the game hears it is done
+        else if engine == .sdl { husk_sdl_key(66, 1); husk_sdl_key(66, 0) }   // KEYCODE_ENTER
         else if engine == .minecraft { husk_ga_editor_action() }        // the field's own action: send the chat, name the world
         else { husk_cocos_insert_text("\n") }
         resignFirstResponder()
     }
+
+    /// A Flutter app's text fields ask for the keyboard (on its platform thread), and the app may close itself from its first screen.
+    static func installFlutterHandlers() {
+        husk_flutter_set_keyboard_handler { show, kind in
+            DispatchQueue.main.async {
+                guard let view = TLUnityUIView.cocosView, view.engine == .flutter else { return }
+                if show != 0 {
+                    switch kind & 0xF {
+                    case 1: view.keyboardType = .numbersAndPunctuation
+                    case 2: view.keyboardType = .emailAddress
+                    case 3: view.keyboardType = .URL
+                    default: view.keyboardType = .default
+                    }
+                    view.isSecureTextEntry = kind & 0x20 != 0
+                    view.returnKeyType = kind & 0x10 != 0 ? .default : .done
+                    view.autocapitalizationType = kind & 0xF == 0 && kind & 0x20 == 0 ? .sentences : .none
+                    view.openedByHand = false; if view.isFirstResponder { view.reloadInputViews() } else { view.becomeFirstResponder() }
+                } else {
+                    view.resignFirstResponder()
+                }
+            }
+        }
+        husk_flutter_set_close_handler {
+            DispatchQueue.main.async { NotificationCenter.default.post(name: TLUnityUIView.appClosedItself, object: nil) }
+        }
+    }
+
+    /// A Java app's views (Husk's framework): a focused text field asks for the keyboard with Android's EditorInfo input type and
+    /// IME options; the clipboard is the iPhone's; sharing opens the share sheet.
+    static func installJavaHandlers() {
+        husk_java_set_host({ show, inputType, imeOptions in
+            DispatchQueue.main.async {
+                guard let view = TLUnityUIView.cocosView, view.engine == .java else { return }
+                guard show != 0 else { view.resignFirstResponder(); return }
+                let cls = inputType & 0xF, variation = inputType & 0xFF0
+                switch cls {
+                case 2: view.keyboardType = variation == 0x10 ? .numberPad : .decimalPad           // number (password: digits only)
+                case 3: view.keyboardType = .phonePad
+                case 4: view.keyboardType = .numbersAndPunctuation
+                default: view.keyboardType = variation == 0x20 || variation == 0xD0 ? .emailAddress : variation == 0x10 ? .URL : .default
+                }
+                view.isSecureTextEntry = (cls == 1 && (variation == 0x80 || variation == 0xE0)) || (cls == 2 && variation == 0x10)
+                let multiLine = cls == 1 && inputType & 0x20000 != 0
+                switch imeOptions & 0xFF {
+                case 2: view.returnKeyType = .go
+                case 3: view.returnKeyType = .search
+                case 4: view.returnKeyType = .send
+                case 5: view.returnKeyType = .next
+                default: view.returnKeyType = multiLine ? .default : .done
+                }
+                let caps = inputType & 0x7000
+                view.autocapitalizationType = cls != 1 || view.isSecureTextEntry ? .none : caps & 0x1000 != 0 ? .allCharacters : caps & 0x2000 != 0 ? .words : caps & 0x4000 != 0 ? .sentences : .none
+                view.autocorrectionType = cls == 1 && inputType & 0x8000 != 0 ? .yes : .no
+                view.openedByHand = false; if view.isFirstResponder { view.reloadInputViews() } else { view.becomeFirstResponder() }
+            }
+        }, { text in
+            guard let text else { return }
+            let s = String(cString: text)
+            DispatchQueue.main.async { UIPasteboard.general.string = s }
+        }, {
+            guard let s = UIPasteboard.general.string else { return nil }
+            return strdup(s)
+        }, { text in
+            guard let text else { return }
+            let s = String(cString: text)
+            DispatchQueue.main.async {
+                guard let view = TLUnityUIView.cocosView, let root = view.window?.rootViewController else { return }
+                var top = root
+                while let p = top.presentedViewController { top = p }
+                let sheet = UIActivityViewController(activityItems: [s], applicationActivities: nil)
+                sheet.popoverPresentationController?.sourceView = view
+                sheet.popoverPresentationController?.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 1, height: 1)
+                top.present(sheet, animated: true)
+            }
+        }, { orientation in
+            HuskLog.log("tl", "java: the app asks for orientation \(orientation)")
+        })
+        husk_java_set_document_picker { mimeTypes, multiple in
+            let types = TLUnityUIView.contentTypes(mimeTypes.map { String(cString: $0) } ?? "*/*")
+            DispatchQueue.main.async {
+                HuskFilePicker.present(types: types, multiple: multiple != 0, onPick: { urls in
+                    // copies in a folder of their own: the app reads them by path, long after the picker's access ends
+                    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("picked/\(UUID().uuidString)", isDirectory: true)
+                    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                    var paths: [String] = []
+                    for url in urls {
+                        let scoped = url.startAccessingSecurityScopedResource()
+                        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                        let dest = dir.appendingPathComponent(url.lastPathComponent)
+                        do { try FileManager.default.copyItem(at: url, to: dest); paths.append(dest.path) }
+                        catch { HuskLog.log("tl", "java: could not copy the picked \(url.lastPathComponent): \(error.localizedDescription)") }
+                    }
+                    TLUnityUIView.answerDocumentPicker(paths)
+                }, onCancel: { TLUnityUIView.answerDocumentPicker([]) })
+            }
+        }
+    }
+
+    /// The picker's answer to the Java app (no paths: it was cancelled).
+    private static func answerDocumentPicker(_ paths: [String]) {
+        let c = paths.map { strdup($0) }
+        defer { c.forEach { free($0) } }
+        var ptrs = c.map { UnsafePointer<CChar>($0) }
+        ptrs.withUnsafeMutableBufferPointer { husk_java_documents_picked($0.baseAddress, Int32(paths.count)) }
+    }
+
+    /// The document types for an intent's MIME types ("image/*,application/pdf"); anything unknown opens the picker to all files.
+    private static func contentTypes(_ mimeTypes: String) -> [UTType] {
+        var types: [UTType] = []
+        for m in mimeTypes.split(separator: ",").map({ $0.trimmingCharacters(in: .whitespaces).lowercased() }) {
+            switch m {
+            case "*/*", "": return [.item]
+            case "image/*": types.append(.image)
+            case "video/*": types.append(.movie)
+            case "audio/*": types.append(.audio)
+            case "text/*": types.append(.text)
+            case "application/*": types.append(.data)
+            default:
+                guard let t = UTType(mimeType: m) else { return [.item] }
+                types.append(t)
+            }
+        }
+        return types.isEmpty ? [.item] : types
+    }
+
+    /// A Flutter app closed itself (back on its first screen): whatever shows it closes.
+    static let appClosedItself = Notification.Name("husk.tl.appClosedItself")
 
     /// The game's own requests, from its GL thread: 0 toggles, 1 shows, 2 hides.
     static func installKeyboardHandler() {
@@ -312,6 +631,7 @@ final class TLUnityUIView: UIView, UIKeyInput {
                     var buf = [CChar](repeating: 0, count: 16384)
                     husk_ga_text(&buf, UInt(buf.count))
                     view.setTyped(String(cString: buf))
+                    view.openedByHand = false
                     view.becomeFirstResponder()
                 } else {
                     view.resignFirstResponder()
@@ -320,12 +640,55 @@ final class TLUnityUIView: UIView, UIKeyInput {
         }
     }
 
+    /// Whether the Unity field that asked for the keyboard takes new lines (Return types one instead of finishing).
+    private var unityMultiline = false
+
+    /// A Unity game's requests (TouchScreenKeyboard.Open from an InputField, on its own thread): 1 shows the keyboard, 2 hides it.
+    static func installUnityKeyboardHandler() {
+        husk_unity_set_keyboard_handler { action, kind in
+            DispatchQueue.main.async {
+                guard let view = TLUnityUIView.cocosView, view.engine == .unity else { return }
+                if action == 1 {
+                    // TouchScreenKeyboardType
+                    switch kind & 0xFF {
+                    case 2: view.keyboardType = .numbersAndPunctuation
+                    case 3: view.keyboardType = .URL
+                    case 4: view.keyboardType = .numberPad
+                    case 5: view.keyboardType = .phonePad
+                    case 6: view.keyboardType = .namePhonePad
+                    case 7: view.keyboardType = .emailAddress
+                    case 8: view.keyboardType = .twitter
+                    case 9: view.keyboardType = .webSearch
+                    case 10: view.keyboardType = .decimalPad
+                    case 1: view.keyboardType = .asciiCapable
+                    default: view.keyboardType = .default
+                    }
+                    view.isSecureTextEntry = kind & 0x100 != 0
+                    view.unityMultiline = kind & 0x200 != 0
+                    var buf = [CChar](repeating: 0, count: 4096)
+                    husk_unity_text(&buf, UInt(buf.count))
+                    view.setTyped(view.isSecureTextEntry ? "" : String(cString: buf))
+                    view.openedByHand = false; if view.isFirstResponder { view.reloadInputViews() } else { view.becomeFirstResponder() }
+                } else {
+                    view.resignFirstResponder()
+                }
+            }
+        }
+    }
+
+    override func resignFirstResponder() -> Bool {
+        openedByHand = false
+        // Put away without Done (the game hid it, or the view went): the field is dismissed, as the dialog's back button does.
+        if engine == .unity { husk_unity_finish_text(0) }
+        return super.resignFirstResponder()
+    }
+
     /// An SDL game's requests (SDL_StartTextInput / SDL_StopTextInput, from its main thread): 1 shows the keyboard, 2 hides it.
     static func installSDLKeyboardHandler() {
         husk_sdl_set_keyboard_handler { action in
             DispatchQueue.main.async {
                 guard let view = TLUnityUIView.cocosView else { return }
-                if action == 1 { view.setTyped(""); view.becomeFirstResponder() } else { view.resignFirstResponder() }
+                if action == 1 { view.openedByHand = false; view.setTyped(""); view.becomeFirstResponder() } else { view.resignFirstResponder() }
             }
         }
     }
@@ -372,8 +735,20 @@ struct TLUnityScreen: UIViewRepresentable {
     /// engine cannot be started twice, so coming back to the game must show the same layer, not a new one.
     private static var shared: [String: TLUnityUIView] = [:]
 
+    /// The game's one view, made the first time it is asked for.
+    static func view(apk: String, extraApks: [String], dataDir: String, engine: TLNativeEngine, portrait: Bool, scale: CGFloat) -> TLUnityUIView {
+        if let view = shared[apk] { return view }
+        let view = TLUnityUIView(apk: apk, extraApks: extraApks, dataDir: dataDir, engine: engine, portrait: portrait, scale: scale)
+        shared[apk] = view
+        return view
+    }
+
     func makeUIView(context: Context) -> TLUnityUIView {
-        if let view = Self.shared[apk] { view.onStats = onStats; view.onThreeFingerTap = onThreeFingerTap; return view }
+        if let view = Self.shared[apk] {
+            view.windowed = false
+            view.transform = .identity
+            view.onStats = onStats; view.onThreeFingerTap = onThreeFingerTap; return view
+        }
         let view = TLUnityUIView(apk: apk, extraApks: extraApks, dataDir: dataDir, engine: engine, portrait: portrait, scale: scale)
         view.onStats = onStats
         view.onThreeFingerTap = onThreeFingerTap
@@ -447,6 +822,8 @@ struct TLCocosAttemptView: View {
     let app: TLApp
     @Environment(\.dismiss) private var dismiss
     @StateObject private var model = TLUnityModel()
+    /// Why the app stopped, when its log says: shown over the screen
+    @State private var stoppedWhy: AppDiagnosis?
     @AppStorage("husk.tl.unity.showLog") private var showLogSetting = false
     @AppStorage(TranslationLayer.devInfoKey) private var devInfo = false
     @State private var stats = "starting"
@@ -471,36 +848,9 @@ struct TLCocosAttemptView: View {
         _uiHidden = State(initialValue: loaded.cleanView)
     }
 
-    /// Geometry Dash and the like are cocos2d-x; Minecraft is built on GameActivity. Both are landscape.
-    private var engine: TLNativeEngine {
-        switch app.report?.nativeEngine {
-        case .minecraft: return .minecraft
-        case .sdl: return .sdl
-        case .ue4: return .ue4
-        case .gta: return .gta
-        case .godot: return .godot
-        case .nativeactivity: return .nativeactivity
-        case .cocos: return .cocos
-        default: return .unity
-        }
-    }
-
-    private var dataDir: String {
-        TranslationLayer.root.appendingPathComponent(app.id, isDirectory: true)
-            .appendingPathComponent(engine == .unity ? "unity-data" : engine == .minecraft ? "minecraft-data" : engine == .sdl ? "sdl-data" : engine == .ue4 ? "ue4-data" : engine == .gta ? "gta-data" : engine == .godot ? "godot-data" : engine == .nativeactivity ? "na-data" : "cocos-data", isDirectory: true).path
-    }
-
-    /// Which way up: what the game's settings say, and otherwise what its manifest asks. Some SDL games are portrait; every other
-    /// native game is landscape.
-    private var portrait: Bool {
-        switch settings.orientation {
-        case .landscape: return false
-        case .portrait: return true
-        case .auto:
-            guard engine == .sdl || engine == .nativeactivity || engine == .unity || engine == .godot, let apk = app.apks.first else { return false }
-            return husk_sdl_apk_is_portrait(apk) != 0
-        }
-    }
+    private var engine: TLNativeEngine { app.screenEngine }
+    private var dataDir: String { app.nativeDataDir }
+    private var portrait: Bool { app.drawsPortrait(settings) }
 
     /// Whether an on-screen controller may be offered: not when the game's settings say never, not while a real one is connected, and
     /// without "Always" only for Unreal, whose menus answer nothing else.
@@ -588,9 +938,9 @@ struct TLCocosAttemptView: View {
             }
         }
         .statusBarHidden(true)
-        .persistentSystemOverlays(.hidden)
+        .huskHideSystemOverlays()
         // Swipes near the edges are the game's.
-        .defersSystemGestures(on: .all)
+        .huskDefersSystemGestures(on: .all)
         .onAppear {
             HuskOrientation.set(portrait ? .portrait : .landscape)
             UIApplication.shared.isIdleTimerDisabled = settings.keepAwake
@@ -604,7 +954,10 @@ struct TLCocosAttemptView: View {
             if f > 600, model.state == Int32(HUSK_UNITY_RUNNING) { GameStatusStore.shared.record(app.id, .plays) }
         }
         .onChange(of: model.state) { st in
-            if st == Int32(HUSK_UNITY_FAILED) { GameStatusStore.shared.record(app.id, .failed) }
+            if st == Int32(HUSK_UNITY_FAILED) || st == Int32(HUSK_UNITY_ENDED), stoppedWhy == nil, let d = AppDiagnosis.ofCurrentRun() {
+                stoppedWhy = d
+                GameStatusStore.shared.record(app.id, st == Int32(HUSK_UNITY_FAILED) ? .failed : .crashed, diagnosis: d)
+            } else if st == Int32(HUSK_UNITY_FAILED) { GameStatusStore.shared.record(app.id, .failed) }
         }
         .onDisappear {
             CrashReport.gameEnded()
@@ -612,6 +965,8 @@ struct TLCocosAttemptView: View {
             UIApplication.shared.isIdleTimerDisabled = false
             HuskOrientation.set(HuskOrientation.standard)
         }
+        .onReceive(NotificationCenter.default.publisher(for: TLUnityUIView.appClosedItself)) { _ in dismiss() }
+        .overlay { if let d = stoppedWhy { AppStoppedOverlay(app: app, diagnosis: d) { dismiss() } } }
     }
 
     /// While the pad is being edited: what to do with the control picked, in a small panel in the middle of the screen.
@@ -654,6 +1009,12 @@ struct TLCocosAttemptView: View {
                 Label("Close", systemImage: "xmark").font(.system(size: 13, weight: .semibold))
             }
             .tint(.white)
+            if engine == .flutter {
+                Button { husk_flutter_back() } label: {
+                    Label("Back", systemImage: "chevron.backward").font(.system(size: 13, weight: .semibold))
+                }
+                .tint(.white)
+            }
             Circle().fill(model.statusColor).frame(width: 7, height: 7)
             Text(model.state == Int32(HUSK_UNITY_RUNNING) ? app.label : model.statusText)
                 .font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(0.85)).lineLimit(1)
@@ -674,6 +1035,13 @@ struct TLCocosAttemptView: View {
                     }
                     .tint(editingPad ? .yellow : .white)
                 }
+            }
+            if TLUnityUIView.cocosView?.offersKeyboardButton == true, model.state == Int32(HUSK_UNITY_RUNNING) {
+                Button { TLUnityUIView.cocosView?.toggleKeyboardByHand() } label: {
+                    Label("Keyboard", systemImage: "keyboard").font(.system(size: 12, weight: .semibold))
+                }
+                .tint(.white)
+                .accessibilityHint("Shows or hides the keyboard for the app")
             }
             if settings.showStats, model.state == Int32(HUSK_UNITY_RUNNING) {
                 Text(stats).font(.technical(11)).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
@@ -718,5 +1086,64 @@ struct TLCocosAttemptView: View {
             }
         }
         .background(Theme.bg.opacity(0.85))
+    }
+}
+
+/// How the native runtime shows an app: which engine draws it, where it keeps its data, and which way up it is.
+extension TLApp {
+    /// Geometry Dash and the like are cocos2d-x; Minecraft is built on GameActivity. Both are landscape.
+    var screenEngine: TLNativeEngine {
+        switch report?.nativeEngine {
+        case .minecraft: return .minecraft
+        case .sdl: return .sdl
+        case .ue4: return .ue4
+        case .gta: return .gta
+        case .godot: return .godot
+        case .nativeactivity: return .nativeactivity
+        case .flutter: return .flutter
+        case .gamemaker: return .gamemaker
+        case .java: return .java
+        case .cocos: return .cocos
+        default: return .unity
+        }
+    }
+
+    var nativeDataDir: String {
+        TranslationLayer.root.appendingPathComponent(id, isDirectory: true)
+            .appendingPathComponent(Self.dataFolder(screenEngine), isDirectory: true).path
+    }
+
+    private static func dataFolder(_ engine: TLNativeEngine) -> String {
+        switch engine {
+        case .unity: return "unity-data"
+        case .minecraft: return "minecraft-data"
+        case .sdl: return "sdl-data"
+        case .ue4: return "ue4-data"
+        case .gta: return "gta-data"
+        case .godot: return "godot-data"
+        case .nativeactivity: return "na-data"
+        case .flutter: return "flutter-data"
+        case .gamemaker: return "gm-data"
+        case .java: return "java-data"
+        case .cocos: return "cocos-data"
+        }
+    }
+
+    /// Which way up: what the game's settings say, and otherwise what its manifest asks. Some SDL games are portrait; every other
+    /// native game is landscape.
+    func drawsPortrait(_ settings: TLAppSettings) -> Bool {
+        switch settings.orientation {
+        case .landscape: return false
+        case .portrait: return true
+        case .auto:
+            // A Flutter app is a phone app: portrait, unless its manifest asks for landscape.
+            if screenEngine == .flutter || screenEngine == .java, let apk = apks.first { return husk_apk_orientation(apk) != 0 }
+            if screenEngine == .gamemaker, let apk = apks.first {
+                let o = husk_gamemaker_orientation(apk)
+                return o == 1 || (o < 0 && husk_sdl_apk_is_portrait(apk) != 0)
+            }
+            guard screenEngine == .sdl || screenEngine == .nativeactivity || screenEngine == .unity || screenEngine == .godot, let apk = apks.first else { return false }
+            return husk_sdl_apk_is_portrait(apk) != 0
+        }
     }
 }

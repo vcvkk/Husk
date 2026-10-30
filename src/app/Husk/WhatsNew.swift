@@ -13,28 +13,26 @@ enum WhatsNew {
     }
 
     /// The version whose notes these are. A build of the same version shows nothing again.
-    static let version = "1.0.1"
+    static let version = "3.0.0"
     static let items: [Item] = [
-        Item(symbol: "bag.fill", title: "Google Play",
-             detail: "Get games from the Store tab. Play Store downloads, with their split APKs and asset packs, run in the Translation Layer."),
-        Item(symbol: "checkmark.seal.fill", title: "Google Play services",
-             detail: "Games see Play services as present and signed out, so they stop asking for it and carry on."),
-        Item(symbol: "arrow.up.doc.fill", title: "Save backups",
-             detail: "Back up a game's saves to a .zip from its page, and restore them later or on another device."),
-        Item(symbol: "exclamationmark.bubble.fill", title: "Crash reports",
-             detail: "When a game takes Husk down, the next launch says what happened and gives you a report to share."),
-        Item(symbol: "checkmark.circle.fill", title: "Know what works",
-             detail: "The library marks each game with how it did last time: it plays, it crashed, or it did not start."),
-        Item(symbol: "gamecontroller.fill", title: "Godot games",
-             detail: "Games made with Godot 3 and 4 now run in the Translation Layer."),
-        Item(symbol: "slider.horizontal.below.square.and.square.filled", title: "Your own controls",
-             detail: "Move, resize and hide the on-screen controller's buttons, for each game."),
-        Item(symbol: "keyboard.fill", title: "Typing in Minecraft",
-             detail: "Chat, sign and world-name fields bring up the keyboard."),
-        Item(symbol: "arrow.left.arrow.right", title: "Switching games",
-             detail: "Close Husk to play another game, and it starts by itself when Husk opens."),
-        Item(symbol: "puzzlepiece.extension.fill", title: "Geode",
-             detail: "Mods for Geometry Dash, Geode 5 included, turned on from the game's settings."),
+        Item(symbol: "gamecontroller.fill", title: "A new Husk",
+             detail: "A console-style home: your games on a shelf, the one you pick fills the screen with its artwork, and Play is one tap away. Android and PS4 games side by side, a new library, in light or dark as Settings › Appearance says."),
+        Item(symbol: "playstation.logo", title: "PS4 games",
+             detail: "Add a PS4 game with the + button, as a fake package (.pkg), a folder of them, or an extracted game folder, and play it from your library. Updates install beside their game, shaders are kept between launches, and games that ask for a name bring up the keyboard."),
+        Item(symbol: "square.stack.3d.up.fill", title: "Hundreds more Android games",
+             detail: "Hundreds of newly working games on the compatibility list, unofficial ports like Sonic Robo Blast 2, Ring Racers, NetHack and PokeWilds, Flutter games that showed a blank screen draw again, Godot 4 games run, and Python games get online."),
+        Item(symbol: "arrow.down.circle.fill", title: "Complete Store downloads",
+             detail: "Games that keep their data in expansion files get them with the download, and games split into many pieces load."),
+        Item(symbol: "keyboard.fill", title: "Typing everywhere",
+             detail: "Text fields in Unity, Java, Flutter, cocos2d-x and SDL games bring up the keyboard."),
+        Item(symbol: "textformat", title: "Chinese, Japanese and Korean",
+             detail: "Download the fonts in Settings › Fonts, and games stop showing empty boxes."),
+        Item(symbol: "bolt.fill", title: "JIT on its own",
+             detail: "TrollStore installs turn JIT on at launch, and Husk says on screen when something can't start without it."),
+        Item(symbol: "iphone", title: "iOS 15",
+             detail: "Husk now runs on iOS 15.5 and later (PS4 games need iOS 17.4)."),
+        Item(symbol: "wrench.and.screwdriver.fill", title: "Fixes",
+             detail: "Android no longer crashes after its download, the full Android emulator moved into Settings with a warning, closing Husk from the app switcher isn't reported as a crash, and much more."),
     ]
 
     private static let seenKey = "husk.whatsNew.seen"
@@ -59,7 +57,7 @@ struct WhatsNewSheet: View {
                 VStack(alignment: .leading, spacing: 26) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("What's New in Husk \(WhatsNew.version)").font(.largeTitle.weight(.bold))
-                        Text("The first full release.").foregroundStyle(.secondary)
+                        Text("A new look, PS4 games, and hundreds more Android games.").foregroundStyle(.secondary)
                     }
                     .padding(.top, 36)
                     ForEach(WhatsNew.items) { item in

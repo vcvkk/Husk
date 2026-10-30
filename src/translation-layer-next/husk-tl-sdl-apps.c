@@ -141,10 +141,27 @@ static void luajit_openlibs(void *L)
     if (g_jit_setmode) g_jit_setmode(L, 0, 0 /* LUAJIT_MODE_ENGINE | LUAJIT_MODE_OFF */);
 }
 
+/* The same for any app (the Java runtime's), when there is no executable memory at all (JIT-less mode): LuaJIT's machine code
+ * could never run, and its answer to the refused mprotect is a panic. */
+void tl_luajit_interpreter_only(void) { tl_ld_interpose("luaL_openlibs", (void *)luajit_openlibs); }
+
 /* ------------------------------------------------------------------ install */
+
+/* python-for-android (Kivy): the statics PythonActivity.onCreate and Hardware's initialiser fill, which Python reads through pyjnius
+ * (PythonActivity.mActivity, Hardware.metrics). */
+jobj *tl_hle_activity(void);
+static void kivy_statics(void)
+{
+    jvalue act; act.j = 0; act.l = tl_hle_activity();
+    tl_jni_set_static("org/kivy/android/PythonActivity", "mActivity", "Lorg/kivy/android/PythonActivity;", act);
+    jvalue res = tl_jni_call(act.l, "getResources", "()Landroid/content/res/Resources;", NULL);
+    jvalue metrics = res.l ? tl_jni_call(res.l, "getDisplayMetrics", "()Landroid/util/DisplayMetrics;", NULL) : (jvalue){ .j = 0 };
+    if (metrics.l) tl_jni_set_static("org/renpy/android/Hardware", "metrics", "Landroid/util/DisplayMetrics;", metrics);
+}
 
 void tl_sdl_apps_install(const char *package)
 {
+    if (tl_dexidx_has_class("org/kivy/android/PythonActivity")) kivy_statics();
     if (!strcmp(package, "org.broguece.game")) tl_jni_register_hle(k_brogue);
     if (tl_dexidx_has_class(LOVE)) { tl_jni_register_hle(k_love); tl_ld_interpose("luaL_openlibs", (void *)luajit_openlibs); }
     if (!strcmp(package, "org.pgnapps.pk2")) tl_jni_register_hle(k_pk2);

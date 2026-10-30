@@ -52,15 +52,35 @@ struct TLReport: Decodable {
 extension TLReport {
     /// The engine the native runtime drives this app with, if it can: Unity (IL2CPP) games and cocos2d-x games.
     var nativeEngine: TLNativeEngine? {
-        guard ok, !abis.isEmpty, abis.contains("arm64-v8a") else { return nil }
+        guard ok else { return nil }
+        // Native code for other CPUs only (32-bit ARM, x86): nothing here can run it
+        if !abis.isEmpty && !abis.contains("arm64-v8a") { return nil }
+        // An app with Java code and no native code at all runs on Husk's own Java runtime
+        if abis.isEmpty { return dexCount > 0 && webKind == nil ? .java : nil }
+        // Unity 6 runs through its own Java activity (UnityPlayerForActivityOrService), on the Java runtime
+        if engine == "Unity 6" { return .java }
         if engine?.hasPrefix("Unity") == true { return .unity }
-        if engine == "Cocos" { return .cocos }
+        // the cocos2d-x driver is Geometry Dash's (FMOD, RobTop's activity); other cocos2d-x games run their Java activity on the Java runtime
+        if engine == "Cocos" { return libraries.contains(where: { $0.name == "libfmod.so" }) ? .cocos : .java }
         if engine == "Minecraft" { return .minecraft }
-        if engine == "SDL" { return .sdl }
+        // SDL games run their own Java activity on the Java runtime: many prepare their data there first (Wesnoth unpacks it, OpenTTD
+        // and Luanti copy theirs, launchers come before the game) and SDLActivity's Java drives the native side as on a phone.
+        // python-for-android (Kivy) too: pyjnius needs real Java (proxies, string identity), which only the Java runtime has.
+        // Except Direct3D ports drawing through DXVK (GTA V): they need Vulkan on a Metal layer of their own, which only the SDL driver gives.
+        if engine == "SDL", libraries.contains(where: { $0.name.hasPrefix("libdxvk") }) { return .sdl }
+        if engine == "SDL" || engine == "Python" { return .java }
         if engine == "Unreal Engine" { return .ue4 }
         if engine == "Rockstar" { return .gta }
         if engine == "Godot" { return .godot }
         if engine == "NativeActivity" { return .nativeactivity }
+        // Flutter apps too: their plugins are Java (storage, paths, keystore, SQLite) and run there for real, where the Flutter
+        // driver could only answer a few channels itself (Lichess waited forever, Sanmill failed on one).
+        if engine == "Flutter" { return .java }
+        if engine == "GameMaker" { return .gamemaker }
+        // Everything else with Java code: libGDX games, ordinary apps, React Native and the like, and games whose engine is their
+        // own library behind a Java activity (Hill Climb Racing, Supercell's games)
+        if engine == "libGDX" || engine == "Java" || engine == "React Native" || engine == ".NET / Xamarin" { return .java }
+        if engine == nil, dexCount > 0 { return .java }
         return nil
     }
 
@@ -70,15 +90,19 @@ extension TLReport {
     var runsOnNativeRuntime: Bool { nativeEngine != nil }
 
     /// "Unity" or "Cocos2d-x", for words on screen.
-    var nativeEngineName: String { nativeEngine == .cocos ? "Cocos2d-x" : nativeEngine == .minecraft ? "Minecraft" : nativeEngine == .sdl ? "SDL" : nativeEngine == .ue4 ? "Unreal Engine" : nativeEngine == .gta ? "Rockstar" : nativeEngine == .godot ? "Godot" : nativeEngine == .nativeactivity ? "NativeActivity" : "Unity" }
+    var nativeEngineName: String { engine == "Python" ? "Python (Kivy)" : nativeEngine == .cocos ? "Cocos2d-x" : nativeEngine == .minecraft ? "Minecraft" : nativeEngine == .sdl ? "SDL" : nativeEngine == .ue4 ? "Unreal Engine" : nativeEngine == .gta ? "Rockstar" : nativeEngine == .godot ? "Godot" : nativeEngine == .nativeactivity ? "NativeActivity" : nativeEngine == .flutter ? "Flutter" : nativeEngine == .gamemaker ? "GameMaker" : nativeEngine == .java ? (engine == "libGDX" ? "libGDX" : engine == "SDL" ? "SDL" : engine == "Flutter" ? "Flutter" : "Android") : "Unity" }
 
     var displaySummary: String {
         guard runsOnNativeRuntime else { return summary }
         let flagged = libraries.filter { $0.abi == "arm64-v8a" && $0.status != "ok" }.count
         let total = libraries.filter { $0.abi == "arm64-v8a" }.count
-        var text = "A \(nativeEngineName) game. It runs through Husk's native runtime, which loads its \(total) arm64 libraries itself."
+        var text = nativeEngine == .flutter
+            ? "A Flutter app. Its engine and its compiled Dart run natively through Husk's translation layer, which loads its \(total) arm64 libraries itself."
+            : nativeEngine == .java && engine != "libGDX"
+            ? "An Android app. Husk runs its code on its own Java runtime" + (total > 0 ? " and loads its \(total) arm64 libraries itself." : ".")
+            : "A \(nativeEngineName) game. It runs through Husk's native runtime, which loads its \(total) arm64 libraries itself."
         if nativeEngine == .cocos || nativeEngine == .minecraft || nativeEngine == .ue4 || nativeEngine == .gta { text += " It is a landscape game: Husk turns the screen for it." }
-        else if nativeEngine == .sdl || nativeEngine == .nativeactivity || nativeEngine == .godot { text += " Husk turns the screen the way the game asks for." }
+        else if nativeEngine == .sdl || nativeEngine == .nativeactivity || nativeEngine == .godot || nativeEngine == .gamemaker { text += " Husk turns the screen the way the game asks for." }
         if flagged > 0 {
             text += " \(flagged) of them use tricks the older loader could not handle; the native runtime handles those too, "
                   + "except for optional anti-tamper code, which it leaves out."
@@ -138,6 +162,10 @@ struct TLApp: Identifiable {
     var lastPlayed: Date? = nil
     /// Its Android package name, once read from the APK.
     var packageName: String? = nil
+
+    /// Whether its manifest files it as a game (android:appCategory="game" or isGame): read for Flutter apps, which are apps
+    /// unless they say otherwise.
+    var isGameCategory: Bool { apks.first.map { husk_apk_is_game($0) != 0 } ?? false }
 }
 
 // MARK: - Store
@@ -158,7 +186,7 @@ final class TranslationLayerStore: ObservableObject {
 
     /// Which reading of an app's libraries its report came from. A newer Husk that recognises more (an engine, a kind of game) reads
     /// the apps it already holds again, so they are not left with what the old one knew.
-    nonisolated static let scanVersion = 4
+    nonisolated static let scanVersion = 8
     private var rescanning = false
 
     func reload() {
@@ -169,6 +197,7 @@ final class TranslationLayerStore: ObservableObject {
             $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending
         }
         rescanStale()
+        PS4Store.shared.reload()   // the PS4 games, which Files may have changed too
     }
 
     /// The apps read again from disk, and nothing else started: after work that only changed what is on disk.
@@ -238,6 +267,16 @@ final class TranslationLayerStore: ObservableObject {
 
     /// Keep a copy of one app -- one APK, or a base APK and its splits,
     /// picked together -- and report on it.
+    /// One app's APKs (a base and its splits, or a bundle) copied in (the originals stay where they are), and the new app's folder name: the developer mass test takes its APKs
+    /// from a folder of the user's this way, one per launch of Husk.
+    nonisolated static func importCopy(_ urls: [URL]) -> String? {
+        let fm = FileManager.default
+        let before = Set((try? fm.contentsOfDirectory(atPath: TranslationLayer.root.path)) ?? [])
+        guard !urls.isEmpty, ingest(urls, move: false) == nil else { return nil }
+        let after = Set((try? fm.contentsOfDirectory(atPath: TranslationLayer.root.path)) ?? [])
+        return after.subtracting(before).first
+    }
+
     func add(_ urls: [URL], move: Bool = false) {
         guard !urls.isEmpty, busy == nil else { return }
         busy = urls.count == 1 ? "Adding \(urls[0].lastPathComponent)…"
@@ -298,13 +337,7 @@ final class TranslationLayerStore: ObservableObject {
         let fm = FileManager.default
         guard let files = try? fm.contentsOfDirectory(atPath: dir.path) else { return nil }
         let names = files.filter { $0.lowercased().hasSuffix(".apk") }
-        let apks = names
-            .sorted { a, b in
-                // The base first: it is the one a game is started from, and the others are its splits and packs.
-                let ra = BundleUnpacker.rank(a, siblings: names), rb = BundleUnpacker.rank(b, siblings: names)
-                return ra != rb ? ra < rb : a < b
-            }
-            .map { dir.appendingPathComponent($0).path }
+        let apks = orderedAPKs(names.map { dir.appendingPathComponent($0).path })
         guard let first = apks.first else { return nil }
 
         let saved = try? String(contentsOf: dir.appendingPathComponent("label.txt"),
@@ -343,8 +376,12 @@ final class TranslationLayerStore: ObservableObject {
                     continue
                 }
                 var name = url.lastPathComponent
-                if !name.lowercased().hasSuffix(".apk") { name += ".apk" }
-                let dest = dir.appendingPathComponent(name)
+                // An expansion file (main.<version>.<package>.obb) goes to obb/ under its own name: the runtime finds it there
+                // when the game asks for Android/obb/<package>/<name>
+                let isOBB = name.lowercased().hasSuffix(".obb")
+                if !isOBB && !name.lowercased().hasSuffix(".apk") { name += ".apk" }
+                if isOBB { try fm.createDirectory(at: dir.appendingPathComponent("obb"), withIntermediateDirectories: true) }
+                let dest = isOBB ? dir.appendingPathComponent("obb").appendingPathComponent(name) : dir.appendingPathComponent(name)
                 if move {
                     try fm.moveItem(at: url, to: dest)
                 } else {
@@ -364,9 +401,9 @@ final class TranslationLayerStore: ObservableObject {
             return "Husk could not copy it: \(error.localizedDescription)"
         }
 
-        let apks = ((try? fm.contentsOfDirectory(atPath: dir.path)) ?? [])
-            .filter { $0.hasSuffix(".apk") }.sorted()
-            .map { dir.appendingPathComponent($0).path }
+        let apks = orderedAPKs(((try? fm.contentsOfDirectory(atPath: dir.path)) ?? [])
+            .filter { $0.lowercased().hasSuffix(".apk") }
+            .map { dir.appendingPathComponent($0).path })
         describe(apks, into: dir)
         let json = scan(apks)
         try? Data(json.utf8).write(to: dir.appendingPathComponent("report.json"))
@@ -383,19 +420,8 @@ final class TranslationLayerStore: ObservableObject {
     nonisolated static let iconVersion = 3
 
     nonisolated private static func describe(_ apks: [String], into dir: URL, label wantLabel: Bool = true) {
-        // The base APK carries the label and the icon; a config split's
-        // manifest names neither. The base is usually called base.apk, and
-        // otherwise usually the biggest.
-        func size(_ path: String) -> Int {
-            ((try? FileManager.default.attributesOfItem(atPath: path)[.size]) as? NSNumber)?
-                .intValue ?? 0
-        }
-        let ordered = apks.sorted { a, b in
-            let aBase = (a as NSString).lastPathComponent == "base.apk"
-            let bBase = (b as NSString).lastPathComponent == "base.apk"
-            return aBase != bBase ? aBase : size(a) > size(b)
-        }
-        for apk in ordered {
+        // Use the same manifest-based order as launch: a large asset pack is not the base APK.
+        for apk in orderedAPKs(apks) {
             guard let manifest = entry(apk, "AndroidManifest.xml", limit: 8 << 20),
                   let arsc = entry(apk, "resources.arsc", limit: 64 << 20) else { continue }
             let info = ApkMetadata.read(manifest: manifest, resources: arsc)
@@ -483,6 +509,10 @@ final class TranslationLayerStore: ObservableObject {
         return Data(bytes: bytes, count: length)
     }
 
+    nonisolated private static func orderedAPKs(_ paths: [String]) -> [String] {
+        BundleUnpacker.orderedAPKs(paths) { entry($0, "AndroidManifest.xml", limit: 8 << 20) }
+    }
+
     nonisolated static func scan(_ paths: [String]) -> String {
         let owned = paths.map { strdup($0) }
         defer { owned.forEach { free($0) } }
@@ -503,7 +533,7 @@ struct TLChecksView: View {
     @ObservedObject private var store = TranslationLayerStore.shared
 
     var body: some View {
-        Form {
+        HuskForm {
             checksSection
             progressSection
         }
@@ -704,13 +734,17 @@ struct TLAttemptView: View {
     let app: TLApp
 
     var body: some View {
-        content.onAppear { TranslationLayerStore.shared.markPlayed(app) }
+        content
+            .onAppear { TranslationLayerStore.shared.markPlayed(app); Playtime.begin("tl:" + app.id) }
+            .onDisappear { Playtime.end("tl:" + app.id) }
     }
 
     @ViewBuilder
     private var content: some View {
         // Every game the native runtime drives -- Unity included -- gets the same full-screen game screen.
-        if app.report?.runsOnNativeRuntime == true {
+        if app.report?.webKind != nil {
+            WebAppScreenView(app: app)
+        } else if app.report?.runsOnNativeRuntime == true {
             TLCocosAttemptView(app: app)
         } else {
             TLClassicAttemptView(app: app)
@@ -795,8 +829,8 @@ struct TLClassicAttemptView: View {
             }
         }
         .statusBarHidden(true)
-        .persistentSystemOverlays(.hidden)
-        .defersSystemGestures(on: .all)
+        .huskHideSystemOverlays()
+        .huskDefersSystemGestures(on: .all)
         .onAppear {
             HuskOrientation.set(portrait ? .portrait : .landscape)
             UIApplication.shared.isIdleTimerDisabled = settings.keepAwake

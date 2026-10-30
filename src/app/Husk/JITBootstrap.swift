@@ -9,6 +9,11 @@ import os
 private func csops(_ pid: Int32, _ ops: Int32,
                    _ useraddr: UnsafeMutableRawPointer?, _ usersize: Int) -> Int32
 
+@_silgen_name("husk_prepare_compressed_heap")
+private func prepareCompressedHeap()
+@_silgen_name("husk_release_unused_compressed_heap")
+private func releaseUnusedCompressedHeap()
+
 private let CS_OPS_STATUS = Int32(0)
 private let CS_DEBUGGED = UInt32(0x10000000)
 
@@ -71,17 +76,44 @@ enum JITBootstrap {
     @discardableResult
     static func prewarm() -> Bool {
         if prewarmed { return true }
-        // Before iOS 26 Husk can make the region itself where the device allows it (TrollStore's dynamic-codesigning, a
-        // jailbreak, or a debugger that attached and let go), so it does not wait for CS_DEBUGGED there: Dopamine hides that
-        // flag from apps unless "Allow JIT in Apps" is on, while still letting them run code they wrote.
+        // Before iOS 26 Husk can make the region itself where the device allows it (a jailbreak,
+        // a debugger that attached and let go such as TrollStore's enable-jit, or dynamic-codesigning),
+        // so it does not wait for CS_DEBUGGED there if jailbroken: Dopamine hides that flag from apps unless
+        // "Allow JIT in Apps" is on, while still letting them run code they wrote.
         guard isDebuggerAttached || (canGrantOwnJIT && !selfGrantTried) else {
             HuskLog.log("jit", "no debugger attached yet; not prewarming")
             return false
         }
         if !isDebuggerAttached { selfGrantTried = true }
+        // Before iOS 26, unless StikDebug's script is what attached, no brk: TrollStore's enable-jit (and its Open with JIT)
+        // attaches for 100 ms and services nothing, and a brk in that window stops Husk for good (TrollStore then says
+        // "trollstorehelper returned 3"). A debugged process there makes its own executable memory anyway: QEMU maps its
+        // buffer with MAP_JIT and the translation layer makes its region itself.
+        if canGrantOwnJIT && !stikDebugMayServiceTraps {
+            selfGrantTried = true
+            if mapJITWorks {
+                HuskLog.log("jit", "not trapping for a JIT region (no StikDebug); MAP_JIT executes here")
+                lastFailure = nil
+                return true
+            }
+            // MAP_JIT refused (no dynamic-codesigning after all, or Dopamine): plain memory made executable, which a debugged
+            // process or a jailbreak allows -- made here, with no brk for an attach that answers none (#148)
+            HuskLog.log("jit", "not trapping for a JIT region (no StikDebug); MAP_JIT does not execute here, trying plain memory")
+            prepareCompressedHeap()
+            if husk_ios_jit_prewarm_self(jitBytes) {
+                prewarmed = true
+                lastFailure = nil
+                HuskLog.log("jit", "JIT region made by Husk itself (\(husk_ios_jit_self_route().map { String(cString: $0) } ?? "self"))")
+                return true
+            }
+            releaseUnusedCompressedHeap()
+            return false
+        }
         HuskLog.log("jit", "claiming \(jitBytes / (1024 * 1024)) MiB of JIT memory now, "
                          + "before the guest download -- StikDebug does not stay attached")
+        prepareCompressedHeap()
         let ok = husk_ios_jit_prewarm(jitBytes)
+        if !ok { releaseUnusedCompressedHeap() }
         if ok {
             prewarmed = true
             lastFailure = nil
@@ -118,6 +150,12 @@ enum JITBootstrap {
     static var keepDebuggerAttached: Bool {
         get { UserDefaults.standard.bool(forKey: "husk.keepDebuggerAttached") }
         set { UserDefaults.standard.set(newValue, forKey: "husk.keepDebuggerAttached") }
+    }
+
+    /// Whether StikDebug's script may be the debugger: the only one that answers a brk.
+    private static var stikDebugMayServiceTraps: Bool {
+        let method = UserDefaults.standard.string(forKey: "husk.jitMethod") ?? JITMethod.automatic.rawValue
+        return method == JITMethod.stikDebug.rawValue || (method == JITMethod.automatic.rawValue && isStikDebugInstalled)
     }
 
     /// The one try at making the region without a debugger has been made (it is not repeated: the answer will not change).
@@ -225,14 +263,27 @@ enum JITBootstrap {
         URL(string: "stikjit://").map(UIApplication.shared.canOpenURL) ?? false
     }
 
-    /// TrollStore answers enable-jit on the `apple-magnifier` scheme.
-    static var isTrollStoreInstalled: Bool {
-        URL(string: "apple-magnifier://").map(UIApplication.shared.canOpenURL) ?? false
-    }
+    /// Whether TrollStore is on this device. It answers enable-jit on the `apple-magnifier` scheme, but that scheme is also the
+    /// Magnifier app's, on every iPhone, so whether it opens says nothing. A Husk TrollStore installed knows from its marker file;
+    /// otherwise SpringBoard is asked to open TrollStore, suspended, which an ordinary app is refused (9) when it exists and told
+    /// it does not (7) when it does not. TrollStore installs on iOS 14.0 to 17.0 only.
+    static let isTrollStoreInstalled: Bool = {
+        if isInstalledWithTrollStore { return true }
+        if #available(iOS 17.0.1, *) { return false }
+        typealias Launch = @convention(c) (NSString, NSURL?, NSDictionary?, NSDictionary?, Bool) -> Int32
+        guard let lib = dlopen("/System/Library/PrivateFrameworks/SpringBoardServices.framework/SpringBoardServices", RTLD_NOW),
+              let sym = dlsym(lib, "SBSLaunchApplicationWithIdentifierAndURLAndLaunchOptions") else { return false }
+        let launch = unsafeBitCast(sym, to: Launch.self)
+        for id in ["com.opa334.TrollStore", "com.opa334.TrollStoreLite"] {
+            let r = launch(id as NSString, nil, nil, nil, true)
+            HuskLog.log("jit", "SpringBoard on opening \(id): \(r)")
+            if r == 9 { return true }
+        }
+        return false
+    }()
 
     /// Whether this copy of Husk was installed by TrollStore (or TrollStore Lite): it leaves a marker file next to the app in
-    /// its bundle container (TrollStore's `TS_MARKER`). Only then is it a TrollStore app, which keeps the entitlements it was
-    /// built with -- including the memory ones.
+    /// its bundle container (TrollStore's `TS_MARKER`).
     static var isInstalledWithTrollStore: Bool {
         let container = Bundle.main.bundleURL.deletingLastPathComponent()
         return ["_TrollStore", "_TrollStoreLite"].contains {
@@ -273,8 +324,8 @@ enum JITBootstrap {
         guard let bundleID = Bundle.main.bundleIdentifier else { return false }
         
         let url = "apple-magnifier://enable-jit?bundle-id=\(bundleID)"
-        guard let launchURL = URL(string: url), UIApplication.shared.canOpenURL(launchURL) else {
-            HuskLog.log("jit", "FAIL: cannot open apple-magnifier:// -- TrollStore is not installed")
+        guard isTrollStoreInstalled, let launchURL = URL(string: url) else {
+            HuskLog.log("jit", "FAIL: TrollStore is not installed")
             return false
         }
         

@@ -3,11 +3,14 @@
 #
 # No signing team is needed: AltStore / SideStore re-sign at install with the
 # user's own profile. The IPA is signed ad hoc with Husk.entitlements embedded
-# anyway, because TrollStore keeps the entitlements a binary already carries
-# (RootHelper's signApp reads them from the binary) and invents only
-# get-task-allow for one that has none. Signed this way, the same file gets the
-# memory and dynamic-codesigning entitlements under TrollStore, and a sideloader
-# simply replaces the signature.
+# anyway.
+#
+# When packaging for TrollStore, use the `--trollstore` option (or specify a
+# `.tipa` output). This strips entitlements such as dynamic-codesigning, which
+# cause launch validation failures on devices where PPL/TXM is not disabled.
+# For standard sideloaders, the app is re-signed against a new Apple development
+# provisioning profile, so unsupported entitlements such as dynamic-codesigning
+# are normally not preserved in the final signature.
 #
 # The validation step exists because a bundle missing CFBundleIdentifier or
 # CFBundleExecutable builds and zips perfectly happily, and then fails to install
@@ -75,7 +78,26 @@ if ! grep -q "BUILD SUCCEEDED" "$DD/build.log"; then
 fi
 
 APP="$DD/Build/Products/Release-iphoneos/Husk.app"
+
+# The Java runtime in the app must be the one just built (build_java_runtime.sh): copied again here, and checked, so an IPA can
+# never carry an older one -- which looks exactly like Java fixes that did not work.
+JRT="$HUSK_ROOT/build/java-runtime"
+if [ -f "$JRT/husk-framework.dex" ]; then
+    rsync -a --delete "$JRT/" "$APP/java-runtime/"
+    if ! cmp -s "$JRT/husk-framework.dex" "$APP/java-runtime/husk-framework.dex"; then
+        echo "the app's Java framework is not build/java-runtime's; refusing to package" >&2
+        exit 1
+    fi
+    echo "==> java runtime: $(stat -f '%z bytes, %Sm' "$JRT/husk-framework.dex")"
+fi
 [ -d "$APP" ] || { echo "no app bundle at $APP" >&2; exit 1; }
+# Android libraries made into dylibs ahead of time (Husk 3.2's JIT-less mode; tools/elf2macho-test.c <lib.so> build/aot/ --ios):
+# they go in Frameworks, where every installer signs them with the app.
+AOT="$HUSK_ROOT/build/aot"
+if ls "$AOT"/aot-*.dylib >/dev/null 2>&1; then
+    cp "$AOT"/aot-*.dylib "$APP/Frameworks/"
+    echo "==> JIT-less dylibs: $(ls "$AOT"/aot-*.dylib | wc -l | tr -d ' ') ($(du -ch "$AOT"/aot-*.dylib | tail -1 | cut -f1))"
+fi
 
 # Stamp the build's identity into the bundle so its logs can name themselves.
 # A log from a stale install is otherwise indistinguishable from a log proving a
@@ -120,7 +142,7 @@ fi
 # @rpath/libANGLE-shared.dylib". Everything else in this validation passed. A
 # check that covers one of two required libraries is a check that reports
 # success on a bundle that cannot launch.
-for lib in libqemu-aarch64-softmmu.dylib libANGLE-shared.dylib; do
+for lib in libqemu-aarch64-softmmu.dylib libANGLE-shared.dylib libhuskps4.dylib; do
     if [ ! -f "$APP/Frameworks/$lib" ]; then
         echo "  MISSING  Frameworks/$lib" >&2
         rc=1
@@ -159,7 +181,9 @@ done
 [ $rc -eq 0 ] || { echo "==> bundle is not installable; refusing to package" >&2; exit 1; }
 
 echo "==> packaging"
-STAGE="$(mktemp -d)"
+# staged next to the build (DD), not in the system temp folder: a full startup disk made codesign fail with "internal error"
+STAGE="$(mktemp -d "$DD/stage.XXXXXX")"
+trap 'rm -rf "$STAGE"' EXIT
 mkdir -p "$STAGE/Payload"
 cp -R "$APP" "$STAGE/Payload/"
 
@@ -168,6 +192,8 @@ cp -R "$APP" "$STAGE/Payload/"
 ENT_BASE="$HUSK_ROOT/src/app/Husk/Husk.entitlements"
 ENT="$STAGE/entitlements.plist"
 cp "$ENT_BASE" "$ENT"
+# Entitlements that cause launch crashes on TrollStore under PPL/TXM
+# (see https://github.com/opa334/TrollStore#banned-entitlements).
 BANNED_KEYS=(
     "com.apple.private.cs.debugger"
     "dynamic-codesigning"

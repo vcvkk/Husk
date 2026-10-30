@@ -40,9 +40,18 @@ static struct {
 
 typedef int32_t (*onload_fn)(void *vm, void *reserved);
 
+static void keyboard_install(void);
+static void keyboard_deliver(void);
+
 static void *native_of(const char *cls, const char *name, const char *sig)
 {
     void *fn = tl_jni_native(cls, name, sig);
+    /* Unity 6 registers the player's lifecycle natives (nativeRender, nativePause, ...) on the class that hosts it in an
+     * activity, not on UnityPlayer itself */
+    if (!fn && !strcmp(cls, "com/unity3d/player/UnityPlayer")) {
+        fn = tl_jni_native("com/unity3d/player/UnityPlayerForActivityOrService", name, sig);
+        if (!fn) fn = tl_jni_native("com/unity3d/player/UnityPlayerForGameActivity", name, sig);
+    }
     if (!fn) tl_log_line("unity: native %s.%s%s was not registered", cls, name, sig);
     return fn;
 }
@@ -55,15 +64,25 @@ bool tl_unity_start(const tl_unity_config *cfg)
     int n = tl_dexidx_open(cfg->apk_path);
     tl_log_line("unity: %d classes in the APK's DEX", n);
     if (!tl_ld_add_apk(cfg->apk_path)) return false;
+    /* A player built to require ES 3.1 or 3.2 (its manifest's glEsVersion) asks only for those contexts and gives up on "your
+     * device does not match the hardware requirements" when ANGLE refuses: it gets the 3.0 context described as 3.1/3.2 */
+    { int tl_manifest_gles(const char *); void tl_egl_es3_claim(int); int gv = tl_manifest_gles(cfg->apk_path);
+      if (getenv("TL_GLES_CLAIM")) gv = 0x30000 | atoi(getenv("TL_GLES_CLAIM"));   /* TL_GLES_CLAIM=<minor>: as if the manifest said 3.<minor> */
+      if (gv >= 0x30001) { tl_egl_es3_claim(gv & 0xffff); tl_log_line("egl: the manifest asks for OpenGL ES 3.%d: the driver is described so", gv & 0xffff); } }
     if (cfg->angle_egl && !tl_egl_init(cfg->angle_egl, cfg->angle_gles, cfg->frame_dir, cfg->frame_every)) return false;
     tl_jni_init();
     tl_hle_configure(cfg->package_name, cfg->apk_path, cfg->data_dir, cfg->width, cfg->height);
     tl_jni_hle_install();
+    keyboard_install();
 
     /* new UnityPlayer(activity): the Java side's own constructor calls loadNative(dir),
      * which is System.load(dir + "/libmain.so") followed by NativeLoader.load(dir). */
     U.activity = tl_hle_activity();
     U.player = tl_jni_new_object(tl_jni_class("com/unity3d/player/UnityPlayer"));
+
+    /* Android's main thread has its Looper before any app code runs: Unity's libmain asks for it while loading (JNI_OnLoad
+     * -> ALooper_forThread), and the NULL it gets here is kept as the engine's main-thread queue and dereferenced later. */
+    { void *(*looper_prepare)(int) = tl_bionic_find("ALooper_prepare"); if (looper_prepare) looper_prepare(0); }
 
     tl_lib *main_lib = tl_ld_load("libmain.so");
     if (!main_lib) return false;
@@ -132,6 +151,7 @@ static void *unity_main(void *arg)
             continue;
         }
         if (was_paused) { NATIVE_VOID("nativeResume", "()V", 0, 0); NATIVE_VOID("nativeFocusChanged", "(Z)V", 1, 0); was_paused = false; tl_log_line("unity: resumed"); }
+        keyboard_deliver();
         struct timespec t0, t1;
         clock_gettime(CLOCK_MONOTONIC, &t0);
         uint8_t keep = ((uint8_t (*)(void *, void *))render)(tl_jni_env(), U.player);
@@ -153,7 +173,19 @@ static void *unity_main(void *arg)
 bool tl_unity_run(void)
 {
     /* The UnityPlayer constructor's last native step before it starts the thread. */
-    NATIVE_VOID("initJni", "(Landroid/content/Context;)V", U.activity, 0);
+    /* Unity 6 adds the kind of host it runs in (0: an activity or service, 1: a GameActivity) and, in some players, a
+     * string beside it; which one a player has is its RegisterNatives' to say. Asking for the wrong one means initJni
+     * never runs, and the engine then holds NULL for the Java side's classes (GetMethodID(NULL class, ...) later). */
+    void *init3 = tl_jni_native("com/unity3d/player/UnityPlayer", "initJni", "(Landroid/content/Context;ILjava/lang/String;)V");
+    void *init2 = init3 ? NULL : tl_jni_native("com/unity3d/player/UnityPlayer", "initJni", "(Landroid/content/Context;I)V");
+    if (init3) {
+        jobj *kind = tl_jni_new_string("");
+        ((void (*)(void *, jobj *, jobj *, int, jobj *))init3)(tl_jni_env(), U.player, U.activity, 0, kind);
+    } else if (init2) {
+        ((void (*)(void *, jobj *, jobj *, int))init2)(tl_jni_env(), U.player, U.activity, 0);
+    } else {
+        NATIVE_VOID("initJni", "(Landroid/content/Context;)V", U.activity, 0);
+    }
     tl_log_line("unity: initJni done");
     /* The rest of the UnityPlayer constructor: the helpers it builds, whose constructors each call a
      * native that gives the engine its reference to the helper's Java class. Without these the engine
@@ -173,6 +205,165 @@ bool tl_unity_run(void)
     if (pthread_create(&U.thread, &a, unity_main, NULL) != 0) return false;
     U.thread_started = true;
     return true;
+}
+
+/* -------------------------------------------------------------- keyboard */
+
+/*
+ * TouchScreenKeyboard (an InputField's keyboard, a name to enter): the engine calls UnityPlayer.showSoftInput with the field's text
+ * and kind, and the Java side shows a dialog whose edits it reports back through natives. Here the iPhone's keyboard is the dialog:
+ * the field is kept from showSoftInput / setSoftInputStr, each key edits it, and the edits reach the engine on its own thread,
+ * between frames, as the dialog's Runnables do (nativeSetInputString, then nativeSoftInputClosed when it is done).
+ */
+static struct {
+    pthread_mutex_t lock;
+    void (*hook)(int action, int kind);     /* the app: 1 shows the keyboard (with the kind), 2 hides it */
+    char text[4096];
+    int limit;                               /* characters the field takes, 0 for any */
+    bool shown, send_text, send_closed, send_canceled;
+} K = { .lock = PTHREAD_MUTEX_INITIALIZER };
+
+void tl_unity_set_keyboard_handler(void (*hook)(int action, int kind)) { K.hook = hook; }
+
+static void *native_quiet(const char *name, const char *sig)
+{
+    void *fn = tl_jni_native("com/unity3d/player/UnityPlayer", name, sig);
+    if (!fn) fn = tl_jni_native("com/unity3d/player/UnityPlayerForActivityOrService", name, sig);
+    if (!fn) fn = tl_jni_native("com/unity3d/player/UnityPlayerForGameActivity", name, sig);
+    return fn;
+}
+
+static size_t utf8_chars(const char *s) { size_t n = 0; for (; *s; s++) if ((*s & 0xC0) != 0x80) n++; return n; }
+
+/* showSoftInput(String text, int type, boolean correction, boolean multiline, boolean secure, boolean alert, String placeholder,
+ * int characterLimit, boolean hideInputField[, boolean hideInput]): the same first eight arguments in every player since 5.x */
+static void UnityPlayer_showSoftInput(tl_jcall *c)
+{
+    const char *text = c->args[0].l ? tl_jni_string(c->args[0].l) : NULL;
+    int kind = c->args[1].i & 0xFF;
+    if (c->args[3].z) kind |= 0x200;
+    if (c->args[4].z) kind |= 0x100;
+    pthread_mutex_lock(&K.lock);
+    snprintf(K.text, sizeof(K.text), "%s", text ? text : "");
+    K.limit = c->args[7].i > 0 ? c->args[7].i : 0;
+    K.shown = true;
+    K.send_closed = K.send_canceled = false;
+    pthread_mutex_unlock(&K.lock);
+    tl_log_line("unity: the game asks for the keyboard (type %d%s%s, limit %d)", kind & 0xFF, kind & 0x200 ? ", multi-line" : "", kind & 0x100 ? ", secure" : "", K.limit);
+    if (K.hook) K.hook(1, kind);
+}
+static void UnityPlayer_hideSoftInput(tl_jcall *c)
+{
+    (void)c;
+    pthread_mutex_lock(&K.lock);
+    bool was = K.shown;
+    K.shown = false;
+    pthread_mutex_unlock(&K.lock);
+    if (was && K.hook) K.hook(2, 0);
+}
+static void UnityPlayer_setSoftInputStr(tl_jcall *c)
+{
+    const char *text = c->args[0].l ? tl_jni_string(c->args[0].l) : NULL;
+    pthread_mutex_lock(&K.lock);
+    snprintf(K.text, sizeof(K.text), "%s", text ? text : "");
+    pthread_mutex_unlock(&K.lock);
+}
+static void Unity_noop(tl_jcall *c) { (void)c; }
+
+void tl_unity_insert_text(const char *utf8)
+{
+    pthread_mutex_lock(&K.lock);
+    if (K.shown && utf8) {
+        size_t have = strlen(K.text), chars = utf8_chars(K.text);
+        for (const char *p = utf8; *p;) {
+            size_t len = 1;
+            while ((p[len] & 0xC0) == 0x80) len++;
+            if ((K.limit && chars >= (size_t)K.limit) || have + len >= sizeof(K.text)) break;
+            memcpy(K.text + have, p, len);
+            have += len; chars++; p += len;
+        }
+        K.text[have] = 0;
+        K.send_text = true;
+    }
+    pthread_mutex_unlock(&K.lock);
+}
+
+void tl_unity_delete_backward(void)
+{
+    pthread_mutex_lock(&K.lock);
+    size_t n = strlen(K.text);
+    if (K.shown && n) {
+        while (n && (K.text[n - 1] & 0xC0) == 0x80) n--;
+        if (n) n--;
+        K.text[n] = 0;
+        K.send_text = true;
+    }
+    pthread_mutex_unlock(&K.lock);
+}
+
+/* Done (true) or the keyboard closed without it (false): what the dialog's OK and its dismissal report. */
+void tl_unity_finish_text(bool done)
+{
+    pthread_mutex_lock(&K.lock);
+    if (K.shown) {
+        K.shown = false;
+        K.send_text = true;
+        if (done) K.send_closed = true; else K.send_canceled = true;
+    }
+    pthread_mutex_unlock(&K.lock);
+}
+
+void tl_unity_text_copy(char *out, unsigned long cap)
+{
+    if (!cap) return;
+    pthread_mutex_lock(&K.lock);
+    snprintf(out, cap, "%s", K.text);
+    pthread_mutex_unlock(&K.lock);
+}
+
+/* On UnityMain, before a frame: the edits since the last one. */
+static void keyboard_deliver(void)
+{
+    pthread_mutex_lock(&K.lock);
+    bool text = K.send_text, closed = K.send_closed, canceled = K.send_canceled;
+    char copy[sizeof(K.text)];
+    memcpy(copy, K.text, sizeof(copy));
+    K.send_text = K.send_closed = K.send_canceled = false;
+    pthread_mutex_unlock(&K.lock);
+    if (!text && !closed && !canceled) return;
+    typedef void (*str_fn)(void *env, void *self, void *s, uintptr_t b);
+    typedef void (*two_fn)(void *env, void *self, uintptr_t a, uintptr_t b);
+    if (text) {
+        str_fn set = (str_fn)native_quiet("nativeSetInputString", "(Ljava/lang/String;)V");
+        if (set) { jobj *s = tl_jni_new_string(copy); set(tl_jni_env(), U.player, s, 0); tl_jni_unref(s); }
+        two_fn sel = (two_fn)native_quiet("nativeSetInputSelection", "(II)V");
+        if (sel) sel(tl_jni_env(), U.player, utf8_chars(copy), 0);
+    }
+    if (closed || canceled) {
+        two_fn end = (two_fn)native_quiet(closed ? "nativeSoftInputClosed" : "nativeSoftInputCanceled", "()V");
+        if (!end && canceled) end = (two_fn)native_quiet("nativeSoftInputClosed", "()V");
+        if (end) end(tl_jni_env(), U.player, 0, 0);
+        two_fn visible = (two_fn)native_quiet("nativeSetKeyboardIsVisible", "(Z)V");
+        if (visible) visible(tl_jni_env(), U.player, 0, 0);
+        tl_log_line("unity: keyboard %s with \"%s\"", closed ? "done" : "dismissed", copy);
+    }
+    if (tl_jni_pending()) tl_jni_clear();
+}
+
+static void keyboard_install(void)
+{
+    static const char *classes[] = { "com/unity3d/player/UnityPlayer", "com/unity3d/player/UnityPlayerForActivityOrService", "com/unity3d/player/UnityPlayerForGameActivity" };
+    static tl_jhle table[3 * 4 + 1];
+    static bool installed;
+    if (installed) return;
+    installed = true;
+    for (int i = 0; i < 3; i++) {
+        table[i * 4 + 0] = (tl_jhle){ classes[i], "showSoftInput", NULL, UnityPlayer_showSoftInput };
+        table[i * 4 + 1] = (tl_jhle){ classes[i], "hideSoftInput", "()V", UnityPlayer_hideSoftInput };
+        table[i * 4 + 2] = (tl_jhle){ classes[i], "setSoftInputStr", "(Ljava/lang/String;)V", UnityPlayer_setSoftInputStr };
+        table[i * 4 + 3] = (tl_jhle){ classes[i], "setHideInputField", "(Z)V", Unity_noop };
+    }
+    tl_jni_register_hle(table);
 }
 
 /* ----------------------------------------------------------------- touch */

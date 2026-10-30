@@ -113,6 +113,8 @@ static int safe_read(uintptr_t addr, void *out, size_t n)
     return vm_read_overwrite(mach_task_self(), (vm_address_t)addr, n, (vm_address_t)out, &got) == KERN_SUCCESS && got == n;
 }
 
+void tl_egl_recent_calls(char *out, size_t n, int count);
+void tl_egl_gl_histogram(char *out, size_t cap);
 static void on_crash(int sig, siginfo_t *info, void *uctx)
 {
     ucontext_t *uc = uctx;
@@ -132,6 +134,8 @@ static void on_crash(int sig, siginfo_t *info, void *uctx)
     for (int i = 0; i < 29; i += 4)
         fprintf(stderr, "  x%d=%#llx x%d=%#llx x%d=%#llx x%d=%#llx\n", i, ss->__x[i], i + 1, ss->__x[i + 1], i + 2, i + 2 < 29 ? ss->__x[i + 2] : 0, i + 3, i + 3 < 29 ? ss->__x[i + 3] : 0);
     fprintf(stderr, "  sp=%#llx fp=%#llx\n", ss->__sp, ss->__fp);
+    { char gl[2048]; tl_egl_recent_calls(gl, sizeof(gl), 40); if (gl[0]) fprintf(stderr, "  last GL calls: %s\n", gl); }
+    { static char h[1024 * 48]; tl_egl_gl_histogram(h, sizeof(h)); if (h[0]) fprintf(stderr, "  GL calls by function: %s\n", h); }
     uint64_t dump_base = getenv("TL_CRASH_DUMP_REG") ? ss->__x[atoi(getenv("TL_CRASH_DUMP_REG"))] : ss->__x[0];
     for (int i = 0; i < 0x120; i += 16) {
         uint64_t q[2];
@@ -302,7 +306,8 @@ static void *touch_script(void *arg)
     return NULL;
 }
 
-/* TL_CTL=/path/to/fifo: lines "tap X Y", "hold X Y MS", "swipe X1 Y1 X2 Y2 MS", "shot PNGPATH", "quit". */
+/* TL_CTL=/path/to/fifo: lines "tap X Y", "hold X Y MS", "swipe X1 Y1 X2 Y2 MS", "shot PNGPATH", "quit";
+ * the keyboard: "type TEXT", "backspace", "done", "dismiss" (the game asking for it is logged as "ctl: keyboard ..."). */
 static const char *g_frame_dir;
 static void sleep_ms(long ms) { usleep((useconds_t)ms * 1000); }
 static void do_swipe(float x1, float y1, float x2, float y2, long ms)
@@ -311,6 +316,11 @@ static void do_swipe(float x1, float y1, float x2, float y2, long ms)
     tl_unity_touch(0, 0, x1, y1);
     for (int i = 1; i <= steps; i++) { sleep_ms(ms / steps); tl_unity_touch(1, 0, x1 + (x2 - x1) * i / steps, y1 + (y2 - y1) * i / steps); }
     tl_unity_touch(2, 0, x2, y2);
+}
+static void keyboard_request(int action, int kind)
+{
+    char text[4096]; tl_unity_text_copy(text, sizeof(text));
+    fprintf(stderr, "ctl: keyboard %s (kind %#x) field \"%s\"\n", action == 1 ? "shown" : "hidden", kind, text);
 }
 static void *control_thread(void *arg)
 {
@@ -335,6 +345,10 @@ static void *control_thread(void *arg)
                 if (sscanf(line + 4, "%x %f %f %f %f %f %f", &btn, &st.lx, &st.ly, &st.rx, &st.ry, &st.lt, &st.rt) >= 1) { st.buttons = btn; tl_pad_update(0, &st); }
             }
             else if (sscanf(line, "wait %ld", &ms) == 1) sleep_ms(ms);
+            else if (!strncmp(line, "type ", 5)) { line[strcspn(line, "\n")] = 0; tl_unity_insert_text(line + 5); }
+            else if (!strncmp(line, "backspace", 9)) tl_unity_delete_backward();
+            else if (!strncmp(line, "done", 4)) tl_unity_finish_text(true);
+            else if (!strncmp(line, "dismiss", 7)) tl_unity_finish_text(false);
             else if (sscanf(line, "shot %399s", p) == 1) {
                 char cmd[900]; snprintf(cmd, sizeof(cmd), "sips -s format png '%s/latest.bmp' --out '%s' >/dev/null 2>&1", g_frame_dir, p);
                 if (system(cmd)) fprintf(stderr, "ctl: shot failed\n");
@@ -368,11 +382,11 @@ int main(int argc, char **argv)
     { struct sigaction sd; memset(&sd, 0, sizeof(sd)); sd.sa_sigaction = on_dump; sd.sa_flags = SA_SIGINFO | SA_ONSTACK; sigemptyset(&sd.sa_mask); sigaction(SIGUSR2, &sd, NULL); }
     tl_ld_set_verbosity(getenv("TL_VERBOSE") ? atoi(getenv("TL_VERBOSE")) : 1);
     tl_jni_set_trace(getenv("TL_JNI_TRACE") ? atoi(getenv("TL_JNI_TRACE")) : 1);
-    char tmp[] = "/tmp/husk-unity-XXXXXX";
+    char tmp[] = "/Volumes/GTAV/husk2/tmp/husk-unity-XXXXXX";
     mkdtemp(tmp);
     const char *cef = "/Users/davi/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/Frameworks/Chromium Embedded Framework.framework/Versions/A/Libraries";
     char egl[600], gles[600]; snprintf(egl, sizeof(egl), "%s/libEGL.dylib", cef); snprintf(gles, sizeof(gles), "%s/libGLESv2.dylib", cef);
-    char frames[] = "/tmp/husk-frames-XXXXXX"; mkdtemp(frames);
+    char frames[] = "/Volumes/GTAV/husk2/tmp/husk-frames-XXXXXX"; mkdtemp(frames);
     fprintf(stderr, "frames: %s\n", frames);
     /* TL_SPLITS: the app's split APKs, colon-separated (a Google Play install: libraries and asset packs in their own APKs) */
     if (getenv("TL_SPLITS")) { char *l = strdup(getenv("TL_SPLITS")); for (char *t = strtok(l, ":"); t; t = strtok(NULL, ":")) tl_ld_queue_split(t); }
@@ -389,7 +403,7 @@ int main(int argc, char **argv)
     tl_ld_iterate(print_lib, NULL);
     tl_unity_register_pad_sink();
     if (getenv("TL_PAD")) tl_pad_connect(0, "Xbox Wireless Controller");
-    if (getenv("TL_CTL")) { static pthread_t ct; pthread_create(&ct, NULL, control_thread, getenv("TL_CTL")); }
+    if (getenv("TL_CTL")) { tl_unity_set_keyboard_handler(keyboard_request); static pthread_t ct; pthread_create(&ct, NULL, control_thread, getenv("TL_CTL")); }
     if (getenv("TL_TOUCH")) { static pthread_t tt; pthread_create(&tt, NULL, touch_script, getenv("TL_TOUCH")); }
     if (getenv("TL_MONITOR")) { tl_ld_iterate(find_unity, NULL); pthread_t mt; pthread_create(&mt, NULL, monitor, NULL); }
     int secs = argc > 2 ? atoi(argv[2]) : 5;

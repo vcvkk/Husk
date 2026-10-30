@@ -16,6 +16,11 @@ enum HuskOrientation {
     /// a moment apart, for as long as `new` is still what is wanted.
     @MainActor static func set(_ new: UIInterfaceOrientationMask, attempt: Int = 0) {
         mask = new
+        guard #available(iOS 16, *) else {
+            // iOS 15 asks the view controllers again when the device turns; nudge it to ask now
+            UIViewController.attemptRotationToDeviceOrientation()
+            return
+        }
         for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
             var vc = scene.keyWindow?.rootViewController
             while let v = vc { v.setNeedsUpdateOfSupportedInterfaceOrientations(); vc = v.presentedViewController }
@@ -84,7 +89,12 @@ struct HuskApp: App {
         WindowGroup {
             ContentView()
                 // An APK shared to Husk, or opened in it from Files.
-                .onOpenURL { IncomingFiles.shared.receive($0) }
+                .onOpenURL { url in
+                    // husk://open_app?unique_identifier=… from a Home Screen clip; anything else may be a shared APK
+                    if GameLink.handle(url) { return }
+                    if SigningCertificate.shared.handle(url) { return }   // husk://certificate from SideStore / AltStore
+                    if !AppClip.handle(url) { IncomingFiles.shared.receive(url) }
+                }
         }
     }
 }

@@ -4,13 +4,15 @@ import SwiftUI
 /// Downloads from a link, and what has an update.
 struct DownloadsTab: View {
     @ObservedObject private var downloads = Downloads.shared
+    @ObservedObject private var store = PlayStoreManager.shared
     @ObservedObject private var updates = AppUpdates.shared
     @ObservedObject private var guest = GuestImage.shared
     @State private var adding = false
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
-            List {
+            HuskPageList {
                 updatesSection
                 Section {
                     if downloads.jobs.isEmpty {
@@ -20,6 +22,22 @@ struct DownloadsTab: View {
                                 .font(.subheadline).foregroundStyle(.secondary)
                         }
                         .padding(.vertical, 6)
+                    }
+                    ForEach(store.downloadProgress.keys.sorted(), id: \.self) { pkg in
+                        HStack(spacing: 10) {
+                            Image(systemName: "bag.fill").foregroundStyle(Color.accentColor)
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(store.downloadTitles[pkg] ?? pkg).font(.headline).lineLimit(1)
+                                ProgressView(value: store.downloadProgress[pkg] ?? 0)
+                                Text("From the Store").font(.caption).foregroundStyle(.secondary)
+                            }
+                            Button(role: .destructive) { store.cancelDownload(pkg) } label: {
+                                Image(systemName: "xmark.circle.fill").font(.title2)
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel("Cancel Download")
+                        }
+                        .padding(.vertical, 4)
                     }
                     ForEach(downloads.jobs) { job in
                         DownloadRow(job: job, speed: downloads.speed)
@@ -47,6 +65,7 @@ struct DownloadsTab: View {
             }
             .navigationTitle("Downloads")
             .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
                 ToolbarItem(placement: .primaryAction) {
                     Button { adding = true } label: { Label("Add", systemImage: "plus") }
                 }
@@ -115,6 +134,11 @@ private struct DownloadRow: View {
                         Image(systemName: job.paused || job.failed ? "arrow.clockwise.circle.fill" : "pause.circle.fill").font(.title2)
                     }
                     .buttonStyle(.borderless)
+                    Button(role: .destructive) { Downloads.shared.remove(job.id) } label: {
+                        Image(systemName: "xmark.circle.fill").font(.title2)
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Cancel Download")
                 }
             }
             if !job.complete { ProgressView(value: fraction) }
@@ -132,7 +156,7 @@ private struct AddDownloadSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            HuskForm {
                 Section {
                     TextField("https://… or http://192.168.1.20:8642/", text: $link)
                         .keyboardType(.URL)

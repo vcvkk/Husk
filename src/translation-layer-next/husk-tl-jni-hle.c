@@ -12,6 +12,7 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <fcntl.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
@@ -208,6 +209,19 @@ static void Display_getDisplayId(tl_jcall *c) { c->ret = vi(0); }
 static void Display_getWidth(tl_jcall *c) { c->ret = vi(H.width); }
 static void Display_getHeight(tl_jcall *c) { c->ret = vi(H.height); }
 static void Display_getName(tl_jcall *c) { c->ret = vl(STR("Built-in Screen")); }
+/* One mode, the screen's own: newer players ask the display for its modes and read the first one. A null answer (the
+ * unimplemented default) is what they then dereference. */
+static void Display_mode(tl_jcall *c)
+{
+    jobj *m = tl_jni_new_object(C("android/view/Display$Mode"));
+    c->ret = vl(m);
+}
+static void Display_getSupportedModes(tl_jcall *c)
+{
+    jobj *a = tl_jni_new_obj_array(C("android/view/Display$Mode"), 1);
+    a->oarr.v[0] = tl_jni_new_object(C("android/view/Display$Mode"));
+    c->ret = vl(a);
+}
 static void WindowManager_getDefaultDisplay(tl_jcall *c) { c->ret = vl(H.display); }
 
 /* ----------------------------------------------------- package information */
@@ -411,6 +425,21 @@ static void Process_myTid(tl_jcall *c) { uint64_t t = 0; pthread_threadid_np(NUL
 static tl_lib *g_onload_done[96];
 static int g_nonload;
 static pthread_mutex_t g_onload_mu = PTHREAD_MUTEX_INITIALIZER;
+static bool load_native_library(const char *base);
+bool tl_jni_load_library(const char *base) { return load_native_library(base); }
+/*
+ * A library carrying V8 (Cocos Creator's libcocos2djs.so): its JIT asks for code memory both writable and executable, which a phone
+ * never gives, and V8 does not fall back -- the mprotect is refused or the page comes back without write, and the engine dies as it
+ * starts (Top War: SIGBUS in libcocos2djs.so on the GL thread, right after "Initializing V8"). So it is told to run without one before
+ * anything starts it: --jitless, its interpreter and the builtins compiled into the library. TL_V8_JIT=1 leaves V8 as it is.
+ */
+static void v8_jitless(tl_lib *L, const char *base)
+{
+    void (*set_flags)(const char *) = (void (*)(const char *))tl_ld_sym(L, "_ZN2v82V818SetFlagsFromStringEPKc");
+    if (!set_flags || getenv("TL_V8_JIT")) return;
+    set_flags("--jitless");
+    tl_log_line("jni: %s carries V8: told to run without its JIT (--jitless)", base);
+}
 static bool load_native_library(const char *base)
 {
     tl_lib *L = tl_ld_load(base);
@@ -422,7 +451,17 @@ static bool load_native_library(const char *base)
     if (first && g_nonload < 96) g_onload_done[g_nonload++] = L;
     pthread_mutex_unlock(&g_onload_mu);
     if (first) {
-        int32_t (*onload)(void *vm, void *reserved) = (int32_t (*)(void *, void *))tl_ld_sym(L, "JNI_OnLoad");
+        v8_jitless(L, base);                             /* before its JNI_OnLoad, and so before anything can start V8 */
+        /* found as ART's dlsym on the library's handle finds it: in the library or, failing that, in one it needs */
+        tl_lib *owner = NULL;
+        int32_t (*onload)(void *vm, void *reserved) = (int32_t (*)(void *, void *))tl_ld_sym_deep(L, "JNI_OnLoad", &owner);
+        if (onload && owner != L) {
+            /* the dependency's own, which runs once (its library may be asked for by name later) */
+            pthread_mutex_lock(&g_onload_mu);
+            for (int i = 0; i < g_nonload; i++) if (g_onload_done[i] == owner) onload = NULL;
+            if (onload && g_nonload < 96) g_onload_done[g_nonload++] = owner;
+            pthread_mutex_unlock(&g_onload_mu);
+        }
         if (onload) {
             int32_t ver = onload(tl_jni_vm(), NULL);
             tl_log_line("jni: %s JNI_OnLoad -> %#x", base, ver);
@@ -435,7 +474,8 @@ static void System_load(tl_jcall *c)
     const char *path = S(c->args[0].l);
     const char *base = strrchr(path, '/');
     base = base ? base + 1 : path;
-    if (!load_native_library(base)) {
+    struct stat st;
+    if (!load_native_library(base != path && stat(path, &st) == 0 && st.st_size > 0 ? path : base)) {
         char msg[300]; snprintf(msg, sizeof(msg), "dlopen failed: library \"%s\" not found", path);
         tl_jni_throw("java/lang/UnsatisfiedLinkError", msg);
     }
@@ -449,9 +489,24 @@ static void System_loadLibrary(tl_jcall *c)
     }
 }
 static void System_getProperty(tl_jcall *c) { const char *k = S(c->args[0].l); const char *v = !strcmp(k, "os.arch") ? "aarch64" : !strcmp(k, "http.agent") ? "Dalvik/2.1.0 (Linux; U; Android 14; Pixel 8)" : NULL; c->ret = vl(v ? STR(v) : NULL); }
+/* android.os.SystemClock: time since boot (the host's), in ms or ns */
+static void SystemClock_uptimeMillis(tl_jcall *c) { struct timespec ts; clock_gettime(CLOCK_UPTIME_RAW, &ts); jvalue v; v.j = (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000; c->ret = v; }
+static void SystemClock_elapsedRealtime(tl_jcall *c) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); jvalue v; v.j = (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000; c->ret = v; }
+static void SystemClock_elapsedRealtimeNanos(tl_jcall *c) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); jvalue v; v.j = (int64_t)ts.tv_sec * 1000000000 + ts.tv_nsec; c->ret = v; }
 static void System_currentTimeMillis(tl_jcall *c) { struct timespec ts; clock_gettime(CLOCK_REALTIME, &ts); jvalue v; v.j = (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000; c->ret = v; }
 static void System_nanoTime(tl_jcall *c) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); jvalue v; v.j = (int64_t)ts.tv_sec * 1000000000 + ts.tv_nsec; c->ret = v; }
 static void UnityPlayer_initializeGoogleAr(tl_jcall *c) { c->ret = vz(0); }
+/* Unity 6 loads a plugin through Java (UnityPlayer.loadLibrary -> System.loadLibrary, false on failure), so the plugin's
+ * JNI_OnLoad runs: Firebase keeps the JavaVM it is given there, and without it crashes on its first JNI call. */
+static void UnityPlayer_loadLibrary(tl_jcall *c)
+{
+    const char *n = S(c->args[0].l);
+    size_t l = n ? strlen(n) : 0;
+    char base[200];
+    if (l > 3 && !strcmp(n + l - 3, ".so")) snprintf(base, sizeof(base), "%s", n);
+    else snprintf(base, sizeof(base), "%s%s.so", strncmp(n ? n : "", "lib", 3) ? "lib" : "", n ? n : "");
+    c->ret = vz(n && load_native_library(base));
+}
 
 /* JNIBridge builds Java proxies for interfaces C# implements. A proxy that never answers is
  * enough until something calls through one. */
@@ -563,6 +618,36 @@ static void SP_getBoolean(tl_jcall *c) { c->ret = vz(c->args[1].z); }
 static void SP_edit(tl_jcall *c) { c->ret = vl(make("android/content/SharedPreferences$Editor")); }
 static void Editor_self(tl_jcall *c) { c->ret = vl(tl_jni_ref(c->self)); }
 static void Editor_noop(tl_jcall *c) { (void)c; }
+static void SP_getFloat(tl_jcall *c) { jvalue v; v.j = 0; v.f = c->args[1].f; c->ret = v; }
+static void SP_getLong(tl_jcall *c) { jvalue v; v.j = c->args[1].j; c->ret = v; }
+static void Editor_commit(tl_jcall *c) { c->ret = vz(1); }
+/* java.io.FileOutputStream over a host file (Unity's Java side writes its files with it): the descriptor + 1 in native */
+static int fos_fd(const jobj *o) { return o && o->native ? (int)(intptr_t)o->native - 1 : -1; }
+static void fos_open(tl_jcall *c, const char *path, bool append)
+{
+    int fd = path ? open(path, O_WRONLY | O_CREAT | (append ? O_APPEND : O_TRUNC), 0644) : -1;
+    if (fd < 0) { tl_jni_throw("java/io/FileNotFoundException", path ? path : "null"); return; }
+    c->self->native = (void *)(intptr_t)(fd + 1);
+}
+static void FOS_init_file(tl_jcall *c) { fos_open(c, c->args[0].l ? file_path(c->args[0].l) : NULL, false); }
+static void FOS_init_file_append(tl_jcall *c) { fos_open(c, c->args[0].l ? file_path(c->args[0].l) : NULL, c->args[1].z); }
+static void FOS_init_path(tl_jcall *c) { fos_open(c, S(c->args[0].l), false); }
+static void FOS_init_path_append(tl_jcall *c) { fos_open(c, S(c->args[0].l), c->args[1].z); }
+static void fos_write(int fd, const jobj *a, int32_t off, int32_t len)
+{
+    if (!a || off < 0 || len < 0 || (uint32_t)off + (uint32_t)len > a->arr.len) { tl_jni_throw("java/lang/IndexOutOfBoundsException", ""); return; }
+    for (int32_t done = 0; done < len; ) {
+        ssize_t n = write(fd, (const char *)a->arr.data + off + done, (size_t)(len - done));
+        if (n <= 0) { tl_jni_throw("java/io/IOException", strerror(errno)); return; }
+        done += (int32_t)n;
+    }
+}
+static void FOS_write_range(tl_jcall *c) { fos_write(fos_fd(c->self), c->args[0].l, c->args[1].i, c->args[2].i); }
+static void FOS_write_all(tl_jcall *c) { const jobj *a = c->args[0].l; fos_write(fos_fd(c->self), a, 0, a ? (int32_t)a->arr.len : 0); }
+static void FOS_write_byte(tl_jcall *c) { uint8_t b = (uint8_t)c->args[0].i; if (write(fos_fd(c->self), &b, 1) != 1) tl_jni_throw("java/io/IOException", strerror(errno)); }
+static void FOS_close(tl_jcall *c) { int fd = fos_fd(c->self); if (fd >= 0) { close(fd); c->self->native = NULL; } }
+static void FOS_flush(tl_jcall *c) { (void)c; }
+static void File_setReadOnly(tl_jcall *c) { c->ret = vz(chmod(file_path(c->self), 0444) == 0); }
 /* An iterator is empty unless it was made over a list (tl_jni_new_list_iterator). */
 typedef struct { jobj **items; uint32_t n, i; } list_iter;
 static void Iterator_hasNext(tl_jcall *c) { const list_iter *it = c->self ? c->self->native : NULL; c->ret = vz(it && it->i < it->n); }
@@ -823,6 +908,17 @@ static void FMODEx_stop(tl_jcall *c)
 }
 
 static void FMOD_isRunning(tl_jcall *c) { c->ret = vz(g_fmodex.running != 0); }
+/* Unity 6's FMOD asks its Java audio manager (org.fmod.FmodAndroidAudioManager) about Bluetooth and input devices; a NULL
+ * instance stops the engine's loading thread. One manager: no Bluetooth, no microphone, the built-in speaker. */
+static void FmodAM_getInstance(tl_jcall *c)
+{
+    static jobj *one;
+    if (!one) one = make("org/fmod/FmodAndroidAudioManager");
+    c->ret = vl(one);
+}
+static void RetFalse(tl_jcall *c) { c->ret = vz(0); }
+static void RetTrue(tl_jcall *c) { c->ret = vz(1); }
+static void FmodAM_noDevice(tl_jcall *c) { c->ret.i = -1; }
 
 /* ------------------------------------------------------------------ tables */
 
@@ -882,6 +978,9 @@ static void Class_forName(tl_jcall *c)
 static const tl_jhle k_hle[] = {
     M("java/lang/Class", "forName", "(Ljava/lang/String;)Ljava/lang/Class;", Class_forName),
     M("java/lang/Class", "forName", "(Ljava/lang/String;)Ljava/lang/Object;", Class_forName),
+    /* Newer Unity players (2021 and on) look a class up the way Class.forName(String, boolean initialize, ClassLoader)
+     * declares it; the initialize flag and the loader change nothing here, so the one-argument answer serves both. */
+    M("java/lang/Class", "forName", "(Ljava/lang/String;ZLjava/lang/ClassLoader;)Ljava/lang/Class;", Class_forName),
     M("java/lang/System", "load", "(Ljava/lang/String;)V", System_load),
     M("java/lang/System", "loadLibrary", "(Ljava/lang/String;)V", System_loadLibrary),
     M("com/sybogames/chili/migration/KilooPlatformAndroidBridge", "<init>", "()V", Noop),
@@ -912,6 +1011,9 @@ static const tl_jhle k_hle[] = {
     M("java/lang/String", "hashCode", "()I", String_hashCode),
     M("java/lang/System", "getProperty", "(Ljava/lang/String;)Ljava/lang/String;", System_getProperty),
     M("java/lang/System", "currentTimeMillis", "()J", System_currentTimeMillis),
+    M("android/os/SystemClock", "uptimeMillis", "()J", SystemClock_uptimeMillis),
+    M("android/os/SystemClock", "elapsedRealtime", "()J", SystemClock_elapsedRealtime),
+    M("android/os/SystemClock", "elapsedRealtimeNanos", "()J", SystemClock_elapsedRealtimeNanos),
     M("java/lang/System", "nanoTime", "()J", System_nanoTime),
     M("java/io/File", "<init>", "(Ljava/lang/String;)V", File_init_s),
     M("java/io/File", "<init>", "(Ljava/io/File;Ljava/lang/String;)V", File_init_fs),
@@ -964,6 +1066,8 @@ static const tl_jhle k_hle[] = {
     M("android/view/Display", "getDisplayId", "()I", Display_getDisplayId),
     M("android/view/Display", "getWidth", "()I", Display_getWidth), M("android/view/Display", "getHeight", "()I", Display_getHeight),
     M("android/view/Display", "getName", "()Ljava/lang/String;", Display_getName),
+    M("android/view/Display", "getMode", "()Landroid/view/Display$Mode;", Display_mode),
+    M("android/view/Display", "getSupportedModes", "()[Landroid/view/Display$Mode;", Display_getSupportedModes),
     M("android/view/WindowManager", "getDefaultDisplay", "()Landroid/view/Display;", WindowManager_getDefaultDisplay),
     M("android/content/pm/PackageManager", "getApplicationInfo", "(Ljava/lang/String;I)Landroid/content/pm/ApplicationInfo;", PM_getApplicationInfo),
     M("android/content/pm/PackageManager", "hasSystemFeature", "(Ljava/lang/String;)Z", PM_hasSystemFeature),
@@ -993,6 +1097,23 @@ static const tl_jhle k_hle[] = {
     M("android/content/SharedPreferences", "getString", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;", SP_getString),
     M("android/content/SharedPreferences", "getBoolean", "(Ljava/lang/String;Z)Z", SP_getBoolean),
     M("android/content/SharedPreferences", "edit", "()Landroid/content/SharedPreferences$Editor;", SP_edit),
+    M("android/content/SharedPreferences", "getFloat", "(Ljava/lang/String;F)F", SP_getFloat),
+    M("android/content/SharedPreferences", "getLong", "(Ljava/lang/String;J)J", SP_getLong),
+    M("android/content/SharedPreferences$Editor", "commit", "()Z", Editor_commit),
+    M("android/content/SharedPreferences$Editor", "putFloat", "(Ljava/lang/String;F)Landroid/content/SharedPreferences$Editor;", Editor_self),
+    M("android/content/SharedPreferences$Editor", "putLong", "(Ljava/lang/String;J)Landroid/content/SharedPreferences$Editor;", Editor_self),
+    M("android/content/SharedPreferences$Editor", "remove", "(Ljava/lang/String;)Landroid/content/SharedPreferences$Editor;", Editor_self),
+    M("android/content/SharedPreferences$Editor", "clear", "()Landroid/content/SharedPreferences$Editor;", Editor_self),
+    M("java/io/FileOutputStream", "<init>", "(Ljava/io/File;)V", FOS_init_file),
+    M("java/io/FileOutputStream", "<init>", "(Ljava/io/File;Z)V", FOS_init_file_append),
+    M("java/io/FileOutputStream", "<init>", "(Ljava/lang/String;)V", FOS_init_path),
+    M("java/io/FileOutputStream", "<init>", "(Ljava/lang/String;Z)V", FOS_init_path_append),
+    M("java/io/FileOutputStream", "write", "([BII)V", FOS_write_range),
+    M("java/io/FileOutputStream", "write", "([B)V", FOS_write_all),
+    M("java/io/FileOutputStream", "write", "(I)V", FOS_write_byte),
+    M("java/io/FileOutputStream", "close", "()V", FOS_close),
+    M("java/io/FileOutputStream", "flush", "()V", FOS_flush),
+    M("java/io/File", "setReadOnly", "()Z", File_setReadOnly),
     M("android/content/SharedPreferences$Editor", "putInt", "(Ljava/lang/String;I)Landroid/content/SharedPreferences$Editor;", Editor_self),
     M("android/content/SharedPreferences$Editor", "putString", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/SharedPreferences$Editor;", Editor_self),
     M("android/content/SharedPreferences$Editor", "putBoolean", "(Ljava/lang/String;Z)Landroid/content/SharedPreferences$Editor;", Editor_self),
@@ -1041,7 +1162,16 @@ static const tl_jhle k_hle[] = {
     M("com/unity3d/player/HFPStatus", "clearHFPStat", "()V", Noop),
     M("org/fmod/FMODAudioDevice", "<init>", "()V", Noop), M("org/fmod/FMODAudioDevice", "start", "()V", FMODEx_start),
     M("org/fmod/FMODAudioDevice", "stop", "()V", FMODEx_stop), M("org/fmod/FMODAudioDevice", "close", "()V", FMODEx_stop), M("org/fmod/FMODAudioDevice", "isRunning", "()Z", FMOD_isRunning),
+    M("org/fmod/FmodAndroidAudioManager", "getInstance", "()Lorg/fmod/FmodAndroidAudioManager;", FmodAM_getInstance),
+    M("org/fmod/FmodAndroidAudioManager", "setUseBluetooth", "(Z)V", Noop), M("org/fmod/FmodAndroidAudioManager", "startBluetoothSco", "()V", Noop),
+    M("org/fmod/FmodAndroidAudioManager", "stopBluetoothSco", "()V", Noop), M("org/fmod/FmodAndroidAudioManager", "isBluetoothScoConnected", "()Z", RetFalse),
+    M("org/fmod/FmodAndroidAudioManager", "isInputSampleRateAvailable", "(I)Z", RetFalse),
+    M("org/fmod/FmodAndroidAudioManager", "isBuiltinInputDeviceAvailable", "()Z", RetFalse),
+    M("org/fmod/FmodAndroidAudioManager", "isBluetoothInputDeviceAvailable", "()Z", RetFalse),
+    M("org/fmod/FmodAndroidAudioManager", "getBluetoothInputDeviceId", "()I", FmodAM_noDevice),
+    M("org/fmod/FmodAndroidAudioManager", "isBuiltinSpeakerDevice", "(I)Z", RetTrue),
     M("com/unity3d/player/UnityPlayer", "initializeGoogleAr", "()Z", UnityPlayer_initializeGoogleAr),
+    M("com/unity3d/player/UnityPlayer", "loadLibrary", "(Ljava/lang/String;)Z", UnityPlayer_loadLibrary),
     M("bitter/jnibridge/JNIBridge", "newInterfaceProxy", "(J[Ljava/lang/Class;)Ljava/lang/Object;", JNIBridge_newInterfaceProxy),
     M("com/unity3d/player/ReflectionHelper", "getConstructorID", "(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/reflect/Constructor;", Reflection_getConstructorID),
     M("com/unity3d/player/ReflectionHelper", "getMethodID", "(Ljava/lang/Class;Ljava/lang/String;Ljava/lang/String;Z)Ljava/lang/reflect/Method;", Reflection_getMethodID),

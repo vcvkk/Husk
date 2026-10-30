@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// A page pushed onto Home or the Library: a game's page, its settings or its technical details, an Android app's page,
 /// or Android's own.
@@ -9,6 +10,7 @@ enum LibraryRoute: Hashable {
     case gameSettings(String)
     case gameReport(String)
     case androidSystem
+    case ps4(String)              // a PS4 game, by title ID
 }
 
 /// Where the tabs and their stacks are steered from.
@@ -23,6 +25,16 @@ enum LibraryRoute: Hashable {
     @Published var home: [LibraryRoute] = []
     @Published var library: [LibraryRoute] = []
     @Published var libraryFilter: LibraryFilter = .all
+    /// The platform chips on Home and in the Library: one choice, shared by both.
+    @Published var platform: PlatformFilter = .all
+    /// Downloads, as a sheet: Home's Downloads tile opens it.
+    @Published var showDownloads = false
+    /// The Husk account's profile page.
+    @Published var showProfile = false
+    /// Import APK: pick a file, or get one from a link or the Store.
+    @Published var showImport = false
+    /// A game link (husk://game/<package>) for something not added yet: the Store opens its page.
+    @Published var storePackage: String?
     /// Android's storage, as a sheet over whatever is showing.
     @Published var showFiles = false
     /// Directories pushed on top of the Files root.
@@ -47,7 +59,7 @@ enum LibraryRoute: Hashable {
         UserDefaults.standard.removeObject(forKey: Self.switchKey)
         HuskLog.log("ui", "opening \(id), which Husk was closed to switch to")
         tab = .library
-        library = [.game(id)]
+        library = id.hasPrefix("ps4:") ? [.ps4(String(id.dropFirst(4)))] : [.game(id)]
         autoPlay = id
     }
 
@@ -69,7 +81,8 @@ enum LibraryRoute: Hashable {
 
     /// Pick APKs or bundles; Husk then asks where they go.
     func addSomething() {
-        HuskFilePicker.present { urls in IncomingFiles.shared.receive(urls) }
+        // .folder too: a PS4 game is an extracted folder
+        HuskFilePicker.present(types: [.item, .folder]) { urls in IncomingFiles.shared.receive(urls) }
     }
 }
 
@@ -89,7 +102,7 @@ struct AppDetailView: View {
     private var canOpen: Bool { host.isReady && host.busy == nil }
 
     var body: some View {
-        List {
+        HuskPageList {
             Section {
                 header
                 Button {

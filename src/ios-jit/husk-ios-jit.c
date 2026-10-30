@@ -19,6 +19,7 @@
 #include <mach/vm_map.h>        /* vm_remap/vm_protect: mach_vm.h is absent from the iOS SDK */
 #include <os/log.h>
 #include <os/proc.h>
+#include <pthread.h>
 #include <setjmp.h>
 #include <signal.h>
 #include <stdatomic.h>
@@ -283,21 +284,20 @@ static bool husk_jit_selftest(const HuskDualMapping *m)
 
 /* ------------------------------------------------------------ self-granted */
 /*
- * Executable memory without a trap servicer, before iOS 26 (no TXM). This is how TrollStore and jailbreaks give an app JIT:
+ * Executable memory without a trap servicer. This is how TrollStore and jailbreaks give an app JIT:
  *
- *   - TrollStore keeps the entitlements an app is signed with, so Husk's dynamic-codesigning is honoured and a MAP_JIT mapping
- *     executes with no debugger at all. TrollStore's own enable-jit (RootHelper/jit.m: ptrace(PT_ATTACHEXC), 100 ms, PT_DETACH)
- *     additionally leaves CS_DEBUGGED set.
- *   - Dopamine allows invalid pages in every app it launches (launchdhook's systemwide checkin calls cs_allow_invalid), but its
- *     csops hook hides CS_DEBUGGED from the app unless "Allow JIT in Apps" is on. MAP_JIT is refused there (no entitlement), so it
- *     needs plain memory made executable.
- *   - A debugger that attached and let go (TrollStore, AltJIT, SideJITServer, StikDebug on an older iOS) leaves CS_DEBUGGED set,
- *     which allows the same.
+ *   - TrollStore apps cannot use banned entitlements such as dynamic-codesigning on affected systems
+ *     (see https://github.com/opa334/TrollStore#banned-entitlements), so they cannot rely on the normal entitlement-based JIT path.
+ *     TrollStore's "Open with JIT" / enable-jit instead attaches with ptrace and detaches, leaving the process debugged.
+ *   - Dopamine similarly allows invalid executable pages for jailbreak processes, while its csops hook may hide CS_DEBUGGED
+ *     unless "Allow JIT in Apps" is enabled.
+ *   - Debugger-based JIT methods such as AltJIT, SideJITServer and StikDebug use the same general mechanism on affected iOS versions.
  *
- * Both routes give QEMU and the native runtime the same shape StikDebug's region has: an executable view and a writable alias of
- * the same pages, side by side (the native loader reaches one from the other with adrp). The plain route is only tried where the
- * kernel is known to allow unsigned pages, because executing one where it is not is a code-signing kill, not a signal. Every
- * route is proven by calling a function written through the alias, under a fault guard.
+ * Under W^X restrictions, memory cannot be simultaneously writable and executable through the same mapping. The fallback path:
+ *   1. Allocates backing memory with RWX maximum protection.
+ *   2. Creates a separate RW alias with vm_remap() for code generation.
+ *   3. Demotes the executable mapping to RX with vm_protect().
+ * This gives separate RW and RX views of the same backing pages.
  */
 /* csops straight to the kernel: Dopamine hooks the libc function to hide CS_DEBUGGED (systemhook's csops_hook). */
 #pragma clang diagnostic push
@@ -379,13 +379,13 @@ static HuskDualMapping husk_self_dual_mapping(size_t bytes)
     }
     size_t size = (bytes + 0x3fff) & ~(size_t)0x3fff;
 
-    /* 1. MAP_JIT, honoured where dynamic-codesigning is (TrollStore). Refused with EPERM elsewhere, harmlessly. */
+    /* 1. MAP_JIT: requires dynamic-codesigning. Refused with EPERM elsewhere, harmlessly. */
     uint8_t *rx = mmap(NULL, size, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANON | MAP_JIT, -1, 0);
     if (rx == MAP_FAILED) {
         HUSK_LOG("self: MAP_JIT refused (%s)", strerror(errno));
     } else {
         uint8_t *rw = husk_rw_alias(rx, size, false);
-        if (rw && husk_self_selftest(rx, rw)) {
+        if (rw && vm_protect(mach_task_self(), (vm_address_t)rx, size, FALSE, VM_PROT_READ | VM_PROT_EXECUTE) == KERN_SUCCESS && husk_self_selftest(rx, rw)) {
             HuskDualMapping m = { rw, rx, size };
             atomic_store(&g_jit_available, true);
             g_self_route = "MAP_JIT";
@@ -409,15 +409,31 @@ static HuskDualMapping husk_self_dual_mapping(size_t bytes)
         HUSK_LOG("self: could not reserve %zu MiB: %s", (size * 2) >> 20, strerror(errno));
         return none;
     }
-    rx = mmap(base, size, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_FIXED | MAP_PRIVATE | MAP_ANON, -1, 0);
-    uint8_t *rw = rx == MAP_FAILED ? NULL : husk_rw_alias(rx, size, true);
-    if (rw && vm_protect(mach_task_self(), (vm_address_t)rx, size, FALSE, VM_PROT_READ | VM_PROT_EXECUTE) == KERN_SUCCESS && husk_self_selftest(rx, rw)) {
-        HuskDualMapping m = { rw, rx, size };
-        atomic_store(&g_jit_available, true);
-        g_self_route = "plain";
-        HUSK_LOG("self: PASS -- %zu MiB of plain memory (%s), rx=%p rw=%p", size >> 20,
-                 debugged ? "process is debugged" : "jailbreak allows invalid pages", (void *)rx, (void *)rw);
-        return m;
+    /* Two layouts: writable+executable asked for and then made read+execute (the kernel drops execute from the first), or
+     * read+execute from the start, as UTM and Dolphin map it. Each step that fails says so (#127: an A15 on iOS 18 with
+     * CS_DEBUGGED set failed one of them without saying which). */
+    static const int first_prot[2] = { PROT_READ | PROT_WRITE | PROT_EXEC, PROT_READ | PROT_EXEC };
+    static const char *const layout[2] = { "rwx then rx", "rx" };
+    for (int i = 0; i < 2; i++) {
+        rx = mmap(base, size, first_prot[i], MAP_FIXED | MAP_PRIVATE | MAP_ANON, -1, 0);
+        if (rx == MAP_FAILED) { HUSK_LOG("self: plain (%s): mmap failed: %s", layout[i], strerror(errno)); continue; }
+        uint8_t *rw = husk_rw_alias(rx, size, true);
+        if (!rw) { HUSK_LOG("self: plain (%s): no writable alias", layout[i]); continue; }
+        kern_return_t kr = vm_protect(mach_task_self(), (vm_address_t)rx, size, FALSE, VM_PROT_READ | VM_PROT_EXECUTE);
+        if (kr != KERN_SUCCESS) {
+            HUSK_LOG("self: plain (%s): vm_protect r-x failed: %d (%s)", layout[i], (int)kr, mach_error_string(kr));
+            continue;
+        }
+        if (!husk_page_is_executable(rx)) { HUSK_LOG("self: plain (%s): the kernel did not keep execute on the page", layout[i]); continue; }
+        if (husk_self_selftest(rx, rw)) {
+            HuskDualMapping m = { rw, rx, size };
+            atomic_store(&g_jit_available, true);
+            g_self_route = "plain";
+            HUSK_LOG("self: PASS -- %zu MiB of plain memory (%s, %s), rx=%p rw=%p", size >> 20,
+                     debugged ? "process is debugged" : "jailbreak allows invalid pages", layout[i], (void *)rx, (void *)rw);
+            return m;
+        }
+        HUSK_LOG("self: plain (%s): code written through the alias faulted or returned the wrong value", layout[i]);
     }
     HUSK_LOG("self: plain memory did not execute (%s)", debugged ? "debugged" : "jailbroken");
     munmap(base, size * 2);
@@ -458,10 +474,47 @@ HUSK_EXPORT bool husk_ios_jit_prewarm(size_t bytes)
     return husk_prewarmed.rw_addr != NULL;
 }
 
+/*
+ * Before iOS 26, without a trap: the region made by this process itself (MAP_JIT, or plain memory where the process is marked as
+ * debugged or the jailbreak allows invalid pages). For TrollStore's and Dopamine's attach, which answers no brk (#148).
+ */
+HUSK_EXPORT bool husk_ios_jit_prewarm_self(size_t bytes)
+{
+    if (husk_prewarmed.rw_addr) return true;
+    HuskDualMapping m = husk_self_dual_mapping(bytes);
+    if (!m.rw_addr) return false;
+    husk_prewarmed = m;
+    husk_prewarm_done = true;
+    fprintf(stderr, "[husk-jit] prewarm (self, %s) OK: %zu bytes\n", g_self_route ? g_self_route : "?", m.size);
+    return true;
+}
+
 /* The held region, for the native runtime (translation-layer/husk-tl-load.c looks this up by name). */
 HUSK_EXPORT HuskDualMapping *husk_ios_jit_get_mapping(void)
 {
     return husk_prewarmed.rw_addr ? &husk_prewarmed : NULL;
+}
+
+/*
+ * One region, two users. The native runtime writes from the bottom of it and QEMU's TCG takes the top, so an Android app
+ * started while Android itself runs (or Android started after one) does not write its code over the other's: that ended in
+ * SIGILL inside cpu_tb_exec. Whichever comes second and does not fit gets a failure instead.
+ */
+static pthread_mutex_t husk_share_lock = PTHREAD_MUTEX_INITIALIZER;
+static size_t husk_runtime_high;   /* bytes from the bottom the native runtime has taken */
+static size_t husk_qemu_top;       /* bytes at the top QEMU holds */
+
+HUSK_EXPORT bool husk_ios_jit_reserve_bottom(size_t end)
+{
+    pthread_mutex_lock(&husk_share_lock);
+    bool ok = end <= husk_prewarmed.size - husk_qemu_top;
+    if (ok && end > husk_runtime_high) husk_runtime_high = end;
+    pthread_mutex_unlock(&husk_share_lock);
+    if (!ok) {
+        fprintf(stderr, "[husk-jit] the native runtime wants %zu MiB of the JIT region, but QEMU holds its top %zu MiB\n",
+                end >> 20, husk_qemu_top >> 20);
+    }
+    return ok;
 }
 
 HuskDualMapping husk_ios_jit_allocate(size_t bytes)
@@ -472,9 +525,21 @@ HuskDualMapping husk_ios_jit_allocate(size_t bytes)
      * path -- the fallback below only runs if prewarm never happened.
      */
     if (husk_prewarmed.rw_addr && husk_prewarmed.size >= bytes) {
-        fprintf(stderr, "[husk-jit] using the prewarmed region (%zu bytes)\n",
-                husk_prewarmed.size);
-        return husk_prewarmed;
+        size_t off = (husk_prewarmed.size - bytes) & ~(size_t)0x3FFF;
+        pthread_mutex_lock(&husk_share_lock);
+        bool fits = husk_runtime_high <= off;
+        if (fits) husk_qemu_top = husk_prewarmed.size - off;
+        pthread_mutex_unlock(&husk_share_lock);
+        if (!fits) {
+            fprintf(stderr, "[husk-jit] the native runtime already uses %zu MiB of the %zu MiB region; no room for %zu MiB of TCG\n",
+                    husk_runtime_high >> 20, husk_prewarmed.size >> 20, bytes >> 20);
+            HuskDualMapping none = { NULL, NULL, 0 };
+            return none;
+        }
+        fprintf(stderr, "[husk-jit] using the top %zu MiB of the prewarmed region (%zu MiB)\n",
+                (husk_prewarmed.size - off) >> 20, husk_prewarmed.size >> 20);
+        HuskDualMapping top = { husk_prewarmed.rw_addr + off, husk_prewarmed.rx_addr + off, husk_prewarmed.size - off };
+        return top;
     }
     /*
      * No second trap after a prewarm already went unanswered.
@@ -565,13 +630,31 @@ static HuskDualMapping husk_ios_jit_allocate_real(size_t bytes)
 
     /* Writable alias of the same physical pages. Purely local -- no debugger
      * involvement, and therefore still available after detach. */
+    /* Near the executable view: the translation layer's loader retargets code at this alias with adrp, which reaches +-4 GiB,
+     * and a kernel left to choose (VM_FLAGS_ANYWHERE) can put it hundreds of GiB away (seen on iOS 27). Free addresses after
+     * the region, then before it, in 16 MiB steps out to 2 GiB; anywhere only if none is free. */
     vm_address_t rw = 0;
     vm_prot_t cur_prot = VM_PROT_NONE, max_prot = VM_PROT_NONE;
-    kern_return_t kr = vm_remap(mach_task_self(), &rw, (vm_size_t)bytes,
-                                /*mask=*/0, VM_FLAGS_ANYWHERE,
-                                mach_task_self(), (vm_address_t)rx,
-                                /*copy=*/FALSE, &cur_prot, &max_prot,
-                                VM_INHERIT_NONE);
+    kern_return_t kr = KERN_NO_SPACE;
+    const uintptr_t step = 16u << 20, reach = (uintptr_t)2 << 30;
+    for (uintptr_t off = 0; off <= reach && kr != KERN_SUCCESS; off += step) {
+        for (int side = 0; side < 2 && kr != KERN_SUCCESS; side++) {
+            uintptr_t want = side == 0 ? (uintptr_t)rx + bytes + off : (uintptr_t)rx - bytes - off;
+            if (side == 1 && (uintptr_t)rx < bytes + off + step) continue;
+            rw = (vm_address_t)want;
+            kr = vm_remap(mach_task_self(), &rw, (vm_size_t)bytes, /*mask=*/0, VM_FLAGS_FIXED,
+                          mach_task_self(), (vm_address_t)rx, /*copy=*/FALSE, &cur_prot, &max_prot, VM_INHERIT_NONE);
+        }
+    }
+    if (kr != KERN_SUCCESS) {
+        HUSK_LOG("#%llu: no free space within 2 GiB of rx=%p for the writable view: placing it anywhere", (unsigned long long)n, rx);
+        rw = 0;
+        kr = vm_remap(mach_task_self(), &rw, (vm_size_t)bytes,
+                      /*mask=*/0, VM_FLAGS_ANYWHERE,
+                      mach_task_self(), (vm_address_t)rx,
+                      /*copy=*/FALSE, &cur_prot, &max_prot,
+                      VM_INHERIT_NONE);
+    }
     if (kr != KERN_SUCCESS) {
         HUSK_LOG("#%llu: vm_remap failed for rx=%p size=%zu: %d (%s)",
                  (unsigned long long)n, rx, bytes, (int)kr, mach_error_string(kr));
@@ -786,6 +869,8 @@ HuskDualMapping husk_ios_jit_allocate(size_t bytes)
     return husk_ios_jit_allocate_real(bytes);
 }
 bool husk_ios_jit_prewarm(size_t bytes) { (void)bytes; return false; }
+bool husk_ios_jit_prewarm_self(size_t bytes) { (void)bytes; return false; }
+bool husk_ios_jit_reserve_bottom(size_t end) { (void)end; return true; }
 void husk_ios_jit_release(HuskDualMapping *m) { (void)m; }
 void husk_ios_jit_detach(void) {}
 bool husk_ios_jit_is_available(void) { return false; }
