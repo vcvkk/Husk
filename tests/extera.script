@@ -18,18 +18,27 @@
 26 tap 108 1810
 26.5 shot number
 27 tap 936 1596
-29.5 shot confirm
+29.5 shot confirm0
 30 tap 894 1338
-36 shot sent
-36.5 tap 108 1810
-37 tap 108 1810
-37.5 tap 108 1810
-38 tap 108 1810
-38.5 tap 108 1810
-39.2 shot code
-43 shot after-code
-43.5 type Husk
-44.5 shot name
-45 enter
-51 shot after-name
-56 shot later
+36 tap 936 1596
+38.5 shot confirm1
+39 tap 894 1338
+45 tap 936 1596
+47.5 shot confirm2
+48 tap 894 1338
+54 tap 936 1596
+56.5 shot confirm3
+57 tap 894 1338
+63 shot sent
+63.5 tap 108 1810
+64 tap 108 1810
+64.5 tap 108 1810
+65 tap 108 1810
+65.5 tap 108 1810
+66.5 shot code
+72.5 shot after-code
+73 type Husk
+74 shot name
+74.5 enter
+80.5 shot after-name
+85.5 shot later
