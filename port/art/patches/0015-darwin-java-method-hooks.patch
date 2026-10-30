@@ -152,7 +152,7 @@ index db116f5..182a581 100644
    // Check that we are using the right interpreter.
    if (kIsDebugBuild && self->UseMterp() != CanUseMterp()) {
      // The flag might be currently being updated on all threads. Retry with lock.
-@@ -702,5 +824,146 @@ bool PrevFrameWillRetry(Thread* self, const ShadowFrame& frame) {
+@@ -702,5 +824,145 @@ bool PrevFrameWillRetry(Thread* self, const ShadowFrame& frame) {
    return prev_frame != nullptr && prev_frame->GetForceRetryInstruction();
  }
  
@@ -214,7 +214,6 @@ index db116f5..182a581 100644
 +  }
 +  method->SetEntryPointFromQuickCompiledCodePtrSize(GetQuickToInterpreterBridge(), ps);
 +  method->ClearFastInterpreterToInterpreterInvokeFlag();
-+  VLOG(class_linker) << "husk hook: " << method->PrettyMethod();
 +  return result;
 +}
 +
