@@ -184,6 +184,7 @@ public final class AppRunner {
         if (!a.isFinishing()) { a.huskStart(); a.huskResume(); }
         debugAlert(a);
         debugSql();
+        debugInvoke();
         if (prev != null && !a.isFinishing()) {
             final Activity p = prev;
             // the one below stops once the new one covers it (a translucent or floating window leaves it visible)
@@ -259,6 +260,41 @@ public final class AppRunner {
                     }
                 });
             } catch (Throwable e) { android.util.Log.w("HuskSql", "debug sql: " + e); }
+        }, ms);
+    }
+    /* HUSK_DEBUG_INVOKE=SECONDS|STEP|STEP...: that long after launch, static methods of the app called one after the other,
+     * to reach a native library's code without the app's own way there (a sign-in). A STEP is class#method, then its
+     * arguments after colons: s=text (a String), a=x,y (a String[]), $ (the step before's result, as the parameter's type
+     * takes it). Each result to the log. */
+    private static boolean sDebugInvoke;
+    private static void debugInvoke() {
+        String v = System.getenv("HUSK_DEBUG_INVOKE");
+        if (v == null || sDebugInvoke) return;
+        sDebugInvoke = true;
+        final String[] steps = v.split("\\|");
+        long ms = (long) (Float.parseFloat(steps[0]) * 1000);
+        sHandler.postDelayed(() -> {
+            Object last = null;
+            for (int i = 1; i < steps.length; i++) {
+                String[] parts = steps[i].split(":", -1);
+                int h = parts[0].indexOf('#');
+                try {
+                    Class<?> c = Class.forName(parts[0].substring(0, h), true, classLoader());
+                    String name = parts[0].substring(h + 1);
+                    java.lang.reflect.Method m = null;
+                    for (java.lang.reflect.Method x : c.getDeclaredMethods()) if (x.getName().equals(name) && x.getParameterTypes().length == parts.length - 1) { m = x; break; }
+                    if (m == null) { android.util.Log.w("HuskInvoke", steps[i] + ": no such method"); return; }
+                    m.setAccessible(true);
+                    Object[] args = new Object[parts.length - 1];
+                    for (int k = 1; k < parts.length; k++) {
+                        String a = parts[k];
+                        args[k - 1] = a.equals("$") ? last : a.startsWith("s=") ? a.substring(2) : a.startsWith("a=") ? (a.length() == 2 ? new String[0] : a.substring(2).split(",")) : a;
+                    }
+                    android.util.Log.i("HuskInvoke", "> " + steps[i]);
+                    last = m.invoke(null, args);
+                    android.util.Log.i("HuskInvoke", "= " + last);
+                } catch (Throwable e) { android.util.Log.w("HuskInvoke", steps[i] + ": " + (e.getCause() != null ? e.getCause() : e)); return; }
+            }
         }, ms);
     }
     /** A view tree to the log: each view's class, bounds, visibility, alpha, translation and scroll. */

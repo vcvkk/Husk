@@ -81,7 +81,7 @@
 
 #define CS_HASHTYPE_SHA256          2
 #define CS_SHA256_LEN               32
-#define CS_PAGE_SIZE_LOG2           14  /* 16384 bytes (16 KiB) — matches Apple codesign on arm64 */
+#define CS_PAGE_SIZE_LOG2           14  /* 16384 bytes (16 KiB) */
 #define CS_PAGE_SIZE                (1 << CS_PAGE_SIZE_LOG2)
 
 #define CS_ADHOC                    0x2
@@ -144,15 +144,6 @@ static void buf_put_u32_be(cs_buf *b, uint32_t val) {
 static void buf_put_u64_be(cs_buf *b, uint64_t val) {
     buf_put_u32_be(b, (uint32_t)(val >> 32));
     buf_put_u32_be(b, (uint32_t)val);
-}
-
-static void buf_set_u32_be(cs_buf *b, size_t pos, uint32_t val) {
-    if (pos + 4 <= b->n) {
-        b->b[pos]     = (uint8_t)(val >> 24);
-        b->b[pos + 1] = (uint8_t)(val >> 16);
-        b->b[pos + 2] = (uint8_t)(val >> 8);
-        b->b[pos + 3] = (uint8_t)val;
-    }
 }
 
 /* ------------------------------------------------------------------ ASN.1 DER Helpers */
@@ -227,64 +218,10 @@ typedef struct {
     size_t serial_len;
     const uint8_t *issuer_ptr;
     size_t issuer_len;
-    const uint8_t *subject_ptr;
-    size_t subject_len;
     char team_id[64];
-    char common_name[256];
     int64_t not_after_epoch;
     bool is_rsa;
 } cert_meta;
-
-void tl_log_line(const char *fmt, ...);
-
-/* Walk an X.509 Name (SEQUENCE of SET of SEQUENCE { OID, value }) for CN and a 10-character Team ID OU. */
-static void name_fill_cn_ou(const uint8_t *der, size_t name_pos, size_t name_end, cert_meta *out)
-{
-    size_t pos = name_pos;
-    uint8_t tag = 0;
-    size_t hlen = 0, vlen = 0;
-    if (!parse_tlv(der, name_end, &pos, &tag, &hlen, &vlen) || tag != 0x30) return;
-    size_t end = pos + hlen + vlen;
-    pos += hlen;
-    while (pos < end) {
-        size_t set_at = pos;
-        if (!parse_tlv(der, end, &set_at, &tag, &hlen, &vlen) || tag != 0x31) break;
-        size_t set_end = set_at + hlen + vlen;
-        size_t at = set_at + hlen;
-        while (at < set_end) {
-            size_t seq_at = at;
-            if (!parse_tlv(der, set_end, &seq_at, &tag, &hlen, &vlen) || tag != 0x30) break;
-            size_t seq_end = seq_at + hlen + vlen;
-            size_t oid_at = seq_at + hlen;
-            uint8_t ot = 0;
-            size_t oh = 0, ov = 0;
-            if (!parse_tlv(der, seq_end, &oid_at, &ot, &oh, &ov) || ot != 0x06) {
-                at = seq_end;
-                continue;
-            }
-            const uint8_t *oid = der + oid_at + oh;
-            size_t val_at = oid_at + oh + ov;
-            uint8_t vt = 0;
-            size_t vh = 0, vv = 0;
-            if (!parse_tlv(der, seq_end, &val_at, &vt, &vh, &vv)) {
-                at = seq_end;
-                continue;
-            }
-            const uint8_t *val = der + val_at + vh;
-            if (ov == 3 && oid[0] == 0x55 && oid[1] == 0x04 && oid[2] == 0x03 && !out->common_name[0] && vv > 0) {
-                size_t n = vv < sizeof(out->common_name) - 1 ? vv : sizeof(out->common_name) - 1;
-                memcpy(out->common_name, val, n);
-                out->common_name[n] = '\0';
-            }
-            if (ov == 3 && oid[0] == 0x55 && oid[1] == 0x04 && oid[2] == 0x0b && vv == 10 && !out->team_id[0]) {
-                memcpy(out->team_id, val, 10);
-                out->team_id[10] = '\0';
-            }
-            at = seq_end;
-        }
-        pos = set_end;
-    }
-}
 
 static bool parse_cert_der(const uint8_t *cert_der, size_t cert_len, cert_meta *out) {
     memset(out, 0, sizeof(*out));
@@ -360,10 +297,21 @@ static bool parse_cert_der(const uint8_t *cert_der, size_t cert_len, cert_meta *
 
     /* Subject Name SEQUENCE */
     if (!parse_tlv(cert_der, tbs_end, &pos, &tag, &hlen, &vlen) || tag != 0x30) return false;
-    out->subject_ptr = cert_der + pos;
-    out->subject_len = hlen + vlen;
     size_t subj_end = pos + hlen + vlen;
-    name_fill_cn_ou(cert_der, pos, subj_end, out);
+    /* Find OrganizationalUnitName (OU, OID 2.5.4.11 -> 06 03 55 04 0b) inside Subject */
+    for (size_t i = pos; i + 7 < subj_end; i++) {
+        if (cert_der[i] == 0x06 && cert_der[i+1] == 0x03 && cert_der[i+2] == 0x55 &&
+            cert_der[i+3] == 0x04 && cert_der[i+4] == 0x0b) {
+            size_t val_pos = i + 5;
+            uint8_t str_tag = 0; size_t str_hlen = 0, str_vlen = 0;
+            if (parse_tlv(cert_der, subj_end, &val_pos, &str_tag, &str_hlen, &str_vlen)) {
+                size_t copy_len = str_vlen < sizeof(out->team_id) - 1 ? str_vlen : sizeof(out->team_id) - 1;
+                memcpy(out->team_id, cert_der + val_pos + str_hlen, copy_len);
+                out->team_id[copy_len] = '\0';
+                break;
+            }
+        }
+    }
     pos = subj_end;
 
     /* SubjectPublicKeyInfo SEQUENCE */
@@ -419,7 +367,7 @@ static const uint8_t sha256_alg_null[] = {
  * developer certificate and its key): set by husk_codesign_chain_from_executable from the certificates in the app's own signature,
  * which the store signed with this same certificate and its full chain.
  */
-#define CHAIN_MAX 8
+#define CHAIN_MAX 4
 static struct { uint8_t *der; size_t len; } g_chain[CHAIN_MAX];
 static int g_nchain;
 
@@ -427,37 +375,6 @@ static bool chain_has(const uint8_t *der, size_t len)
 {
     for (int i = 0; i < g_nchain; i++) if (g_chain[i].len == len && !memcmp(g_chain[i].der, der, len)) return true;
     return false;
-}
-
-static bool cert_is_root(const uint8_t *der, size_t len)
-{
-    cert_meta m;
-    if (!parse_cert_der(der, len, &m) || !m.issuer_ptr || !m.subject_ptr) return true;
-    return m.issuer_len == m.subject_len && memcmp(m.issuer_ptr, m.subject_ptr, m.issuer_len) == 0;
-}
-
-/* Intermediates only: a self-signed root in the CMS bag makes iOS AMFI report
- * "code signature invalid" even when macOS codesign --verify accepts the same blob. */
-static bool chain_add(const uint8_t *der, size_t len)
-{
-    if (!der || len < 64 || len > 8192 || der[0] != 0x30) return false;
-    if (chain_has(der, len) || g_nchain >= CHAIN_MAX) return false;
-    if (cert_is_root(der, len)) return false;
-    uint8_t *copy = (uint8_t *)malloc(len);
-    if (!copy) return false;
-    memcpy(copy, der, len);
-    g_chain[g_nchain].der = copy;
-    g_chain[g_nchain].len = len;
-    g_nchain++;
-    return true;
-}
-
-/* SideStore/AltStore .p12 files hold only the leaf. Always embed Apple's public WWDR G3
- * so iOS can build a trust path (CSSMERR_TP_NOT_TRUSTED / errno=1 otherwise). */
-#include "husk-tl-codesign-wwdr.inc"
-static void ensure_wwdr_in_chain(void)
-{
-    chain_add(k_apple_wwdr_g3, sizeof(k_apple_wwdr_g3));
 }
 
 static bool build_cms_signed_data(const uint8_t *cdhash, size_t cdhash_len,
@@ -637,9 +554,8 @@ static bool build_cms_signed_data(const uint8_t *cdhash, size_t cdhash_len,
     static const uint8_t encap[] = { 0x30, 0x0b, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x07, 0x01 };
     buf_put(&sdata, encap, sizeof(encap));
 
-    /* [0] IMPLICIT certificates — leaf first, then unique intermediates. Never a self-signed root. */
+    /* [0] IMPLICIT certificates */
     size_t certs_start = sdata.n;
-    int ncerts = 1;
     buf_put(&sdata, leaf_cert_der, leaf_cert_len);
     if (extra_certs) {
         CFIndex count = CFArrayGetCount(extra_certs);
@@ -647,25 +563,19 @@ static bool build_cms_signed_data(const uint8_t *cdhash, size_t cdhash_len,
             SecCertificateRef c = (SecCertificateRef)CFArrayGetValueAtIndex(extra_certs, i);
             CFDataRef cd = SecCertificateCopyData(c);
             if (cd) {
-                const uint8_t *p = CFDataGetBytePtr(cd);
-                size_t n = (size_t)CFDataGetLength(cd);
-                if (n != leaf_cert_len || memcmp(p, leaf_cert_der, leaf_cert_len) != 0) {
-                    if (!chain_has(p, n) && !cert_is_root(p, n)) {
-                        buf_put(&sdata, p, n);
-                        ncerts++;
-                    }
+                if ((CFDataGetLength(cd) != leaf_cert_len ||
+                     memcmp(CFDataGetBytePtr(cd), leaf_cert_der, leaf_cert_len) != 0)
+                    && !chain_has(CFDataGetBytePtr(cd), (size_t)CFDataGetLength(cd))) {
+                    buf_put(&sdata, CFDataGetBytePtr(cd), CFDataGetLength(cd));
                 }
                 CFRelease(cd);
             }
         }
     }
     for (int i = 0; i < g_nchain; i++)
-        if (g_chain[i].len != leaf_cert_len || memcmp(g_chain[i].der, leaf_cert_der, leaf_cert_len) != 0) {
+        if (g_chain[i].len != leaf_cert_len || memcmp(g_chain[i].der, leaf_cert_der, leaf_cert_len) != 0)
             buf_put(&sdata, g_chain[i].der, g_chain[i].len);
-            ncerts++;
-        }
     der_wrap(&sdata, 0xa0, certs_start);
-    tl_log_line("sign: CMS certificates %d (leaf + intermediates, no root)", ncerts);
 
     /* Append signerInfos SET OF */
     buf_put(&sdata, sinfo.b, sinfo.n);
@@ -808,7 +718,7 @@ bool husk_p12_info(const uint8_t *p12, size_t p12_len, const char *password,
 /* ------------------------------------------------------------------ Mach-O Dylib Codesigner */
 
 bool husk_codesign_dylib(const char *path, const uint8_t *p12, size_t p12_len, const char *password,
-                         const char *ident, char *err, size_t errlen)
+                         char *err, size_t errlen)
 {
     if (err && errlen > 0) err[0] = '\0';
     if (!path || !path[0]) {
@@ -889,9 +799,6 @@ bool husk_codesign_dylib(const char *path, const uint8_t *p12, size_t p12_len, c
             if (err && errlen > 0) snprintf(err, errlen, "Failed to parse developer certificate");
             return false;
         }
-        ensure_wwdr_in_chain();
-        tl_log_line("sign: identity CN='%s' team='%s' rsa=%d chain=%d",
-                    meta.common_name, meta.team_id, (int)meta.is_rsa, g_nchain);
     }
 
     /* Read Mach-O dylib */
@@ -970,9 +877,6 @@ bool husk_codesign_dylib(const char *path, const uint8_t *p12, size_t p12_len, c
     struct segment_command_64 *seg_link = NULL;
     struct linkedit_data_command *cmd_cs = NULL;
     const char *dylib_id = NULL;
-    uint64_t exec_base = 0;
-    uint64_t exec_limit = 0;
-    bool has_exec = false;
 
     for (uint32_t i = 0; i < mh->ncmds; i++) {
         struct load_command *lc = (struct load_command *)cmd_ptr;
@@ -980,11 +884,6 @@ bool husk_codesign_dylib(const char *path, const uint8_t *p12, size_t p12_len, c
             struct segment_command_64 *seg = (struct segment_command_64 *)lc;
             if (strcmp(seg->segname, "__TEXT") == 0) seg_text = seg;
             else if (strcmp(seg->segname, "__LINKEDIT") == 0) seg_link = seg;
-            if (seg->initprot & VM_PROT_EXECUTE) {
-                if (!has_exec || seg->fileoff < exec_base) exec_base = seg->fileoff;
-                if (seg->fileoff + seg->filesize > exec_limit) exec_limit = seg->fileoff + seg->filesize;
-                has_exec = true;
-            }
         } else if (lc->cmd == LC_CODE_SIGNATURE) {
             cmd_cs = (struct linkedit_data_command *)lc;
         } else if (lc->cmd == LC_ID_DYLIB) {
@@ -994,40 +893,6 @@ bool husk_codesign_dylib(const char *path, const uint8_t *p12, size_t p12_len, c
             if (slash) dylib_id = slash + 1;
         }
         cmd_ptr += lc->cmdsize;
-    }
-
-    if (has_exec && exec_limit > exec_base) {
-        cmd_ptr = file_bytes + sizeof(struct mach_header_64);
-        for (uint32_t i = 0; i < mh->ncmds; i++) {
-            struct load_command *lc = (struct load_command *)cmd_ptr;
-            if (lc->cmd == LC_SEGMENT_64) {
-                struct segment_command_64 *seg = (struct segment_command_64 *)lc;
-                if ((seg->initprot & VM_PROT_WRITE) && seg->filesize) {
-                    uint64_t lo = seg->fileoff, hi = seg->fileoff + seg->filesize;
-                    if (lo < exec_limit && hi > exec_base) {
-                        fclose(f);
-                        free(file_bytes);
-                        if (has_identity) {
-                            CFRelease(certData);
-                            CFRelease(cert);
-                            CFRelease(privKey);
-                            CFRelease(items);
-#if !TARGET_OS_IPHONE
-                            macos_cleanup_temp_keychain(kc, kc_path);
-#endif
-                        }
-                        if (err && errlen > 0)
-                            snprintf(err, errlen,
-                                     "writable %s [0x%llx,0x%llx) overlaps execSeg [0x%llx,0x%llx); AMFI rejects this as an invalid signature",
-                                     seg->segname,
-                                     (unsigned long long)lo, (unsigned long long)hi,
-                                     (unsigned long long)exec_base, (unsigned long long)exec_limit);
-                        return false;
-                    }
-                }
-            }
-            cmd_ptr += lc->cmdsize;
-        }
     }
 
     if (!seg_text || !seg_link) {
@@ -1046,7 +911,6 @@ bool husk_codesign_dylib(const char *path, const uint8_t *p12, size_t p12_len, c
         return false;
     }
 
-    if (ident && ident[0]) dylib_id = ident;
     if (!dylib_id || !dylib_id[0]) {
         const char *slash = strrchr(path, '/');
         dylib_id = slash ? slash + 1 : path;
@@ -1078,79 +942,30 @@ bool husk_codesign_dylib(const char *path, const uint8_t *p12, size_t p12_len, c
     cs_buf req_buf;
     buf_init(&req_buf);
     if (has_identity) {
-        cs_buf req_expr;
-        buf_init(&req_expr);
-        buf_put_u32_be(&req_expr, CSMAGIC_REQUIREMENT);
-        size_t inner_len_pos = req_expr.n;
-        buf_put_u32_be(&req_expr, 0); /* inner length placeholder */
-        buf_put_u32_be(&req_expr, 1); /* kind = 1 */
-
         size_t id_len = strlen(dylib_id);
         size_t id_pad = (4 - (id_len % 4)) % 4;
+        uint32_t req_inner_len = 20 + (uint32_t)id_len + (uint32_t)id_pad;
 
-        if (meta.common_name[0]) {
-            /* Full Apple designated requirement (right-associative tree, byte-identical to `codesign`):
-             * and(ident, and(apple generic anchor, and(leaf subject.CN, cert1 WWDR OID exists)))
-             */
-            buf_put_u32_be(&req_expr, 6); /* opAnd */
-
-            buf_put_u32_be(&req_expr, 2); /* opIdent */
-            buf_put_u32_be(&req_expr, (uint32_t)id_len);
-            buf_put(&req_expr, dylib_id, id_len);
-            for (size_t p = 0; p < id_pad; p++) buf_put_byte(&req_expr, 0);
-
-            buf_put_u32_be(&req_expr, 6); /* opAnd */
-            buf_put_u32_be(&req_expr, 15); /* opAppleGenericAnchor */
-
-            buf_put_u32_be(&req_expr, 6); /* opAnd */
-
-            buf_put_u32_be(&req_expr, 11); /* opCertField */
-            buf_put_u32_be(&req_expr, 0);  /* cert 0 (leaf) */
-            static const char cn_field[] = "subject.CN";
-            size_t fld_len = strlen(cn_field);
-            size_t fld_pad = (4 - (fld_len % 4)) % 4;
-            buf_put_u32_be(&req_expr, (uint32_t)fld_len);
-            buf_put(&req_expr, cn_field, fld_len);
-            for (size_t p = 0; p < fld_pad; p++) buf_put_byte(&req_expr, 0);
-            buf_put_u32_be(&req_expr, 1);  /* matchEqual */
-            size_t cn_len = strlen(meta.common_name);
-            size_t cn_pad = (4 - (cn_len % 4)) % 4;
-            buf_put_u32_be(&req_expr, (uint32_t)cn_len);
-            buf_put(&req_expr, meta.common_name, cn_len);
-            for (size_t p = 0; p < cn_pad; p++) buf_put_byte(&req_expr, 0);
-
-            buf_put_u32_be(&req_expr, 14); /* opCertGeneric */
-            buf_put_u32_be(&req_expr, 1);  /* cert 1 (intermediate) */
-            static const uint8_t wwdr_oid[10] = { 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x63, 0x64, 0x06, 0x02, 0x01 };
-            buf_put_u32_be(&req_expr, sizeof(wwdr_oid));
-            buf_put(&req_expr, wwdr_oid, sizeof(wwdr_oid));
-            for (size_t p = 0; p < (4 - (sizeof(wwdr_oid) % 4)) % 4; p++) buf_put_byte(&req_expr, 0);
-            buf_put_u32_be(&req_expr, 0);  /* matchExists */
-        } else {
-            /* Fallback to simple identifier */
-            buf_put_u32_be(&req_expr, 2); /* opIdent */
-            buf_put_u32_be(&req_expr, (uint32_t)id_len);
-            buf_put(&req_expr, dylib_id, id_len);
-            for (size_t p = 0; p < id_pad; p++) buf_put_byte(&req_expr, 0);
-        }
-
-        uint32_t req_inner_len = (uint32_t)req_expr.n;
-        buf_set_u32_be(&req_expr, inner_len_pos, req_inner_len);
-
-        /* SuperBlob wrapper */
         buf_put_u32_be(&req_buf, CSMAGIC_REQUIREMENTS);
         buf_put_u32_be(&req_buf, 12 + 8 + req_inner_len);
         buf_put_u32_be(&req_buf, 1);  /* count = 1 */
-        buf_put_u32_be(&req_buf, 3);  /* type = kSecDesignatedRequirementType */
+        buf_put_u32_be(&req_buf, 1);  /* type = kSecDesignatedRequirementType */
         buf_put_u32_be(&req_buf, 20); /* offset = 20 */
-        buf_put(&req_buf, req_expr.b, req_expr.n);
-        buf_free(&req_expr);
+
+        buf_put_u32_be(&req_buf, CSMAGIC_REQUIREMENT);
+        buf_put_u32_be(&req_buf, req_inner_len);
+        buf_put_u32_be(&req_buf, 1);  /* kind = 1 */
+        buf_put_u32_be(&req_buf, 2);  /* opIdent = 2 */
+        buf_put_u32_be(&req_buf, (uint32_t)id_len);
+        buf_put(&req_buf, dylib_id, id_len);
+        for (size_t p = 0; p < id_pad; p++) buf_put_byte(&req_buf, 0);
     } else {
         /* Ad-hoc requirements vector */
         buf_put_u32_be(&req_buf, CSMAGIC_REQUIREMENTS);
         buf_put_u32_be(&req_buf, 12);
         buf_put_u32_be(&req_buf, 0);  /* count = 0 */
     }
+
     uint8_t req_sha256[32];
     CC_SHA256(req_buf.b, (CC_LONG)req_buf.n, req_sha256);
 
@@ -1263,8 +1078,8 @@ bool husk_codesign_dylib(const char *path, const uint8_t *p12, size_t p12_len, c
     buf_put_u32_be(&cd, 0); /* teamOffset placeholder */
     buf_put_u32_be(&cd, 0); /* spare3 */
     buf_put_u64_be(&cd, 0); /* codeLimit64 */
-    buf_put_u64_be(&cd, has_exec ? exec_base : seg_text->fileoff);
-    buf_put_u64_be(&cd, has_exec ? (exec_limit - exec_base) : seg_text->filesize);
+    buf_put_u64_be(&cd, seg_text->fileoff);
+    buf_put_u64_be(&cd, seg_text->filesize);
     buf_put_u64_be(&cd, 0); /* execSegFlags */
 
     uint32_t ident_off = (uint32_t)cd.n;
@@ -1307,13 +1122,11 @@ bool husk_codesign_dylib(const char *path, const uint8_t *p12, size_t p12_len, c
     if (has_identity) {
         if (!build_cms_signed_data(cdhash, sizeof(cdhash),
                                   CFDataGetBytePtr(certData), (size_t)CFDataGetLength(certData),
-                                  &meta, chain, privKey, &cms) || cms.n != cms_len) {
-            size_t got = cms.n;
+                                  &meta, chain, privKey, &cms)) {
             fclose(f);
             free(file_bytes);
             buf_free(&cd);
             buf_free(&req_buf);
-            buf_free(&cms);
             CFRelease(certData);
             CFRelease(cert);
             CFRelease(privKey);
@@ -1321,7 +1134,7 @@ bool husk_codesign_dylib(const char *path, const uint8_t *p12, size_t p12_len, c
 #if !TARGET_OS_IPHONE
             macos_cleanup_temp_keychain(kc, kc_path);
 #endif
-            if (err && errlen > 0) snprintf(err, errlen, "Failed to generate CMS signature (len %zu vs probe %zu)", got, cms_len);
+            if (err && errlen > 0) snprintf(err, errlen, "Failed to generate CMS signature");
             return false;
         }
     }
@@ -1368,9 +1181,6 @@ bool husk_codesign_dylib(const char *path, const uint8_t *p12, size_t p12_len, c
     fwrite(sb.b, 1, sb.n, f);
     ftruncate(fileno(f), dataoff + sb.n);
     fclose(f);
-    tl_log_line("sign: %s ident='%s' codeLimit=0x%zx pages=%zu page=%u KiB blob=%u team=%s",
-                path, dylib_id, dataoff, n_pages, CS_PAGE_SIZE / 1024, (unsigned)sb.n,
-                has_identity ? meta.team_id : "adhoc");
 
     /* Clean up resources */
     buf_free(&cd);
@@ -1472,7 +1282,11 @@ int husk_codesign_chain_from_executable(const char *path)
                     const uint8_t *cv; size_t cn;
                     if (!der_next(c, ce, &tag, &cv, &cn)) break;
                     size_t whole = (size_t)(der_after(c, cv, cn) - c);
-                    if (tag == 0x30 && chain_add(c, whole)) found++;
+                    if (tag == 0x30 && g_nchain < CHAIN_MAX && !chain_has(c, whole) && (g_chain[g_nchain].der = malloc(whole))) {
+                        memcpy(g_chain[g_nchain].der, c, whole);
+                        g_chain[g_nchain++].len = whole;
+                        found++;
+                    }
                     c = der_after(c, cv, cn);
                 }
                 break;
@@ -1481,6 +1295,5 @@ int husk_codesign_chain_from_executable(const char *path)
     }
     free(sig);
     fclose(f);
-    ensure_wwdr_in_chain();
     return found;
 }
