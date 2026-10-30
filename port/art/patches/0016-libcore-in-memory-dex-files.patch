@@ -1,0 +1,22 @@
+diff --git a/libcore/dalvik/src/main/java/dalvik/system/DexFile.java b/libcore/dalvik/src/main/java/dalvik/system/DexFile.java
+index c9906742..fd30aa68 100644
+--- a/libcore/dalvik/src/main/java/dalvik/system/DexFile.java
++++ b/libcore/dalvik/src/main/java/dalvik/system/DexFile.java
+@@ -360,11 +360,12 @@ public final class DexFile {
+     }
+ 
+     private static Object openInMemoryDexFile(ByteBuffer buf) throws IOException {
+-        if (buf.isDirect()) {
+-            return createCookieWithDirectBuffer(buf, buf.position(), buf.limit());
+-        } else {
+-            return createCookieWithArray(buf.array(), buf.position(), buf.limit());
+-        }
++        // Husk: the runtime here has openInMemoryDexFilesNative and not the createCookieWith* natives this used
++        // (InMemoryDexClassLoader: apps that make classes at run time, exteraGram's plugins)
++        ByteBuffer[] bufs = { buf.isDirect() ? buf : null };
++        byte[][] arrays = { buf.isDirect() ? null : buf.array() };
++        return openInMemoryDexFilesNative(bufs, arrays, new int[] { buf.position() }, new int[] { buf.limit() },
++                                          null, null);
+     }
+ 
+     private static native Object openInMemoryDexFilesNative(ByteBuffer[] bufs, byte[][] arrays,
