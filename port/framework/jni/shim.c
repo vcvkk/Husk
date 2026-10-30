@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /* The framework natives' interface on JNI (shim.h). */
 #include "shim.h"
+#include <time.h>
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -142,13 +143,34 @@ bool shim_register(JNIEnv *env, const char *cls, const JNINativeMethod *m, int n
 
 /* ---- what the natives call */
 
+/* HUSK_LOG_TIME: each line after the seconds since the first, to see where time goes; one write a line either way */
 void tl_log_line(const char *fmt, ...)
 {
+    static int timed = -1;
+    static struct timespec t0;
+    if (timed < 0) { timed = getenv("HUSK_LOG_TIME") != NULL; clock_gettime(CLOCK_MONOTONIC, &t0); }
+    char buf[2048];
+    int n = 0;
+    if (timed) {
+        struct timespec t;
+        clock_gettime(CLOCK_MONOTONIC, &t);
+        n = snprintf(buf, sizeof buf, "[%8.3f] ", (double)(t.tv_sec - t0.tv_sec) + (t.tv_nsec - t0.tv_nsec) / 1e9);
+    }
     va_list ap;
     va_start(ap, fmt);
-    vfprintf(stderr, fmt, ap);
-    fputc('\n', stderr);
+    int m = vsnprintf(buf + n, sizeof buf - (size_t)n - 1, fmt, ap);
     va_end(ap);
+    if (m < 0) m = 0;
+    if ((size_t)(n + m) >= sizeof buf - 1) {      /* longer than the buffer: as it was, in pieces */
+        fwrite(buf, 1, (size_t)n, stderr);
+        va_start(ap, fmt);
+        vfprintf(stderr, fmt, ap);
+        va_end(ap);
+        fputc('\n', stderr);
+        return;
+    }
+    buf[n + m] = '\n';
+    fwrite(buf, 1, (size_t)(n + m + 1), stderr);
 }
 
 const char *tl_jni_string(jobj *s)
