@@ -21,8 +21,12 @@
 29.5 shot confirm
 30 tap 894 1338
 36 shot sent
-36.5 type 22222
-37 shot code
+36.5 tap 456 1810
+37 tap 456 1810
+37.5 tap 456 1810
+38 tap 456 1810
+38.5 tap 456 1810
+39.2 shot code
 43 shot after-code
 43.5 type Husk
 44.5 shot name
