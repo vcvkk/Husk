@@ -78,6 +78,10 @@ jobs:
             -Dtl_jni_ref=tln_jni_ref -Dtl_jni_pending=tln_jni_pending -Dtl_jni_clear=tln_jni_clear -Wno-everything \
             tools/so2dylib.c port/native/tl/*.c port/native/glue.c -o build/so2dylib -lz -framework CoreFoundation -framework Security
           build/so2dylib build/aot build/so/*.so 2>&1 | grep -v "^ld:" | tail -40
+          # and the ones its Python plugins load (Chaquopy unpacks them from its assets at run time)
+          python3 tools/apk-python-libs.py build/app.apk build/so-py > build/so-py.txt
+          echo "Python's libraries: $(wc -l < build/so-py.txt)"
+          xargs build/so2dylib build/aot < build/so-py.txt 2>&1 | grep -v "^ld:" | tail -40
           tar -czf build/extera-aot.tgz -C build aot
           ls -la build/extera-aot.tgz
       - uses: actions/upload-artifact@v4
@@ -126,6 +130,8 @@ jobs:
             -Dtl_jni_ref=tln_jni_ref -Dtl_jni_pending=tln_jni_pending -Dtl_jni_clear=tln_jni_clear -Wno-everything \
             tools/so2dylib.c port/native/tl/*.c port/native/glue.c -o build/so2dylib -lz -framework CoreFoundation -framework Security
           build/so2dylib --macos build/aot-mac build/so/*.so 2>&1 | grep -v "^ld:" | tail -30
+          python3 tools/apk-python-libs.py build/app/app/base.apk build/so-py > build/so-py.txt
+          xargs build/so2dylib --macos build/aot-mac < build/so-py.txt 2>&1 | grep -v "^ld:" | tail -30
           for f in build/aot-mac/*.dylib; do codesign -s - -f "$f"; done
           echo "TL_NO_XMEM=1" >> "$GITHUB_ENV"; echo "TL_AOT_DIR=$PWD/build/aot-mac" >> "$GITHUB_ENV"
       - name: Run it under lldb
