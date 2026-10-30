@@ -4,7 +4,7 @@
  * files, a frame a second. For CI, where it shows what the iOS app would show.
  *
  *   mac-host --art DIR --apk APK [--fwres framework-res.apk] [--data DIR] [--size 1080x2400] [--density 3] [--seconds 20]
- *            [--frames DIR] [--tap X,Y@SECONDS]... [--type TEXT@SECONDS]...
+ *            [--frames DIR] [--tap X,Y@SECONDS]... [--type TEXT@SECONDS]... [--burst SECONDS]
  *
  * --art is a boot image directory (port/art/boot-image.sh's layout) with the framework in it;
  * the APK's compiled code is beside it, in oat/arm64/<apk name>.odex{,.dylib}.
@@ -69,7 +69,7 @@ static void *vsync_main(void *arg)
 int main(int argc, char **argv)
 {
     husk_app_config cfg = { .width = 1080, .height = 2400, .density = 3.0f };
-    int seconds = 20;
+    int seconds = 20, burst = -1;   /* burst: from then 24 frames 40 ms apart, for motion */
     const char *frames = "frames";
     struct { float x, y; int at; } taps[16]; int ntaps = 0;
     struct { char text[256]; int at; } types[8]; int ntypes = 0;   /* text typed, as the keyboard commits it */
@@ -83,6 +83,7 @@ int main(int argc, char **argv)
         else if (!strcmp(k, "--density")) cfg.density = strtof(v, NULL);
         else if (!strcmp(k, "--seconds")) seconds = atoi(v);
         else if (!strcmp(k, "--frames")) frames = v;
+        else if (!strcmp(k, "--burst")) burst = atoi(v);
         else if (!strcmp(k, "--tap") && ntaps < 16) {
             if (sscanf(v, "%f,%f@%d", &taps[ntaps].x, &taps[ntaps].y, &taps[ntaps].at) == 3) ntaps++;
         } else if (!strcmp(k, "--type") && ntypes < 8) {
@@ -120,6 +121,16 @@ int main(int argc, char **argv)
             fprintf(stderr, "mac-host: type %s\n", types[i].text);
             husk_app_text(types[i].text);
         }
+        if (burst >= 0 && tenth == burst * 10)
+            for (int k = 0; k < 24; k++) {
+                usleep(40000);
+                const uint8_t *px; int w, h; bool any;
+                if (!husk_frame_take(&px, &w, &h, &any)) continue;
+                char path[1200];
+                snprintf(path, sizeof path, "%s/burst-%02d.png", frames, k);
+                if (any) write_png(path, px, w, h);
+                husk_frame_done();
+            }
         if (tenth % 10 != 9) continue;
         const uint8_t *px; int w, h; bool any;
         if (!husk_frame_take(&px, &w, &h, &any)) continue;
