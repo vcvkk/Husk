@@ -88,14 +88,16 @@ public class TextureView extends View {
     @Override public void draw(Canvas c) {
         super.draw(c);
         SurfaceTexture t = mTexture;
-        Bitmap f = t != null ? t.huskFront() : null;
+        Bitmap f = t != null ? t.huskBeginDraw() : null;
         if (f != null) {
+            try {
+                int save = c.save();
+                c.concat(mMatrix);
+                Paint p = mLayerPaint != null ? mLayerPaint : mPaint;
+                c.drawBitmap(f, null, new Rect(0, 0, getWidth(), getHeight()), p);
+                c.restoreToCount(save);
+            } finally { t.huskEndDraw(); }
             if (f != mShown) { mShown = f; if (mListener != null) mListener.onSurfaceTextureUpdated(t); }
-            int save = c.save();
-            c.concat(mMatrix);
-            Paint p = mLayerPaint != null ? mLayerPaint : mPaint;
-            c.drawBitmap(f, null, new Rect(0, 0, getWidth(), getHeight()), p);
-            c.restoreToCount(save);
         }
     }
     public Bitmap getBitmap() { return getWidth() > 0 && getHeight() > 0 ? getBitmap(getWidth(), getHeight()) : null; }

@@ -13,6 +13,8 @@ public class SurfaceTexture {
     private final Object mLock = new Object();
     private int mW, mH;
     private Bitmap mFront, mBack;
+    /* the frame the consumer is drawing right now, and a third buffer for the producer while that is its back one */
+    private Bitmap mDrawing, mSpare;
     private Canvas mBackCanvas;
     private boolean mLocked, mReleased;
     private long mTimestamp;
@@ -37,6 +39,12 @@ public class SurfaceTexture {
             if (mReleased) return null;
             while (mLocked) { try { mLock.wait(); } catch (InterruptedException e) { return null; } if (mReleased) return null; }
             int w = mW > 0 ? mW : 1, h = mH > 0 ? mH : 1;
+            if (mBack != null && mBack == mDrawing) {
+                Bitmap b = mBack; mBack = mSpare; mSpare = b;
+                if (mBackCanvas != null) mBackCanvas.huskRelease();
+                mBackCanvas = mBack != null && mBack.getWidth() == w && mBack.getHeight() == h ? new Canvas(mBack) : null;
+                if (mBackCanvas == null) mBack = null;
+            }
             if (mBack == null || mBack.getWidth() != w || mBack.getHeight() != h) {
                 if (mBackCanvas != null) mBackCanvas.huskRelease();
                 mBack = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
@@ -81,6 +89,9 @@ public class SurfaceTexture {
     }
     /** The latest frame (null before the first). */
     public Bitmap huskFront() { synchronized (mLock) { return mFront; } }
+    /** The latest frame, kept from the producer until huskEndDraw: it draws its next ones elsewhere meanwhile. */
+    public Bitmap huskBeginDraw() { synchronized (mLock) { mDrawing = mFront; return mFront; } }
+    public void huskEndDraw() { synchronized (mLock) { mDrawing = null; } }
     public void updateTexImage() { if (mReleased) throw new IllegalStateException("updateTexImage on a released SurfaceTexture"); }
     public void releaseTexImage() {}
     public void detachFromGLContext() { mTex = 0; }
