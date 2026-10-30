@@ -118,7 +118,32 @@ static void bm_free(gbitmap *b)
     free(b->px);
     free(b);
 }
-static CGImageRef bm_image(gbitmap *b) { return CGBitmapContextCreateImage(b->ctx); }
+/* The bitmap's pixels as they are now, for one draw: not CGBitmapContextCreateImage, whose image CoreGraphics keeps and hands out
+ * again while it thinks the context unchanged; but Husk's own raster paths, copyPixelsFromBuffer, AndroidBitmap_lockPixels
+ * and GL frames read back write the pixels without it knowing, and the stale image came back (exteraGram's intro showed its
+ * first frame again and again). An image over the memory itself, made each time, always shows what is there. */
+static CGImageRef bm_image(gbitmap *b)
+{
+    CGDataProviderRef d = CGDataProviderCreateWithData(NULL, b->px, b->stride * (size_t)b->h, NULL);
+    if (!d) return NULL;
+    CGImageRef img = CGImageCreate((size_t)b->w, (size_t)b->h, 8, 32, b->stride, rgb(),
+                                   kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big, d, NULL, false, kCGRenderingIntentDefault);
+    CGDataProviderRelease(d);
+    return img;
+}
+/* a copy of the pixels, for an image kept past the call (a bitmap shader's) */
+static CGImageRef bm_image_copy(gbitmap *b)
+{
+    CFDataRef data = CFDataCreate(NULL, b->px, (CFIndex)(b->stride * (size_t)b->h));
+    if (!data) return NULL;
+    CGDataProviderRef d = CGDataProviderCreateWithCFData(data);
+    CFRelease(data);
+    if (!d) return NULL;
+    CGImageRef img = CGImageCreate((size_t)b->w, (size_t)b->h, 8, 32, b->stride, rgb(),
+                                   kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big, d, NULL, false, kCGRenderingIntentDefault);
+    CGDataProviderRelease(d);
+    return img;
+}
 
 /* ARGB (unpremultiplied, as Android hands colours) to and from the premultiplied RGBA bytes */
 static inline uint32_t to_argb(const uint8_t *p)
@@ -2647,7 +2672,7 @@ NAT(G_cvDrawBitmap)
     float sl = a[2].f, st = a[3].f, sr = a[4].f, sb = a[5].f, dl = a[6].f, dt = a[7].f, dr = a[8].f, db = a[9].f;
     if (sr - sl <= 0 || sb - st <= 0 || dr - dl == 0 || db - dt == 0) return true;
     if (blit(v, b, sl, st, sr, sb, dl, dt, dr, db, q)) return true;
-    CGImageRef full = bm_image(b);
+    CGImageRef full = b == v->bm ? bm_image_copy(b) : bm_image(b);   /* onto itself: what it was */
     bool whole = sl == 0 && st == 0 && sr == b->w && sb == b->h;
     CGImageRef img = whole ? full : CGImageCreateWithImageInRect(full, CGRectMake(sl, st, sr - sl, sb - st));
     CGContextRef c = cg(v);
@@ -2675,7 +2700,7 @@ NAT(G_cvDrawBitmapM)
     const int32_t *p = paint_of(a[3].l);
     int32_t q[P_COUNT]; memcpy(q, p, sizeof(q));
     if (!a[3].l) q[P_FLAGS] |= PF_FILTER;
-    CGImageRef img = bm_image(b);
+    CGImageRef img = b == v->bm ? bm_image_copy(b) : bm_image(b);
     CGContextRef c = cg(v);
     bool layered;
     if (paint_begin(c, q, &layered)) {
@@ -2894,7 +2919,7 @@ NAT(G_shBitmap)
     gbitmap *b = H(gbitmap, 0);
     gshader *s = calloc(1, sizeof(*s));
     s->kind = SH_BITMAP; s->tile = a[1].i; s->local = CGAffineTransformIdentity;
-    if (b) { s->image = bm_image(b); s->iw = b->w; s->ih = b->h; }
+    if (b) { s->image = bm_image_copy(b); s->iw = b->w; s->ih = b->h; }
     *ret = J((int64_t)(uintptr_t)s);
     return true;
 }
