@@ -208,8 +208,12 @@ public final class AppRunner {
                 Object o = b.getConstructor(Context.class).newInstance(t);
                 b.getMethod("setTitle", CharSequence.class).invoke(o, "Clear local database");
                 b.getMethod("setMessage", CharSequence.class).invoke(o, "This will delete the text messages kept on this device. The chats stay in the cloud.");
-                b.getMethod("setPositiveButton", CharSequence.class, android.content.DialogInterface.OnClickListener.class).invoke(o, "Clear", null);
-                b.getMethod("setNegativeButton", CharSequence.class, android.content.DialogInterface.OnClickListener.class).invoke(o, "Cancel", null);
+                for (java.lang.reflect.Method m : b.getMethods()) {   /* an app's builder takes its own listener type */
+                    Class<?>[] p = m.getParameterTypes();
+                    if (p.length != 2 || p[0] != CharSequence.class) continue;
+                    if (m.getName().equals("setPositiveButton")) m.invoke(o, "Clear", null);
+                    else if (m.getName().equals("setNegativeButton")) m.invoke(o, "Cancel", null);
+                }
                 b.getMethod("show").invoke(o);
                 android.util.Log.i("Husk", "debug alert shown by " + builder);
             } catch (Throwable e) { android.util.Log.w("Husk", "debug alert: " + e); }
