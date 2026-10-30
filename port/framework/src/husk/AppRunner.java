@@ -214,10 +214,22 @@ public final class AppRunner {
                     if (m.getName().equals("setPositiveButton")) m.invoke(o, "Clear", null);
                     else if (m.getName().equals("setNegativeButton")) m.invoke(o, "Cancel", null);
                 }
-                b.getMethod("show").invoke(o);
+                final Object d = b.getMethod("show").invoke(o);
                 android.util.Log.i("Husk", "debug alert shown by " + builder);
+                if (d instanceof android.app.Dialog) sHandler.postDelayed(() -> dumpViews(((android.app.Dialog) d).getWindow().getDecorView(), ""), 1000);
             } catch (Throwable e) { android.util.Log.w("Husk", "debug alert: " + e); }
         }, ms);
+    }
+    /** A view tree to the log: each view's class, bounds, visibility, alpha, translation and scroll. */
+    static void dumpViews(android.view.View v, String indent) {
+        android.util.Log.i("HuskViews", indent + v.getClass().getName() + " [" + v.getLeft() + "," + v.getTop() + " " + v.getWidth() + "x" + v.getHeight()
+            + "] measured " + v.getMeasuredWidth() + "x" + v.getMeasuredHeight() + " vis " + v.getVisibility() + " alpha " + v.getAlpha()
+            + " tr " + v.getTranslationX() + "," + v.getTranslationY() + " scroll " + v.getScrollX() + "," + v.getScrollY()
+            + (v instanceof android.widget.TextView ? " text '" + ((android.widget.TextView) v).getText() + "'" : ""));
+        if (v instanceof android.view.ViewGroup) {
+            android.view.ViewGroup g = (android.view.ViewGroup) v;
+            for (int i = 0; i < g.getChildCount(); i++) dumpViews(g.getChildAt(i), indent + "  ");
+        }
     }
     /** The component an activity was started as: its class, or the alias it was reached through. */
     private static String startedAs(Activity a) {
