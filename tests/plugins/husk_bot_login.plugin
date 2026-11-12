@@ -11,7 +11,6 @@ import os
 import traceback
 
 from base_plugin import BasePlugin
-from ui.settings import Header, Input, Text
 
 __id__ = "husk_bot_login"
 __name__ = "Husk Bot Login"
@@ -51,6 +50,7 @@ class HuskBotLogin(BasePlugin):
         self._login()
 
     def create_settings(self):
+        from ui.settings import Header, Input, Text   # here: at the plugin's import the SDK's ui module may not be there yet
         return [
             Header(text="Bot login"),
             Input(key="token", text="Bot token", default=""),
