@@ -1,15 +1,30 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """
-An lldb stop hook for the macOS test host (.github/workflows/extera.yml): lldb stops at each EXC_BAD_ACCESS; the ones in ART's
-compiled code (boot*.oat.dylib, *.odex.dylib: its implicit null and stack checks, which ART's fault handler answers) go on to
-the process, and any other stops it there with a backtrace whose frames in an Android library are named by the loader
-(tl_ld_symbol_at), as ART's own report on Darwin has no native stack.
+An lldb stop hook for the macOS test host (.github/workflows/extera.yml): lldb stops at each EXC_BAD_ACCESS; ART's own go on to
+the process, whose fault handler answers them (implicit checks in its compiled code: a null reference, which is the heap's base
+here (port/art/patches/0008-heap-above-4gib.patch's kHeapBase) plus a field's offset; a stack overflow probe just under the stack
+pointer; anything in boot*.oat.dylib or *.odex.dylib), and any other stops the run there with a backtrace whose frames in an
+Android library are named by the loader (tl_ld_symbol_at), as ART's own report on Darwin has no native stack.
 
     lldb -o 'command script import tools/lldb_crash_hook.py' -o 'target stop-hook add -P lldb_crash_hook.CrashHook' ...
 """
+import re
+
 import lldb
 
 ART_CODE = ('.oat.dylib', '.odex.dylib')
+HEAP_BASE = 0x7c00000000
+
+
+def art_fault(thread, frame):
+    mod = frame.GetModule().GetFileSpec().GetFilename() or ''
+    if mod.endswith(ART_CODE):
+        return True
+    m = re.search(r'address=(0x[0-9a-fA-F]+)', thread.GetStopDescription(200) or '')
+    if not m:
+        return False
+    addr, sp = int(m.group(1), 16), frame.GetSP()
+    return HEAP_BASE <= addr < HEAP_BASE + (1 << 20) or sp - (1 << 16) <= addr < sp
 
 
 def guest_name(frame, pc):
@@ -31,8 +46,7 @@ class CrashHook:
         if not t.IsValid() or t.GetStopReason() != lldb.eStopReasonException:
             return True
         f0 = t.GetFrameAtIndex(0)
-        mod = f0.GetModule().GetFileSpec().GetFilename() or ''
-        if mod.endswith(ART_CODE):
+        if art_fault(t, f0):
             self.passed += 1
             return False
         stream.Print('crash hook: %s on thread %d "%s" (%d faults in ART code passed before)\n'
