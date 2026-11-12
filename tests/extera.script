@@ -1,45 +1,6 @@
-# The steps tests/extera.env's run takes (mac-host --script): seconds from the start, then the step.
-# Logs in to a Telegram test-server account: country code 999 makes exteraGram switch to the test servers;
-# a number 99966XYYYY there needs no SMS, its code is X five times. Coordinates are in the 1080x2400 frame.
-14 shot intro
-14.5 tap 540 2100
-20 shot phone
-20.5 tap 804 2130
-21 tap 804 2130
-21.5 tap 804 2130
-22 shot code999
-22.5 tap 600 1078
-23 tap 804 1970
-23.5 tap 804 1970
-24 tap 456 1810
-24.5 tap 456 2130
-25 tap 108 1810
-25.5 tap 108 1810
-26 tap 456 1810
-26.5 shot number
-27 tap 936 1596
-29.5 shot confirm0
-30 tap 894 1338
-36 tap 936 1596
-38.5 shot confirm1
-39 tap 894 1338
-45 tap 936 1596
-47.5 shot confirm2
-48 tap 894 1338
-54 tap 936 1596
-56.5 shot confirm3
-57 tap 894 1338
-61 tap 540 1580
-63 shot sent
-63.5 tap 456 1810
-64 tap 456 1810
-64.5 tap 456 1810
-65 tap 456 1810
-65.5 tap 456 1810
-66.5 shot code
-72.5 shot after-code
-73 type Husk
-74 shot name
-74.5 enter
-80.5 shot after-name
-85.5 shot later
+# The steps tests/extera.env's run takes (mac-host --script): seconds from the start, then the step. Coordinates are in the
+# 1080x2400 frame. With the HUSK_BOT_TOKEN secret the app logs in to that bot's account by itself, on its first start
+# (tests/plugins/husk_bot_login.plugin), and shows it from the next.
+15 shot start
+30 shot later
+44 shot end

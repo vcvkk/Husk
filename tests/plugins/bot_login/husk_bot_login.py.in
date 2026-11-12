@@ -1,0 +1,58 @@
+"""
+Logs exteraGram in to a bot's account by its token (auth.importBotAuthorization), for testing the app's screens on a
+machine nobody can type a login code on (Husk's CI). The token is the HUSK_BOT_TOKEN environment variable's, else the
+one in the plugin's settings. The app shows the bot's account from its next start.
+
+Made by tests/plugins/bot_login/build.sh: the request is a class of its own (the app has none for it), in the dex below.
+"""
+
+import base64
+import os
+import traceback
+
+from base_plugin import BasePlugin
+from ui.settings import Header, Input, Text
+
+__id__ = "husk_bot_login"
+__name__ = "Husk Bot Login"
+__description__ = "Logs in to a bot's account by its token (Husk's tests)."
+__author__ = "Husk port"
+__version__ = "1.0"
+__min_version__ = "11.12.0"
+__icon__ = "exteraPlugins/1"
+
+DEX = "@DEX@"
+
+
+def login(token):
+    from java import cast, jclass
+    ByteBuffer = jclass("java.nio.ByteBuffer")
+    context = jclass("org.telegram.messenger.ApplicationLoader").applicationContext
+    loader = jclass("dalvik.system.InMemoryDexClassLoader")(ByteBuffer.wrap(base64.b64decode(DEX)), context.getClassLoader())
+    request = loader.loadClass("husk.botlogin.BotLogin").newInstance()
+    cast(jclass("java.util.function.Consumer"), request).accept(token)
+
+
+class HuskBotLogin(BasePlugin):
+    def _token(self):
+        return (os.environ.get("HUSK_BOT_TOKEN") or self.get_setting("token", "") or "").strip()
+
+    def _login(self):
+        token = self._token()
+        if not token:
+            print("husk_bot_login: no token")
+            return
+        try:
+            login(token)
+        except Exception:
+            print("husk_bot_login:", traceback.format_exc())
+
+    def on_plugin_load(self):
+        self._login()
+
+    def create_settings(self):
+        return [
+            Header(text="Bot login"),
+            Input(key="token", text="Bot token", default=""),
+            Text(text="Log in", icon="msg_settings", on_click=lambda view: self._login()),
+        ]

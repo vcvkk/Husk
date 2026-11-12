@@ -9,6 +9,7 @@ on:
   push:
     branches: [husk-port]
     paths: ['tests/extera.env', 'tests/extera.script']
+  workflow_dispatch:
 
 jobs:
   compile:
@@ -141,10 +142,18 @@ jobs:
           path: build/data
           key: extera-data-${{ github.run_id }}
           restore-keys: extera-data-
+      # with the HUSK_BOT_TOKEN secret, the app logs in to that bot's account (tests/plugins/husk_bot_login.plugin), once:
+      # the account is in the app's data from then on
       - name: Run it under lldb
+        env:
+          HUSK_BOT_TOKEN: ${{ secrets.HUSK_BOT_TOKEN }}
         run: |
           set +e
           mkdir -p build/frames
+          if [ -n "$HUSK_BOT_TOKEN" ]; then
+            mkdir -p build/data/files/plugins && cp tests/plugins/husk_bot_login.plugin build/data/files/plugins/husk_bot_login.py
+            export HUSK_PREFS="${HUSK_PREFS:+$HUSK_PREFS,}plugin_settings:plugin_enabled_husk_bot_login=true"
+          else unset HUSK_BOT_TOKEN; fi
           export HUSK_FRAME_STATS=1 HUSK_AUDIO_STATS=1 HUSK_LOG_TIME=1 HUSK_GL_TRACE=$PWD/build/frames
           [ -f build/angle-macos/lib/libANGLE-shared.dylib ] && export HUSK_ANGLE_DIR="$PWD/build/angle-macos/lib"
           unset JAVA_HOME
