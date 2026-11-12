@@ -4,6 +4,10 @@ package android.graphics;
  * A display list with its own position and transform, as Compose's graphics layers and View's hardware layers use it. Here a
  * node's content is drawn into a bitmap of its size when it is recorded, and Canvas.drawRenderNode draws that bitmap where the
  * node is, transformed (translation, scale, rotation about the pivot, the animation matrix) and with its alpha.
+ *
+ * Another node drawn into one being recorded is kept as a reference, as Android's display lists keep it, and drawn as it is when
+ * this one is drawn: what is drawn after it goes into a bitmap of its own (mParts: the references and those bitmaps, in order).
+ * A copy of its pixels would keep what it showed then (exteraGram's glass: a node of a node of the blurred one, recorded once).
  */
 public final class RenderNode {
     public static final int USAGE_BACKGROUND = 1;
@@ -20,8 +24,12 @@ public final class RenderNode {
     private Outline mOutline;
     private Paint mLayerPaint;
     private RenderEffect mEffect;
-    private Bitmap mBitmap, mBlurred;
+    private Bitmap mBitmap, mBlurred, mFlat;
+    private java.util.ArrayList<Object> mParts;   /* after mBitmap: Child and Bitmap, in drawing order */
+    private boolean mDrawing;                      /* a node drawn into itself (directly or not) is drawn once */
     private RecordingCanvas mCanvas;
+    private static final class Child { RenderNode node; Matrix matrix; Rect clip; int gen; Bitmap after; }
+    private static final int MAX_PARTS = 4;
     private Paint mBlurPaint;
     private boolean mHasDisplayList;
     public long mNativeRenderNode;
@@ -46,6 +54,7 @@ public final class RenderNode {
         // The old picture's pixels go back now: nothing collects them later, and Compose resizes its layers on every frame of an animation
         if (mBitmap == null || mBitmap.getWidth() != w || mBitmap.getHeight() != h) { if (mBitmap != null) mBitmap.recycle(); mBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888); }
         else mBitmap.eraseColor(0);
+        freeParts();
         mCanvas = new RecordingCanvas(this, mBitmap);
         if (husk.DrawStats.ON) { husk.DrawStats.nodesRecorded++; husk.DrawStats.nodePx += (long) w * h; }
         return mCanvas;
@@ -57,10 +66,50 @@ public final class RenderNode {
         mCanvas.huskRelease();
         mCanvas = null;
         mHasDisplayList = true;
+        /* the bitmaps after a reference that nothing was drawn into go */
+        if (mParts != null)
+            for (int i = mParts.size() - 1; i >= 0; i--) {
+                Object o = mParts.get(i);
+                if (o instanceof Bitmap) continue;
+                Child ch = (Child) o;
+                if (ch.after != null && ch.after.getGenerationId() == ch.gen) { mParts.remove(ch.after); ch.after.recycle(); ch.after = null; }
+            }
+    }
+    /** Husk: `child` drawn into this node's recording (RecordingCanvas.drawRenderNode): kept by reference, where the canvas is. */
+    void huskAddChild(RecordingCanvas rc, RenderNode child) {
+        if (mParts == null) mParts = new java.util.ArrayList<>();
+        /* a node with many (Compose's root, a layer each) keeps the later ones as their pixels are now: a bitmap of the node's size
+           after each would be too much memory */
+        int bitmaps = 0;
+        for (Object o : mParts) if (o instanceof Bitmap) bitmaps++;
+        if (bitmaps >= MAX_PARTS) { child.huskDraw(rc); return; }
+        Child ch = new Child();
+        ch.node = child;
+        ch.matrix = rc.getMatrix();
+        ch.clip = rc.getClipBounds();
+        mParts.add(ch);
+        ch.after = Bitmap.createBitmap(mBitmap.getWidth(), mBitmap.getHeight(), Bitmap.Config.ARGB_8888);
+        ch.gen = ch.after.getGenerationId();
+        mParts.add(ch.after);
+        rc.huskSwitch(ch.after);
+    }
+    private void freeParts() {
+        if (mParts == null) return;
+        for (Object o : mParts) if (o instanceof Bitmap) ((Bitmap) o).recycle();
+        mParts = null;
     }
     public void end(RecordingCanvas canvas) { endRecording(); }
     public boolean hasDisplayList() { return mHasDisplayList; }
-    public void discardDisplayList() { mHasDisplayList = false; if (mBitmap != null) mBitmap.recycle(); mBitmap = null; if (mBlurred != null) mBlurred.recycle(); mBlurred = null; }
+    public void discardDisplayList() {
+        mHasDisplayList = false;
+        if (mBitmap != null) mBitmap.recycle();
+        mBitmap = null;
+        if (mBlurred != null) mBlurred.recycle();
+        mBlurred = null;
+        if (mFlat != null) mFlat.recycle();
+        mFlat = null;
+        freeParts();
+    }
     public boolean isAttached() { return false; }
     public long getUniqueId() { return mId; }
     public long computeApproximateMemoryUsage() { return mBitmap == null ? 0 : (long) mBitmap.getByteCount(); }
@@ -74,9 +123,9 @@ public final class RenderNode {
 
     /** Husk: the node drawn on a canvas, as drawRenderNode does it. */
     void huskDraw(Canvas c) {
-        if (!mHasDisplayList || mBitmap == null || mAlpha <= 0f) {
+        if (!mHasDisplayList || mBitmap == null || mAlpha <= 0f || mDrawing) {
             if (TRACE && mTracedDraws++ < 3 && sTraced++ < 600)
-                android.util.Log.i("HuskRenderNode", this + " not drawn: " + (!mHasDisplayList ? "no display list" : mBitmap == null ? "no bitmap" : "alpha 0"));
+                android.util.Log.i("HuskRenderNode", this + " not drawn: " + (!mHasDisplayList ? "no display list" : mBitmap == null ? "no bitmap" : mDrawing ? "drawn into itself" : "alpha 0"));
             return;
         }
         long t0 = husk.DrawStats.ON ? System.nanoTime() : 0;
@@ -100,15 +149,51 @@ public final class RenderNode {
         if (TRACE && mTracedDraws++ < 3 && sTraced++ < 600)
             android.util.Log.i("HuskRenderNode", this + " drawn" + (mEffect != null ? " with blur " + blur : "") + " alpha " + mAlpha + " into "
                 + (c instanceof RecordingCanvas ? String.valueOf(((RecordingCanvas) c).mNode) : "the window " + c.getWidth() + "x" + c.getHeight()));
-        if (blur >= 2f) drawBlurred(c, blur, p);
-        else c.drawBitmap(mBitmap, 0, 0, p);
+        mDrawing = true;
+        try {
+            if (blur >= 2f) drawBlurred(c, blur, p);
+            else if (mParts == null) c.drawBitmap(mBitmap, 0, 0, p);
+            else if (p == null) drawParts(c);
+            else {
+                /* the parts together, then the node's alpha over them */
+                int layer = c.saveLayerAlpha(0, 0, mBitmap.getWidth(), mBitmap.getHeight(), p.getAlpha());
+                drawParts(c);
+                c.restoreToCount(layer);
+            }
+        } finally { mDrawing = false; }
         c.restoreToCount(save);
         if (husk.DrawStats.ON) { husk.DrawStats.nodesDrawn++; husk.DrawStats.nodeDrawNs += System.nanoTime() - t0; }
     }
 
+    /* The recorded bitmaps and, between them, the nodes drawn into this one as they are now */
+    private void drawParts(Canvas c) {
+        c.drawBitmap(mBitmap, 0, 0, null);
+        for (Object o : mParts) {
+            if (o instanceof Bitmap) { c.drawBitmap((Bitmap) o, 0, 0, null); continue; }
+            Child ch = (Child) o;
+            int s = c.save();
+            c.concat(ch.matrix);
+            if (ch.clip != null) c.clipRect(ch.clip);
+            ch.node.huskDraw(c);
+            c.restoreToCount(s);
+        }
+    }
+    /* This node's content in one bitmap: mBitmap, or the parts drawn together */
+    private Bitmap flattened() {
+        if (mParts == null) return mBitmap;
+        int w = mBitmap.getWidth(), h = mBitmap.getHeight();
+        if (mFlat == null || mFlat.getWidth() != w || mFlat.getHeight() != h) { if (mFlat != null) mFlat.recycle(); mFlat = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888); }
+        else mFlat.eraseColor(0);
+        Canvas fc = new Canvas(mFlat);
+        drawParts(fc);
+        fc.huskRelease();
+        return mFlat;
+    }
+
     /* A blur as the content shrunk by about its radius (each pixel the average of those it covers) and drawn back filtered */
     private void drawBlurred(Canvas c, float radius, Paint p) {
-        int w = mBitmap.getWidth(), h = mBitmap.getHeight();
+        Bitmap content = flattened();
+        int w = content.getWidth(), h = content.getHeight();
         float k = Math.min(32f, radius / 2f);
         int sw = Math.max(1, Math.round(w / k)), sh = Math.max(1, Math.round(h / k));
         if (mBlurred == null || mBlurred.getWidth() != sw || mBlurred.getHeight() != sh) {
@@ -117,7 +202,7 @@ public final class RenderNode {
         } else mBlurred.eraseColor(0);
         if (mBlurPaint == null) mBlurPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
         Canvas small = new Canvas(mBlurred);
-        small.drawBitmap(mBitmap, null, new Rect(0, 0, sw, sh), mBlurPaint);
+        small.drawBitmap(content, null, new Rect(0, 0, sw, sh), mBlurPaint);
         small.huskRelease();
         Paint q = p != null ? p : mBlurPaint;
         q.setFilterBitmap(true);

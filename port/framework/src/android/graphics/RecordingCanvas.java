@@ -5,6 +5,34 @@ public final class RecordingCanvas extends BaseRecordingCanvas {
     public RenderNode mNode;
     RecordingCanvas(RenderNode node, Bitmap b) { super(b); mNode = node; }
     @Override public boolean isHardwareAccelerated() { return true; }
+
+    /* Another node drawn here is kept by reference (RenderNode.huskAddChild), and what comes after it is drawn into a new bitmap:
+       the matrix and clip of each save level are kept so that bitmap's canvas can be brought to the same state (huskSwitch). */
+    private final java.util.ArrayList<Object[]> mLevels = new java.util.ArrayList<>();
+    @Override public void drawRenderNode(RenderNode n) { if (n != null && n != mNode) mNode.huskAddChild(this, n); }
+    private void push() { mLevels.add(new Object[] { getMatrix(), getClipBounds() }); }
+    @Override public int save() { push(); return super.save(); }
+    @Override public int saveLayer(float l, float t, float r, float b, Paint p, int flags) { push(); return super.saveLayer(l, t, r, b, p, flags); }
+    @Override public int saveLayerAlpha(float l, float t, float r, float b, int alpha) { push(); return super.saveLayerAlpha(l, t, r, b, alpha); }
+    @Override public void restore() { if (!mLevels.isEmpty()) mLevels.remove(mLevels.size() - 1); super.restore(); }
+    @Override public void restoreToCount(int n) {
+        while (mLevels.size() > Math.max(0, n - 1)) mLevels.remove(mLevels.size() - 1);
+        super.restoreToCount(n);
+    }
+    /** Husk: go on drawing into `next`, the canvas as it is now (its save levels as plain saves: a layer's alpha is not kept). */
+    void huskSwitch(Bitmap next) {
+        Matrix m = getMatrix();
+        Rect clip = getClipBounds();
+        super.restoreToCount(1);   /* layers still open are composited into the bitmap before it is left */
+        setBitmap(next);
+        for (Object[] level : mLevels) {
+            super.setMatrix((Matrix) level[0]);
+            super.clipRect((Rect) level[1]);
+            super.save();
+        }
+        super.setMatrix(m);
+        super.clipRect(clip);
+    }
     public boolean isRecordingFor(Object o) { return o == mNode; }
     public void enableZ() {}
     public void disableZ() {}
