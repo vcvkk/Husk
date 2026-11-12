@@ -143,6 +143,12 @@ public final class ViewRoot implements ViewParent {
     }
     public boolean hasWindowFocus() { return mHasFocus; }
     public boolean isInLayout() { return mInLayout; }
+    private java.util.ArrayList<View> mLayoutDuringLayout;
+    /** A view that asked for a layout while this window laid out: asked again once it is done (View.requestLayout). */
+    public void huskLayoutDuringLayout(View v) {
+        if (mLayoutDuringLayout == null) mLayoutDuringLayout = new java.util.ArrayList<>();
+        if (!mLayoutDuringLayout.contains(v)) mLayoutDuringLayout.add(v);
+    }
     public int width() { return mW; }
     public int height() { return mH; }
     public int windowX() { return mX; }
@@ -314,6 +320,12 @@ public final class ViewRoot implements ViewParent {
             mX = out.left; mY = out.top; mW = w; mH = h;
             mView.layout(0, 0, w, h);
         } finally { mInLayout = false; }
+        if (mLayoutDuringLayout != null) {
+            /* its parents' requests were cleared as they finished laying out: the requests go up to the window now, for the next pass */
+            java.util.ArrayList<View> again = mLayoutDuringLayout;
+            mLayoutDuringLayout = null;
+            for (View v : again) if (v.isAttachedToWindow()) v.requestLayout();
+        }
         mObserver.dispatchOnGlobalLayout();
         if (sDump == null) sDump = System.getenv("TL_VIEW_DUMP") != null;
         if (sDump) {

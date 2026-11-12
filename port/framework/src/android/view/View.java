@@ -915,6 +915,9 @@ public class View implements Drawable.Callback, KeyEvent.Callback {
     protected void onLayout(boolean changed, int l, int t, int r, int b) {}
     protected void onSizeChanged(int w, int h, int ow, int oh) {}
     public void requestLayout() {
+        /* asked while the window lays out (a view setting a child's margins in onLayout, Telegram's intro under the status bar):
+           the window asks again once it is done, as ViewRootImpl.requestLayoutDuringLayout */
+        if (mRoot != null && mRoot.isInLayout()) mRoot.huskLayoutDuringLayout(this);
         mPrivateFlags |= PFLAG_FORCE_LAYOUT;
         mOldWidthSpec = Integer.MIN_VALUE;
         if (mParent != null && !mParent.isLayoutRequested()) mParent.requestLayout();
