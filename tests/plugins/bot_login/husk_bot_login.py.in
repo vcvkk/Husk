@@ -50,7 +50,11 @@ class HuskBotLogin(BasePlugin):
         self._login()
 
     def create_settings(self):
-        from ui.settings import Header, Input, Text   # here: at the plugin's import the SDK's ui module may not be there yet
+        try:
+            from ui.settings import Header, Input, Text   # here: at the plugin's import the SDK's ui module may not be there yet
+        except ImportError:
+            print("husk_bot_login: no settings UI:", traceback.format_exc())
+            return []
         return [
             Header(text="Bot login"),
             Input(key="token", text="Bot token", default=""),
