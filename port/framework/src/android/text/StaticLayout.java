@@ -87,6 +87,7 @@ public class StaticLayout extends Layout {
         float mult = getSpacingMultiplier(), add = getSpacingAdd();
         int paraStart = mStart;
         boolean done = false;
+        boolean mergeLast = mEllipsize == TextUtils.TruncateAt.END || (mMaxLines == 1 && mEllipsize != null && mEllipsize != TextUtils.TruncateAt.MARQUEE);
         while (paraStart <= mEnd && !done) {
             int paraEnd = TextUtils.indexOf(text, '\n', paraStart, mEnd);
             paraEnd = paraEnd < 0 ? mEnd : paraEnd + 1;
@@ -121,9 +122,11 @@ public class StaticLayout extends Layout {
                 boolean lastLineAllowed = mLineCount + 1 >= mMaxLines;
                 addLine(lineStart, y, below + Math.max(0, extra));
                 y += h + extra;
-                if (lastLineAllowed && (next < mEnd || (!lastOfPara))) {
-                    // more text than lines: the last one ellipsized (or cut)
-                    if (mEllipsize != null && mEllipsize != TextUtils.TruncateAt.MARQUEE) ellipsizeLine(mLineCount - 1, lineStart, contentEnd == paraEnd && paraEnd < mEnd ? mEnd : Math.max(contentEnd, mEnd), paint);
+                if (lastLineAllowed && mergeLast && (next < mEnd || (!lastOfPara))) {
+                    // more text than lines: the last one holds the rest, ellipsized. As Android, only for an ellipsis at the end (or a
+                    // single line): without one, the lines go on past maxLines (Telegram's StaticLayoutEx cuts a file name itself when
+                    // there are more than it allows, and a TextView shows only maxLines of them)
+                    ellipsizeLine(mLineCount - 1, lineStart, contentEnd == paraEnd && paraEnd < mEnd ? mEnd : Math.max(contentEnd, mEnd), paint);
                     done = true;
                     break;
                 }
@@ -157,10 +160,26 @@ public class StaticLayout extends Layout {
     private int endOfLastLine() { return mEnd; }
     private void ellipsizeLine(int line, int start, int end, TextPaint paint) {
         float avail = mEllipsizedWidth;
-        float ell = paint.measureText("…");
         CharSequence t = mSource;
+        if (husk.TextRuns.measure(t, start, end, paint) <= avail) return;
+        float ell = paint.measureText("…");
+        if (mEllipsize == TextUtils.TruncateAt.START && mMaxLines == 1) {
+            int n = end;
+            while (n > start && husk.TextRuns.measure(t, n - 1, end, paint) + ell <= avail) n--;
+            mEllStart[line] = 0; mEllCount[line] = n - start;
+            return;
+        }
+        if (mEllipsize == TextUtils.TruncateAt.MIDDLE && mMaxLines == 1) {
+            float half = (avail - ell) / 2;
+            int l = start;
+            while (l < end && husk.TextRuns.measure(t, start, l + 1, paint) <= half) l++;
+            float rest = avail - ell - husk.TextRuns.measure(t, start, l, paint);
+            int r = end;
+            while (r > l && husk.TextRuns.measure(t, r - 1, end, paint) <= rest) r--;
+            mEllStart[line] = l - start; mEllCount[line] = r - l;
+            return;
+        }
         int n = start;
-        float w = 0;
         while (n < end) {
             float cw = husk.TextRuns.measure(t, start, n + 1, paint);
             if (cw + ell > avail) break;

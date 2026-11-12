@@ -98,7 +98,13 @@ public abstract class Layout {
         while (high - low > 1) { guess = (high + low) / 2; if (getLineStart(guess) > off) high = guess; else low = guess; }
         return low < 0 ? 0 : low;
     }
-    public float getLineWidth(int line) { return husk.TextRuns.measure(mText, getLineStart(line), getLineVisibleEnd(line), mPaint); }
+    /* an ellipsized line is as wide as what shows: its text with the ellipsis in place of what it hides */
+    public float getLineWidth(int line) {
+        int s = getLineStart(line), e = getLineVisibleEnd(line), ec = getEllipsisCount(line);
+        if (ec <= 0) return husk.TextRuns.measure(mText, s, e, mPaint);
+        int es = Math.max(0, Math.min(getEllipsisStart(line), e - s)), ee = Math.min(e - s, es + ec);
+        return husk.TextRuns.measure(mText, s, s + es, mPaint) + mPaint.measureText("\u2026") + husk.TextRuns.measure(mText, s + ee, e, mPaint);
+    }
     public float getLineMax(int line) { return getLineWidth(line); }
     public float getLineLeft(int line) { return lineX(line, getLineWidth(line)); }
     public float getLineRight(int line) { return getLineLeft(line) + getLineWidth(line); }
