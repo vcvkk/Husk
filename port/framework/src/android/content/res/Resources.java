@@ -110,7 +110,28 @@ public class Resources {
         return false;
     }
     public void getValue(int id, TypedValue out, boolean resolveRefs) throws NotFoundException {
+        if (hostBar(id, out)) return;
         if (!huskValue(id, out, resolveRefs)) throw new NotFoundException("Resource ID #0x" + Integer.toHexString(id));
+    }
+    /* The system bars' heights are the host's (on iOS the safe area's top and bottom: a status bar 59 points high under the Dynamic
+       Island, not framework-res's 24dp), as a phone's own resources have its bars' heights: apps lay out under the status bar by
+       them (Telegram's AndroidUtilities.statusBarHeight, its intro's theme button). None told (no insets): framework-res's. */
+    private static boolean hostBar(int id, TypedValue out) {
+        int edge;
+        switch (id) {
+            case husk.IR.dimen.status_bar_height: case husk.IR.dimen.status_bar_height_default:
+            case husk.IR.dimen.status_bar_height_portrait: case husk.IR.dimen.status_bar_height_landscape: edge = 1; break;
+            case husk.IR.dimen.navigation_bar_height: case husk.IR.dimen.navigation_bar_frame_height:
+            case husk.IR.dimen.navigation_bar_height_landscape: edge = 3; break;
+            default: return false;
+        }
+        int px = husk.ViewRoot.screenInsetsHusk()[edge];
+        if (px <= 0) return false;
+        out.type = TypedValue.TYPE_DIMENSION;
+        out.data = (px << TypedValue.COMPLEX_MANTISSA_SHIFT) | TypedValue.COMPLEX_UNIT_PX;
+        out.resourceId = id;
+        out.string = null;
+        return true;
     }
     public void getValueForDensity(int id, int density, TypedValue out, boolean resolveRefs) { getValue(id, out, resolveRefs); }
     public void getValue(String name, TypedValue out, boolean resolveRefs) { int id = getIdentifier(name, "string", null); getValue(id, out, resolveRefs); }

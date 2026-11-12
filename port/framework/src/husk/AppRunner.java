@@ -119,10 +119,10 @@ public final class AppRunner {
         android.app.ActivityThread.huskBind(app);
         Application.huskSet(app);
         ContextImpl.setApplication(app);
+        applyInsets();   /* before the app's first code: the system bars' heights are resources it may read from the start */
         app.huskAttach(base);
         installProviders(app);
         Looper.setInputSink(AppRunner::deliver);
-        applyInsets();
         app.onCreate();
         /* as the system after boot: receivers in the manifest hear the device is up and the user is present, so WorkManager
            and the app's own start-up jobs run before the first activity */

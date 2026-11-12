@@ -5,6 +5,7 @@
  *
  *   mac-host --art DIR --apk APK [--fwres framework-res.apk] [--data DIR] [--size 1080x2400] [--density 3] [--seconds 20]
  *            [--frames DIR] [--tap X,Y@SECONDS]... [--type TEXT@SECONDS]... [--burst SECONDS] [--script FILE]
+ *            [--insets LEFT,TOP,RIGHT,BOTTOM]   (pixels: a phone's safe area, an iPhone's 0,177,0,102)
  *
  * --script: a line a step, "SECONDS COMMAND ARGS" (seconds from the start, tenths too; # comments):
  *   tap X Y | swipe X1 Y1 X2 Y2 | type TEXT | enter | delete | back | shot NAME (a frame as NAME.png) | burst
@@ -101,6 +102,7 @@ int main(int argc, char **argv)
     struct { float x, y; int at; } taps[16]; int ntaps = 0;
     struct { char text[256]; int at; } types[8]; int ntypes = 0;   /* text typed, as the keyboard commits it */
     step *steps = NULL; int nsteps = 0;
+    int insets[4] = { 0, 0, 0, 0 };
     for (int i = 1; i + 1 < argc; i += 2) {
         const char *k = argv[i], *v = argv[i + 1];
         if (!strcmp(k, "--art")) g_art = v;
@@ -113,6 +115,7 @@ int main(int argc, char **argv)
         else if (!strcmp(k, "--frames")) frames = v;
         else if (!strcmp(k, "--burst")) burst = atoi(v);
         else if (!strcmp(k, "--script")) nsteps = read_script(v, &steps);
+        else if (!strcmp(k, "--insets")) sscanf(v, "%d,%d,%d,%d", &insets[0], &insets[1], &insets[2], &insets[3]);
         else if (!strcmp(k, "--tap") && ntaps < 16) {
             if (sscanf(v, "%f,%f@%d", &taps[ntaps].x, &taps[ntaps].y, &taps[ntaps].at) == 3) ntaps++;
         } else if (!strcmp(k, "--type") && ntypes < 8) {
@@ -128,6 +131,7 @@ int main(int argc, char **argv)
     cfg.data = g_data; cfg.external = ext;
     cfg.vsync = true; cfg.refresh_rate = 60;     /* a 60 Hz display: vsync_main */
     husk_app_configure(&cfg);
+    husk_app_insets(insets[0], insets[1], insets[2], insets[3], 0);
 
     pthread_attr_t attr;
     pthread_attr_init(&attr);
