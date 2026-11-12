@@ -1334,16 +1334,40 @@ static void add_rrect8(CGMutablePathRef p, const CGAffineTransform *t, float l, 
     for (int i = 0; i < 4; i++) { rx[i] = rad[2 * i]; ry[i] = rad[2 * i + 1]; }
     rrect_fit(w, h, rx, ry);
     const float k = 0.5522847f;
-    (void)ccw;
+    /* clockwise as the screen shows it (y down): top-left, top-right, bottom-right, bottom-left; ccw the other way round, so a
+       counter-clockwise one inside a clockwise one is a hole under the nonzero rule (Telegram's glass draws its edge strokes so) */
     CGPathMoveToPoint(p, t, l + rx[0], tp);
-    CGPathAddLineToPoint(p, t, r - rx[1], tp);
-    CGPathAddCurveToPoint(p, t, r - rx[1] + rx[1] * k, tp, r, tp + ry[1] - ry[1] * k, r, tp + ry[1]);
-    CGPathAddLineToPoint(p, t, r, b - ry[2]);
-    CGPathAddCurveToPoint(p, t, r, b - ry[2] + ry[2] * k, r - rx[2] + rx[2] * k, b, r - rx[2], b);
-    CGPathAddLineToPoint(p, t, l + rx[3], b);
-    CGPathAddCurveToPoint(p, t, l + rx[3] - rx[3] * k, b, l, b - ry[3] + ry[3] * k, l, b - ry[3]);
-    CGPathAddLineToPoint(p, t, l, tp + ry[0]);
-    CGPathAddCurveToPoint(p, t, l, tp + ry[0] - ry[0] * k, l + rx[0] - rx[0] * k, tp, l + rx[0], tp);
+    if (!ccw) {
+        CGPathAddLineToPoint(p, t, r - rx[1], tp);
+        CGPathAddCurveToPoint(p, t, r - rx[1] + rx[1] * k, tp, r, tp + ry[1] - ry[1] * k, r, tp + ry[1]);
+        CGPathAddLineToPoint(p, t, r, b - ry[2]);
+        CGPathAddCurveToPoint(p, t, r, b - ry[2] + ry[2] * k, r - rx[2] + rx[2] * k, b, r - rx[2], b);
+        CGPathAddLineToPoint(p, t, l + rx[3], b);
+        CGPathAddCurveToPoint(p, t, l + rx[3] - rx[3] * k, b, l, b - ry[3] + ry[3] * k, l, b - ry[3]);
+        CGPathAddLineToPoint(p, t, l, tp + ry[0]);
+        CGPathAddCurveToPoint(p, t, l, tp + ry[0] - ry[0] * k, l + rx[0] - rx[0] * k, tp, l + rx[0], tp);
+    } else {
+        CGPathAddCurveToPoint(p, t, l + rx[0] - rx[0] * k, tp, l, tp + ry[0] - ry[0] * k, l, tp + ry[0]);
+        CGPathAddLineToPoint(p, t, l, b - ry[3]);
+        CGPathAddCurveToPoint(p, t, l, b - ry[3] + ry[3] * k, l + rx[3] - rx[3] * k, b, l + rx[3], b);
+        CGPathAddLineToPoint(p, t, r - rx[2], b);
+        CGPathAddCurveToPoint(p, t, r - rx[2] + rx[2] * k, b, r, b - ry[2] + ry[2] * k, r, b - ry[2]);
+        CGPathAddLineToPoint(p, t, r, tp + ry[1]);
+        CGPathAddCurveToPoint(p, t, r, tp + ry[1] - ry[1] * k, r - rx[1] + rx[1] * k, tp, r - rx[1], tp);
+        CGPathAddLineToPoint(p, t, l + rx[0], tp);
+    }
+    CGPathCloseSubpath(p);
+}
+/* An ellipse in the same senses as add_rrect8's: from its right end, down first when clockwise (y down), up first when not */
+static void add_oval(CGMutablePathRef p, float l, float t, float r, float b, bool ccw)
+{
+    const float k = 0.5522847f;
+    float cx = (l + r) / 2, cy = (t + b) / 2, rx = (r - l) / 2, ry = (b - t) / 2, s = ccw ? -1 : 1;
+    CGPathMoveToPoint(p, NULL, r, cy);
+    CGPathAddCurveToPoint(p, NULL, r, cy + s * ry * k, cx + rx * k, cy + s * ry, cx, cy + s * ry);
+    CGPathAddCurveToPoint(p, NULL, cx - rx * k, cy + s * ry, l, cy + s * ry * k, l, cy);
+    CGPathAddCurveToPoint(p, NULL, l, cy - s * ry * k, cx - rx * k, cy - s * ry, cx, cy - s * ry);
+    CGPathAddCurveToPoint(p, NULL, cx + rx * k, cy - s * ry, r, cy - s * ry * k, r, cy);
     CGPathCloseSubpath(p);
 }
 
@@ -1393,9 +1417,13 @@ static CGPathRef build_path(const float *f, int n)
         case OP_RECT: {
             float l = f[i], t = f[i + 1], r = f[i + 2], b = f[i + 3];
             if (f[i + 4] != 0) { CGPathMoveToPoint(p, NULL, l, t); CGPathAddLineToPoint(p, NULL, l, b); CGPathAddLineToPoint(p, NULL, r, b); CGPathAddLineToPoint(p, NULL, r, t); CGPathCloseSubpath(p); }
-            else CGPathAddRect(p, NULL, CGRectMake(fminf(l, r), fminf(t, b), fabsf(r - l), fabsf(b - t)));
+            else {   /* clockwise as add_rrect8's (y down) */
+                float x0 = fminf(l, r), x1 = fmaxf(l, r), y0 = fminf(t, b), y1 = fmaxf(t, b);
+                CGPathMoveToPoint(p, NULL, x0, y0); CGPathAddLineToPoint(p, NULL, x1, y0); CGPathAddLineToPoint(p, NULL, x1, y1);
+                CGPathAddLineToPoint(p, NULL, x0, y1); CGPathCloseSubpath(p);
+            }
             lx = l; ly = t; i += 5; break; }
-        case OP_OVAL: CGPathAddEllipseInRect(p, NULL, CGRectMake(f[i], f[i + 1], f[i + 2] - f[i], f[i + 3] - f[i + 1])); i += 5; break;
+        case OP_OVAL: add_oval(p, f[i], f[i + 1], f[i + 2], f[i + 3], f[i + 4] != 0); i += 5; break;
         case OP_RRECT: { float rad[8] = { f[i + 4], f[i + 5], f[i + 4], f[i + 5], f[i + 4], f[i + 5], f[i + 4], f[i + 5] };
             add_rrect8(p, NULL, f[i], f[i + 1], f[i + 2], f[i + 3], rad, f[i + 6] != 0); i += 7; break; }
         case OP_RRECT8: add_rrect8(p, NULL, f[i], f[i + 1], f[i + 2], f[i + 3], f + i + 4, f[i + 12] != 0); i += 13; break;

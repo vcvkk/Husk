@@ -54,13 +54,17 @@ public class NinePatch {
         float[] sx = segs(xDivs, w), sy = segs(yDivs, h);
         float[] dx = place(xDivs, sx, w, dst.left, dst.width()), dy = place(yDivs, sy, h, dst.top, dst.height());
         Rect s = new Rect(); RectF d = new RectF();
-        int cols = sx.length - 1;
-        boolean hints = colors.length == cols * (sy.length - 1);
+        /* the colours are a patch each, without the empty ones a div at either edge makes (as Android counts them) */
+        int skipX = xDivs.length > 0 && xDivs[0] == 0 ? 1 : 0, skipY = yDivs.length > 0 && yDivs[0] == 0 ? 1 : 0;
+        int cols = sx.length - 1 - skipX - (xDivs.length > 0 && xDivs[xDivs.length - 1] == w ? 1 : 0);
+        int rows = sy.length - 1 - skipY - (yDivs.length > 0 && yDivs[yDivs.length - 1] == h ? 1 : 0);
+        boolean hints = colors.length == cols * rows;
         for (int j = 0; j + 1 < sy.length; j++) for (int i = 0; i + 1 < sx.length; i++) {
             s.set((int) sx[i], (int) sy[j], (int) sx[i + 1], (int) sy[j + 1]);
             d.set(dx[i], dy[j], dx[i + 1], dy[j + 1]);
             if (s.width() <= 0 || s.height() <= 0 || d.width() <= 0 || d.height() <= 0) continue;
-            int hint = hints ? colors[j * cols + i] : NO_COLOR;
+            int ci = i - skipX, cj = j - skipY;
+            int hint = hints && ci >= 0 && ci < cols && cj >= 0 && cj < rows ? colors[cj * cols + ci] : NO_COLOR;
             if (hint == NO_COLOR) c.drawBitmap(mBitmap, s, d, p);
             else if (hint != TRANSPARENT_COLOR) {
                 /* a patch of one colour: drawn as that colour (Telegram's generated glass buttons leave its pixels empty) */
