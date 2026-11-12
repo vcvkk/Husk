@@ -426,6 +426,21 @@ static void shader_fill(CGContextRef c, const gshader *s, float alpha)
 
 static inline float clamp01(float v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
 /* how much of the pixel centred at (px, py) the rounded rectangle covers */
+/* A rounded rectangle's radii fitted to its size as Skia's SkRRect does it: a corner with a zero radius is square, and when two
+ * corners on a side need more than the side, every radius shrinks by the same factor (a pill stays a pill; clamping each radius
+ * to half its own side instead made a pill with a large radius an ellipse). rx, ry: top-left, top-right, bottom-right, bottom-left. */
+static void rrect_fit(float w, float h, float *rx, float *ry)
+{
+    w = fabsf(w); h = fabsf(h);
+    for (int i = 0; i < 4; i++) {
+        if (!(rx[i] > 0) || !(ry[i] > 0)) rx[i] = ry[i] = 0;
+    }
+    double scale = 1;
+    const float sums[4] = { rx[0] + rx[1], ry[1] + ry[2], rx[2] + rx[3], ry[3] + ry[0] }, lens[4] = { w, h, w, h };
+    for (int i = 0; i < 4; i++) if (sums[i] > lens[i]) scale = fmin(scale, (double)lens[i] / sums[i]);
+    if (scale < 1) for (int i = 0; i < 4; i++) { rx[i] = (float)(rx[i] * scale); ry[i] = (float)(ry[i] * scale); }
+}
+
 static inline float rrect_cover(float px, float py, float x0, float y0, float x1, float y1, float rx, float ry)
 {
     float cx = clamp01(fminf(px - x0, x1 - px) + 0.5f), cy = clamp01(fminf(py - y0, y1 - py) + 0.5f);
@@ -654,8 +669,9 @@ static void clip_mask_rrect(gcanvas *v, float l, float t, float r, float b, cons
         if (fx) col ^= 1;
         if (fy) row ^= 1;
         int Q = row == 0 ? (col == 0 ? 0 : 1) : (col == 0 ? 3 : 2);
-        k->rx[Q] = fminf(fmaxf(rad[2 * q], 0) * sx, w / 2); k->ry[Q] = fminf(fmaxf(rad[2 * q + 1], 0) * sy, hh / 2);
+        k->rx[Q] = rad[2 * q] * sx; k->ry[Q] = rad[2 * q + 1] * sy;
     }
+    rrect_fit(w, hh, k->rx, k->ry);
     k->rr = true;
 }
 static void clip_mask_add_(gcanvas *v, CGPathRef path, bool even_odd, bool difference)
@@ -1315,7 +1331,8 @@ static void add_rrect8(CGMutablePathRef p, const CGAffineTransform *t, float l, 
     /* corners: top-left, top-right, bottom-right, bottom-left, each (rx, ry), as Android's addRoundRect(float[]) */
     float w = r - l, h = b - tp;
     float rx[4], ry[4];
-    for (int i = 0; i < 4; i++) { rx[i] = fminf(fmaxf(rad[2 * i], 0), w / 2); ry[i] = fminf(fmaxf(rad[2 * i + 1], 0), h / 2); }
+    for (int i = 0; i < 4; i++) { rx[i] = rad[2 * i]; ry[i] = rad[2 * i + 1]; }
+    rrect_fit(w, h, rx, ry);
     const float k = 0.5522847f;
     (void)ccw;
     CGPathMoveToPoint(p, t, l + rx[0], tp);
@@ -2235,8 +2252,11 @@ static bool rrect_fill(gcanvas *v, CGRect r, float rx, float ry, uint32_t argb, 
     float srx = (float)fabs(rx * m.a), sry = (float)fabs(ry * m.d);
     float x0 = (float)d.origin.x, x1 = x0 + (float)d.size.width;
     float y0 = (float)(b->h - (d.origin.y + d.size.height)), y1 = (float)(b->h - d.origin.y);
-    if (srx > (x1 - x0) / 2) srx = (x1 - x0) / 2;
-    if (sry > (y1 - y0) / 2) sry = (y1 - y0) / 2;
+    {   /* as rrect_fit: both radii by the same factor */
+        float frx[4] = { srx, srx, srx, srx }, fry[4] = { sry, sry, sry, sry };
+        rrect_fit(x1 - x0, y1 - y0, frx, fry);
+        srx = frx[0]; sry = fry[0];
+    }
     CGRect clip = clip_user(v);
     if (CGRectIsNull(clip) || !(argb >> 24)) return true;
     CGRect cd = CGRectStandardize(CGRectApplyAffineTransform(clip, m));
