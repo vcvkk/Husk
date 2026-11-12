@@ -38,6 +38,15 @@ public class BitmapDrawable extends Drawable {
     public void setTileModeY(Shader.TileMode m) { setTileModeXY(mTileX, m); }
     public void setTileModeXY(Shader.TileMode x, Shader.TileMode y) { mTileX = x; mTileY = y; mShader = null; invalidateSelf(); }
     @Override public void setAlpha(int a) { mPaint.setAlpha(a); invalidateSelf(); }
+    /* The colour filter and the tint are the paint's, as Android's: subclasses that draw themselves with getPaint() (Telegram's
+       RLottieDrawable: its tab bar icons, tinted by their image view) have them too, not only this class's draw */
+    @Override public void setColorFilter(ColorFilter f) { super.setColorFilter(f); mPaint.setColorFilter(huskTintFilter()); invalidateSelf(); }
+    @Override void updateTint() { mPaint.setColorFilter(huskTintFilter()); }
+    @Override protected boolean onStateChange(int[] state) {
+        boolean r = super.onStateChange(state);
+        if (r) mPaint.setColorFilter(huskTintFilter());
+        return r;
+    }
     @Override public int getAlpha() { return mPaint.getAlpha(); }
     private int scaled(int v) { if (mBitmap == null) return -1; int d = mBitmap.getDensity(); return d == 0 || d == mTargetDensity ? v : (v * mTargetDensity + d / 2) / d; }
     @Override public int getIntrinsicWidth() { return mBitmap == null ? -1 : scaled(mBitmap.getWidth()); }

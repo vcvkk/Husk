@@ -26,7 +26,16 @@ public final class RenderNode {
     private boolean mHasDisplayList;
     public long mNativeRenderNode;
 
-    public RenderNode(String name) { mName = name; synchronized (RenderNode.class) { mId = sNextId++; } mNativeRenderNode = mId; }
+    public RenderNode(String name) {
+        /* traced: a node with no name is named by the class that made it */
+        mName = name != null || !TRACE ? name : "<" + huskMaker() + ">";
+        synchronized (RenderNode.class) { mId = sNextId++; }
+        mNativeRenderNode = mId;
+    }
+    private static String huskMaker() {
+        for (StackTraceElement e : new Throwable().getStackTrace()) if (!e.getClassName().startsWith("android.graphics.")) return e.getClassName().replaceAll(".*\\.", "");
+        return "?";
+    }
     public static RenderNode create(String name, Object animationHost) { return new RenderNode(name); }
     public static RenderNode adopt(long nativePtr) { return new RenderNode("adopted"); }
 
@@ -65,7 +74,11 @@ public final class RenderNode {
 
     /** Husk: the node drawn on a canvas, as drawRenderNode does it. */
     void huskDraw(Canvas c) {
-        if (!mHasDisplayList || mBitmap == null || mAlpha <= 0f) return;
+        if (!mHasDisplayList || mBitmap == null || mAlpha <= 0f) {
+            if (TRACE && mTracedDraws++ < 3 && sTraced++ < 600)
+                android.util.Log.i("HuskRenderNode", this + " not drawn: " + (!mHasDisplayList ? "no display list" : mBitmap == null ? "no bitmap" : "alpha 0"));
+            return;
+        }
         long t0 = husk.DrawStats.ON ? System.nanoTime() : 0;
         int save = c.save();
         c.translate(mLeft, mTop);
@@ -84,8 +97,9 @@ public final class RenderNode {
             p.setAlpha(Math.round(mAlpha * (mLayerPaint != null ? mLayerPaint.getAlpha() : 255)));
         }
         float blur = mEffect == null ? 0 : Math.max(mEffect.mBlurX, mEffect.mBlurY);
-        if (TRACE && mEffect != null && mTracedDraws++ < 3 && sTraced++ < 300)
-            android.util.Log.i("HuskRenderNode", this + " drawn with blur " + blur + " alpha " + mAlpha + " on " + c.getWidth() + "x" + c.getHeight() + (c instanceof RecordingCanvas ? " (recording)" : ""));
+        if (TRACE && mTracedDraws++ < 3 && sTraced++ < 600)
+            android.util.Log.i("HuskRenderNode", this + " drawn" + (mEffect != null ? " with blur " + blur : "") + " alpha " + mAlpha + " into "
+                + (c instanceof RecordingCanvas ? String.valueOf(((RecordingCanvas) c).mNode) : "the window " + c.getWidth() + "x" + c.getHeight()));
         if (blur >= 2f) drawBlurred(c, blur, p);
         else c.drawBitmap(mBitmap, 0, 0, p);
         c.restoreToCount(save);
@@ -206,7 +220,7 @@ public final class RenderNode {
     public boolean setLayerType(int type) { return true; }
     public boolean setLayerPaint(Paint paint) { mLayerPaint = paint; return true; }
     public boolean setRenderEffect(RenderEffect e) {
-        if (TRACE && sTraced++ < 300) android.util.Log.i("HuskRenderNode", this + " effect " + (e == null ? "none" : "blur " + e.mBlurX + "," + e.mBlurY));
+        if (TRACE && sTraced++ < 600) android.util.Log.i("HuskRenderNode", this + " effect " + (e == null ? "none" : "blur " + e.mBlurX + "," + e.mBlurY));
         mEffect = e;
         return true;
     }
