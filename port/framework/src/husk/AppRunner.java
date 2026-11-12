@@ -205,6 +205,7 @@ public final class AppRunner {
         debugAlert(a);
         debugSql();
         debugInvoke();
+        debugDumpViews();
         if (prev != null && !a.isFinishing()) {
             final Activity p = prev;
             // the one below stops once the new one covers it (a translucent or floating window leaves it visible)
@@ -317,12 +318,34 @@ public final class AppRunner {
             }
         }, ms);
     }
-    /** A view tree to the log: each view's class, bounds, visibility, alpha, translation and scroll. */
+    /* HUSK_DUMP_VIEWS=SECONDS[,SECONDS...]: every window's view tree to the log that long after the first activity's start */
+    private static boolean sDumpViewsSet;
+    private static void debugDumpViews() {
+        String v = System.getenv("HUSK_DUMP_VIEWS");
+        if (v == null || sDumpViewsSet) return;
+        sDumpViewsSet = true;
+        for (String t : v.split(",")) {
+            try {
+                long ms = (long) (Double.parseDouble(t.trim()) * 1000);
+                sHandler.postDelayed(() -> {
+                    for (ViewRoot r : new java.util.ArrayList<>(ViewRoot.roots())) { android.util.Log.i("HuskViews", "window " + r.getView()); dumpViews(r.getView(), "  "); }
+                }, ms);
+            } catch (NumberFormatException e) {}
+        }
+    }
+    /** A view tree to the log: each view's class, bounds, visibility, alpha, translation and scroll; an image view's drawable. */
     static void dumpViews(android.view.View v, String indent) {
+        String extra = "";
+        if (v instanceof android.widget.TextView) extra = " text '" + ((android.widget.TextView) v).getText() + "' color " + Integer.toHexString(((android.widget.TextView) v).getCurrentTextColor());
+        if (v instanceof android.widget.ImageView) {
+            android.graphics.drawable.Drawable d = ((android.widget.ImageView) v).getDrawable();
+            extra = " drawable " + (d == null ? "null" : d.getClass().getName() + " alpha " + d.getAlpha() + " filter " + d.getColorFilter()
+                + " bounds " + d.getBounds()) + " imageAlpha " + ((android.widget.ImageView) v).getImageAlpha();
+        }
+        if (v.getBackground() != null) extra += " bg " + v.getBackground().getClass().getName();
         android.util.Log.i("HuskViews", indent + v.getClass().getName() + " [" + v.getLeft() + "," + v.getTop() + " " + v.getWidth() + "x" + v.getHeight()
             + "] measured " + v.getMeasuredWidth() + "x" + v.getMeasuredHeight() + " vis " + v.getVisibility() + " alpha " + v.getAlpha()
-            + " tr " + v.getTranslationX() + "," + v.getTranslationY() + " scroll " + v.getScrollX() + "," + v.getScrollY()
-            + (v instanceof android.widget.TextView ? " text '" + ((android.widget.TextView) v).getText() + "'" : ""));
+            + " tr " + v.getTranslationX() + "," + v.getTranslationY() + " scroll " + v.getScrollX() + "," + v.getScrollY() + extra);
         if (v instanceof android.view.ViewGroup) {
             android.view.ViewGroup g = (android.view.ViewGroup) v;
             for (int i = 0; i < g.getChildCount(); i++) dumpViews(g.getChildAt(i), indent + "  ");

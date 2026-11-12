@@ -84,6 +84,8 @@ public final class RenderNode {
             p.setAlpha(Math.round(mAlpha * (mLayerPaint != null ? mLayerPaint.getAlpha() : 255)));
         }
         float blur = mEffect == null ? 0 : Math.max(mEffect.mBlurX, mEffect.mBlurY);
+        if (TRACE && mEffect != null && mTracedDraws++ < 3 && sTraced++ < 300)
+            android.util.Log.i("HuskRenderNode", this + " drawn with blur " + blur + " alpha " + mAlpha + " on " + c.getWidth() + "x" + c.getHeight() + (c instanceof RecordingCanvas ? " (recording)" : ""));
         if (blur >= 2f) drawBlurred(c, blur, p);
         else c.drawBitmap(mBitmap, 0, 0, p);
         c.restoreToCount(save);
@@ -203,7 +205,15 @@ public final class RenderNode {
     public boolean getUseCompositingLayer() { return mCompositing; }
     public boolean setLayerType(int type) { return true; }
     public boolean setLayerPaint(Paint paint) { mLayerPaint = paint; return true; }
-    public boolean setRenderEffect(RenderEffect e) { mEffect = e; return true; }
+    public boolean setRenderEffect(RenderEffect e) {
+        if (TRACE && sTraced++ < 300) android.util.Log.i("HuskRenderNode", this + " effect " + (e == null ? "none" : "blur " + e.mBlurX + "," + e.mBlurY));
+        mEffect = e;
+        return true;
+    }
+    /* HUSK_RENDERNODE_TRACE: effects set, and the nodes drawn with one (each node's first few) */
+    private static final boolean TRACE = System.getenv("HUSK_RENDERNODE_TRACE") != null;
+    private static int sTraced;
+    private int mTracedDraws;
     public boolean setBackdropRenderEffect(RenderEffect e) { return true; }
     public boolean setForceDarkAllowed(boolean b) { mForceDark = b; return true; }
     public boolean isForceDarkAllowed() { return mForceDark; }
