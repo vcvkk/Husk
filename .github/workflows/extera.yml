@@ -164,6 +164,7 @@ jobs:
             export HUSK_PREFS="${HUSK_PREFS:+$HUSK_PREFS,}plugin_settings:plugin_enabled_husk_bot_login=true"
           else unset HUSK_BOT_TOKEN; fi
           export HUSK_FRAME_STATS=1 HUSK_AUDIO_STATS=1 HUSK_LOG_TIME=1 HUSK_GL_TRACE=$PWD/build/frames
+          if [ -n "${DUMP_NINEPATCH:-}" ]; then export HUSK_NINEPATCH_DUMP=$PWD/build/frames; fi
           [ -f build/angle-macos/lib/libANGLE-shared.dylib ] && export HUSK_ANGLE_DIR="$PWD/build/angle-macos/lib"
           unset JAVA_HOME
           # bad accesses stop in lldb, where tools/lldb_crash_hook.py lets ART's own (in its compiled code) go on and gives any

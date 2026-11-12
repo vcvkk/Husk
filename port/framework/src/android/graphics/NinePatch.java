@@ -1,19 +1,35 @@
 package android.graphics;
 /** A nine-patch: stretchable regions from its chunk (res_png9 compiled form). */
 public class NinePatch {
-    private final Bitmap mBitmap; final int[] xDivs, yDivs; public final Rect padding = new Rect();
+    private final Bitmap mBitmap; final int[] xDivs, yDivs, colors; public final Rect padding = new Rect();
+    /* a patch's colour hint, as Res_png_9patch has it: its pixels stretched, nothing, or one colour drawn instead */
+    private static final int NO_COLOR = 1, TRANSPARENT_COLOR = 0;
+    private Paint mFill;
     public NinePatch(Bitmap b, byte[] chunk) { this(b, chunk, null); }
     public NinePatch(Bitmap b, byte[] chunk, String src) {
         mBitmap = b;
         int[][] d = parse(chunk, padding);
-        xDivs = d[0]; yDivs = d[1];
+        xDivs = d[0]; yDivs = d[1]; colors = d[2];
+        dump(b);
+    }
+    /* HUSK_NINEPATCH_DUMP=DIR: each nine-patch's bitmap as DIR/ninepatch-N.png, its divs and colours to the log */
+    private static final String DUMP = System.getenv("HUSK_NINEPATCH_DUMP");
+    private static int sDumped;
+    private void dump(Bitmap b) {
+        if (DUMP == null || b == null || sDumped >= 40) return;
+        int n = sDumped++;
+        android.util.Log.i("HuskNinePatch", n + ": " + b.getWidth() + "x" + b.getHeight() + " x " + java.util.Arrays.toString(xDivs) + " y " + java.util.Arrays.toString(yDivs)
+            + " colors " + java.util.Arrays.toString(colors) + " padding " + padding);
+        try (java.io.FileOutputStream o = new java.io.FileOutputStream(DUMP + "/ninepatch-" + n + ".png")) { b.compress(Bitmap.CompressFormat.PNG, 100, o); }
+        catch (Exception e) { android.util.Log.w("HuskNinePatch", "dump: " + e); }
     }
     public static boolean isNinePatchChunk(byte[] c) { return c != null && c.length >= 32 && c[0] != 0; }
-    /** The serialized Res_png_9patch: wasDeserialized, numXDivs, numYDivs, numColors, 2 x int offsets, padding l r t b, color offset, then the divs. */
+    /** The serialized Res_png_9patch: wasDeserialized, numXDivs, numYDivs, numColors, 2 x int offsets, padding l r t b, color offset,
+     *  then the divs and the colours (a patch each, row by row). */
     static int[][] parse(byte[] c, Rect pad) {
-        if (c == null || c.length < 32) return new int[][] { new int[0], new int[0] };
+        if (c == null || c.length < 32) return new int[][] { new int[0], new int[0], new int[0] };
         java.nio.ByteBuffer b = java.nio.ByteBuffer.wrap(c).order(java.nio.ByteOrder.nativeOrder());
-        b.get(); int nx = b.get() & 255, ny = b.get() & 255; b.get();
+        b.get(); int nx = b.get() & 255, ny = b.get() & 255, nc = b.get() & 255;
         b.getInt(); b.getInt();
         int pl = b.getInt(), pr = b.getInt(), pt = b.getInt(), pb = b.getInt();
         if (pad != null) pad.set(pl, pt, pr, pb);
@@ -21,7 +37,9 @@ public class NinePatch {
         int[] xs = new int[nx], ys = new int[ny];
         for (int i = 0; i < nx && b.remaining() >= 4; i++) xs[i] = b.getInt();
         for (int i = 0; i < ny && b.remaining() >= 4; i++) ys[i] = b.getInt();
-        return new int[][] { xs, ys };
+        int[] cs = new int[b.remaining() >= nc * 4 ? nc : 0];
+        for (int i = 0; i < cs.length; i++) cs[i] = b.getInt();
+        return new int[][] { xs, ys, cs };
     }
     public Bitmap getBitmap() { return mBitmap; }
     public int getWidth() { return mBitmap.getWidth(); }
@@ -36,10 +54,22 @@ public class NinePatch {
         float[] sx = segs(xDivs, w), sy = segs(yDivs, h);
         float[] dx = place(xDivs, sx, w, dst.left, dst.width()), dy = place(yDivs, sy, h, dst.top, dst.height());
         Rect s = new Rect(); RectF d = new RectF();
+        int cols = sx.length - 1;
+        boolean hints = colors.length == cols * (sy.length - 1);
         for (int j = 0; j + 1 < sy.length; j++) for (int i = 0; i + 1 < sx.length; i++) {
             s.set((int) sx[i], (int) sy[j], (int) sx[i + 1], (int) sy[j + 1]);
             d.set(dx[i], dy[j], dx[i + 1], dy[j + 1]);
-            if (s.width() > 0 && s.height() > 0 && d.width() > 0 && d.height() > 0) c.drawBitmap(mBitmap, s, d, p);
+            if (s.width() <= 0 || s.height() <= 0 || d.width() <= 0 || d.height() <= 0) continue;
+            int hint = hints ? colors[j * cols + i] : NO_COLOR;
+            if (hint == NO_COLOR) c.drawBitmap(mBitmap, s, d, p);
+            else if (hint != TRANSPARENT_COLOR) {
+                /* a patch of one colour: drawn as that colour (Telegram's generated glass buttons leave its pixels empty) */
+                if (mFill == null) mFill = new Paint();
+                mFill.setColor(hint);
+                if (p != null) mFill.setAlpha(mFill.getAlpha() * p.getAlpha() / 255);
+                mFill.setColorFilter(p != null ? p.getColorFilter() : null);
+                c.drawRect(d, mFill);
+            }
         }
     }
     private static float[] segs(int[] divs, int size) {
