@@ -10,6 +10,8 @@ on:
     branches: [husk-port]
     paths: ['tests/extera.env', 'tests/extera.script']
   workflow_dispatch:
+    inputs:
+      run_id: { description: "a run of ART runtime on Darwin to use instead of tests/extera.env's RUN_ID", required: false, default: '' }
 
 jobs:
   compile:
@@ -18,7 +20,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: What to run
-        run: grep -v '^#' tests/extera.env >> "$GITHUB_ENV"
+        run: |
+          grep -v '^#' tests/extera.env >> "$GITHUB_ENV"
+          if [ -n "${{ inputs.run_id }}" ]; then echo "RUN_ID=${{ inputs.run_id }}" >> "$GITHUB_ENV"; fi
       - name: Packages
         run: |
           sudo apt-get update -qq
@@ -67,7 +71,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: What to convert
-        run: grep -v '^#' tests/extera.env >> "$GITHUB_ENV"
+        run: |
+          grep -v '^#' tests/extera.env >> "$GITHUB_ENV"
+          if [ -n "${{ inputs.run_id }}" ]; then echo "RUN_ID=${{ inputs.run_id }}" >> "$GITHUB_ENV"; fi
       - name: Libraries for iOS without JIT
         run: |
           mkdir -p build/so build/aot
@@ -99,7 +105,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: What to run
-        run: grep -v '^#' tests/extera.env >> "$GITHUB_ENV"
+        run: |
+          grep -v '^#' tests/extera.env >> "$GITHUB_ENV"
+          if [ -n "${{ inputs.run_id }}" ]; then echo "RUN_ID=${{ inputs.run_id }}" >> "$GITHUB_ENV"; fi
       - uses: actions/download-artifact@v4
         with: { name: darwin-runtime, path: build, run-id: '${{ env.RUN_ID }}', github-token: '${{ github.token }}' }
       - uses: actions/download-artifact@v4
