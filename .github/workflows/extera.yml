@@ -98,6 +98,57 @@ jobs:
           path: build/extera-aot.tgz
           retention-days: 3
 
+  # the IPA for a phone: the test app's shell from the runtime's run, the APK compiled for iOS, its libraries made ahead of time
+  ipa:
+    needs: [compile, aot]
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: What to pack
+        run: |
+          grep -v '^#' tests/extera.env >> "$GITHUB_ENV"
+          if [ -n "${{ inputs.run_id }}" ]; then echo "RUN_ID=${{ inputs.run_id }}" >> "$GITHUB_ENV"; fi
+      - uses: actions/download-artifact@v4
+        with: { name: ComposeHello-ipa, path: build/ipa, run-id: '${{ env.RUN_ID }}', github-token: '${{ github.token }}' }
+      - uses: actions/download-artifact@v4
+        with: { name: extera-macos, path: build }
+      - uses: actions/download-artifact@v4
+        with: { name: extera-aot, path: build }
+      - name: Pack
+        run: |
+          mkdir -p build/x && tar -xzf build/extera-macos.tgz -C build/x && tar -xzf build/extera-aot.tgz -C build/x
+          A=build/x/app
+          cc -std=c11 -O1 tools/oat2macho.c -o build/oat2macho
+          rm -f "$A/oat/arm64/base.odex.dylib"
+          build/oat2macho --ios "$A/oat/arm64/base.odex" "$A/oat/arm64/base.odex.dylib"
+          python3 tools/oat-strip-code.py "$A/oat/arm64/base.odex"
+          codesign -s - -f "$A/oat/arm64/base.odex.dylib"
+          (cd build/ipa && unzip -q ComposeHello.ipa)
+          P=$(ls -d build/ipa/Payload/*.app)
+          rm -rf "$P/app" && cp -R "$A" "$P/app"
+          mkdir -p "$P/Frameworks"
+          for d in build/x/aot/aot-*.dylib; do cp "$d" "$P/Frameworks/" && codesign -s - -f "$P/Frameworks/$(basename "$d")" > /dev/null 2>&1; done
+          rm -f "$P/art/vm.options"
+          # IPA_VM_OPTIONS: the runtime's options, one a line (env:NAME=VALUE sets an environment variable)
+          if [ -n "${IPA_VM_OPTIONS:-}" ]; then printf "%s\n" $IPA_VM_OPTIONS > "$P/art/vm.options"; fi
+          python3 - "$P/Info.plist" <<'PY'
+          import plistlib, sys
+          p = sys.argv[1]
+          d = plistlib.load(open(p, 'rb'))
+          d['CFBundleIdentifier'] = 'com.exteragram.messenger.huskport'
+          d['CFBundleName'] = d['CFBundleDisplayName'] = 'exteraGram'
+          plistlib.dump(d, open(p, 'wb'))
+          PY
+          (cd build/ipa && zip -qr -9 ../exteraGram.ipa Payload)
+          ls -la build/exteraGram.ipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exteraGram-ipa
+          path: build/exteraGram.ipa
+          compression-level: 0
+          retention-days: 3
+
   run:
     needs: compile
     runs-on: macos-15
