@@ -4,7 +4,7 @@ package android.companion;
 @SuppressWarnings({"unchecked", "rawtypes", "deprecation"})
 public final class AssociationInfo implements android.os.Parcelable {
     private final java.util.HashMap<String, Object> huskProps = new java.util.HashMap<>();
-    public static android.os.Parcelable.Creator CREATOR;
+    public static android.os.Parcelable.Creator CREATOR = husk.StubCreator.of(AssociationInfo.class);
     public static final java.lang.String METADATA_TIMESTAMP = "_timestamp_";
     public boolean belongsToPackage(int p0, java.lang.String p1) { return false; }
     public int describeContents() { return 0; }

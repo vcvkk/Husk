@@ -9,7 +9,7 @@ public final class ScanSettings implements android.os.Parcelable {
     public static final int CALLBACK_TYPE_ALL_MATCHES_AUTO_BATCH = 8;
     public static final int CALLBACK_TYPE_FIRST_MATCH = 2;
     public static final int CALLBACK_TYPE_MATCH_LOST = 4;
-    public static android.os.Parcelable.Creator CREATOR;
+    public static android.os.Parcelable.Creator CREATOR = husk.StubCreator.of(ScanSettings.class);
     public static final int MATCH_MODE_AGGRESSIVE = 1;
     public static final int MATCH_MODE_STICKY = 2;
     public static final int MATCH_NUM_FEW_ADVERTISEMENT = 2;

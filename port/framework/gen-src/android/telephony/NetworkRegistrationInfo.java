@@ -4,7 +4,7 @@ package android.telephony;
 @SuppressWarnings({"unchecked", "rawtypes", "deprecation"})
 public final class NetworkRegistrationInfo implements android.os.Parcelable {
     private final java.util.HashMap<String, Object> huskProps = new java.util.HashMap<>();
-    public static android.os.Parcelable.Creator CREATOR;
+    public static android.os.Parcelable.Creator CREATOR = husk.StubCreator.of(NetworkRegistrationInfo.class);
     public static final int DOMAIN_CS = 1;
     public static final int DOMAIN_CS_PS = 3;
     public static final int DOMAIN_PS = 2;

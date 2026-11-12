@@ -562,6 +562,71 @@ tl_lib *tl_ld_lib_of(const void *addr)
     return NULL;
 }
 
+bool tl_ld_covers(const void *addr, size_t bytes)
+{
+    if (!addr || bytes == 0) return false;
+    const uint8_t *lo = addr, *hi = lo + bytes;
+    for (int i = 0; i < G.nlibs; i++) {
+        tl_lib *L = G.libs[i];
+        size_t span = (L->npages + L->nstub + 2) * PAGE;
+        if (L->rx && lo < L->rx + span && hi > L->rx) return true;
+        if (L->rw && L->rw != L->rx && lo < L->rw + span && hi > L->rw) return true;
+        if (L->dup && lo < L->dup + L->npages * PAGE && hi > L->dup) return true;
+    }
+    return false;
+}
+
+bool tl_ld_aot_contains(const void *addr)
+{
+    const uint8_t *a = addr;
+    for (int i = 0; i < G.nlibs; i++) {
+        tl_lib *L = G.libs[i];
+        if (!L->aot) continue;
+        size_t span = (L->npages + L->nstub + 2) * PAGE;
+        if (a >= L->rx && a < L->rx + span) return true;
+        if (L->dup && a >= L->dup && a < L->dup + L->npages * PAGE) return true;
+    }
+    return false;
+}
+
+void *tl_ld_aot_writable(const void *addr, size_t bytes)
+{
+    if (!addr || bytes == 0) return NULL;
+    const uint8_t *a = addr;
+    for (int i = 0; i < G.nlibs; i++) {
+        tl_lib *L = G.libs[i];
+        if (!L->aot || !L->dup) continue;
+        size_t span = L->npages * PAGE;
+        uint64_t off;
+        if (a >= L->rx && a + bytes <= L->rx + span) off = (uint64_t)(a - L->rx);
+        else if (a >= L->dup && a + bytes <= L->dup + span) off = (uint64_t)(a - L->dup);
+        else continue;
+        if (!mixed_page(L, (size_t)(off / PAGE))) continue;
+        return L->dup + off;
+    }
+    return NULL;
+}
+
+void *tl_ld_aot_exec(const void *addr)
+{
+    if (!addr) return NULL;
+    const uint8_t *a = addr;
+    for (int i = 0; i < G.nlibs; i++) {
+        tl_lib *L = G.libs[i];
+        if (!L->aot || !L->dup) continue;
+        size_t span = L->npages * PAGE;
+        if (a < L->dup || a >= L->dup + span) continue;
+        uint64_t off = (uint64_t)(a - L->dup);
+        if (!in_code(L, L->base_vaddr + off)) continue;
+        return L->rx + off;
+    }
+    return NULL;
+}
+
+/* Main line's loader answers raw `svc #0` in the guest's own generated code (marked before it turns executable); this one does
+ * not, as before: nothing is marked. */
+void tl_ld_mark_svcs(void *addr, size_t len) { (void)addr; (void)len; }
+
 const char *tl_ld_lib_name(const tl_lib *lib) { return lib ? lib->name : NULL; }
 
 const char *tl_ld_symbol_at(const void *addr, const char **lib_name, const void **sym_addr)

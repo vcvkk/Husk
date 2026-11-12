@@ -329,6 +329,8 @@ static jboolean N_requestVsync(JNIEnv *env, jclass c)
     return JNI_TRUE;
 }
 static jfloat N_refreshRate(JNIEnv *env, jclass c) { (void)env; (void)c; return A.cfg.refresh_rate > 0 ? A.cfg.refresh_rate : 60; }
+/* main line's host stops one app to start another; here the app is the process's only one */
+static jboolean N_sessionEnded(JNIEnv *env, jclass c) { (void)env; (void)c; return JNI_FALSE; }
 static void N_setAppClassLoader(JNIEnv *env, jclass c, jobject loader) { (void)env; (void)c; (void)loader; }
 static jstring N_dataDir(JNIEnv *env, jclass c) { (void)c; return jstr(env, A.cfg.data); }
 static jstring N_externalDir(JNIEnv *env, jclass c) { (void)c; return jstr(env, A.cfg.external); }
@@ -453,6 +455,7 @@ static const JNINativeMethod k_native[] = {
     { "wake", "()V", (void *)N_wake },
     { "requestVsync", "()Z", (void *)N_requestVsync },
     { "refreshRate", "()F", (void *)N_refreshRate },
+    { "sessionEnded", "()Z", (void *)N_sessionEnded },
     { "setAppClassLoader", "(Ljava/lang/ClassLoader;)V", (void *)N_setAppClassLoader },
     { "dataDir", "()Ljava/lang/String;", (void *)N_dataDir },
     { "externalDir", "()Ljava/lang/String;", (void *)N_externalDir },

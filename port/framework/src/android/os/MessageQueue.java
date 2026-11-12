@@ -44,6 +44,7 @@ public final class MessageQueue {
     Message next(boolean main) {
         if (main) mMain = true;
         for (;;) {
+            if (husk.Native.sessionEnded()) { synchronized (this) { quitting = true; } return null; }
             if (main) Looper.deliverInput();
             mNativeLooper = husk.Native.nativeLooperPoll();
             long wait;

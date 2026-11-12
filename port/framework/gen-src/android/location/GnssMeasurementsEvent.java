@@ -4,7 +4,7 @@ package android.location;
 @SuppressWarnings({"unchecked", "rawtypes", "deprecation"})
 public final class GnssMeasurementsEvent implements android.os.Parcelable {
     private final java.util.HashMap<String, Object> huskProps = new java.util.HashMap<>();
-    public static android.os.Parcelable.Creator CREATOR;
+    public static android.os.Parcelable.Creator CREATOR = husk.StubCreator.of(GnssMeasurementsEvent.class);
     public int describeContents() { return 0; }
     public android.location.GnssClock getClock() { return (android.location.GnssClock) huskProps.get("Clock"); }
     public java.util.Collection getGnssAutomaticGainControls() { return (huskProps.get("GnssAutomaticGainControls") != null ? (java.util.Collection) huskProps.get("GnssAutomaticGainControls") : new java.util.ArrayList()); }

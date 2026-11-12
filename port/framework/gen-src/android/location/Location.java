@@ -4,7 +4,7 @@ package android.location;
 @SuppressWarnings({"unchecked", "rawtypes", "deprecation"})
 public class Location implements android.os.Parcelable {
     private final java.util.HashMap<String, Object> huskProps = new java.util.HashMap<>();
-    public static android.os.Parcelable.Creator CREATOR;
+    public static android.os.Parcelable.Creator CREATOR = husk.StubCreator.of(Location.class);
     public static final java.lang.String EXTRA_NO_GPS_LOCATION = "noGPSLocation";
     public static final int FORMAT_DEGREES = 0;
     public static final int FORMAT_MINUTES = 1;

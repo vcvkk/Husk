@@ -4,7 +4,7 @@ package android.net.wifi;
 @SuppressWarnings({"unchecked", "rawtypes", "deprecation"})
 public final class WifiNetworkSuggestion implements android.os.Parcelable {
     private final java.util.HashMap<String, Object> huskProps = new java.util.HashMap<>();
-    public static android.os.Parcelable.Creator CREATOR;
+    public static android.os.Parcelable.Creator CREATOR = husk.StubCreator.of(WifiNetworkSuggestion.class);
     public static final int RANDOMIZATION_NON_PERSISTENT = 1;
     public static int RANDOMIZATION_PERSISTENT;
     public boolean isAppInteractionRequired;

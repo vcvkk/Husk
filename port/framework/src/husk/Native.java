@@ -24,6 +24,8 @@ public final class Native {
     /** the next display refresh, as an input event (10); false where the host has no display refreshes to give */
     public static native boolean requestVsync();
     public static native float refreshRate();
+    /** True when Husk is stopping this app so another can start. */
+    public static native boolean sessionEnded();
     /** Class.getClassLoader for the app's own classes. */
     public static native void setAppClassLoader(ClassLoader loader);
     public static native String dataDir();

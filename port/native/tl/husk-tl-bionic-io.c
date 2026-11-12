@@ -10,9 +10,12 @@
 #define _DARWIN_C_SOURCE
 #include "husk-tl-bionic.h"
 const char *tl_ld_main_apk(void);
+bool tl_ld_aot_contains(const void *addr);
+bool tl_ld_covers(const void *addr, size_t bytes);
 #include "husk-tl-internal.h"
 #include "husk-tl-codewrite.h"
 #include "husk-tl-xmem.h"
+#include "husk-tl-binder.h"
 
 #include <ctype.h>
 #include <dirent.h>
@@ -32,6 +35,9 @@ const char *tl_ld_main_apk(void);
 #include <string.h>
 #include <sys/file.h>
 #include <sys/ioctl.h>
+#include <ifaddrs.h>
+#include <net/if.h>
+#include <netinet/in.h>
 #include <xlocale.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
@@ -543,9 +549,14 @@ void tl_note_missing_file(const char *path)
  * bytes first (host path). Not on a plain stat: Unity looks at libil2cpp's (100 MB) without reading it. */
 static void fill_lib_standin(const char *real)
 {
-    size_t dl = strlen(tl_data_dir()); const char *nm = strrchr(real, '/');
+    /* the data folder as given, or as a path a guest made canonical (Qt's plugin loader; /var is /private/var on iOS) */
+    static __thread char given[PATH_MAX], canon[PATH_MAX];
+    const char *data = tl_data_dir();
+    if (strcmp(given, data)) { snprintf(given, sizeof(given), "%s", data); if (!realpath(data, canon)) canon[0] = 0; }
+    if (canon[0] && !strncmp(real, canon, strlen(canon)) && strncmp(real, data, strlen(data))) data = canon;
+    size_t dl = strlen(data); const char *nm = strrchr(real, '/');
     struct stat lst;
-    if (nm && !strncmp(real, tl_data_dir(), dl) && !strncmp(real + dl, "/lib/", 5) && real + dl + 4 == nm && strlen(nm) > 4
+    if (nm && !strncmp(real, data, dl) && !strncmp(real + dl, "/lib/", 5) && real + dl + 4 == nm && strlen(nm) > 4
         && !strcmp(nm + strlen(nm) - 3, ".so") && stat(real, &lst) == 0 && lst.st_size == 0) {
         bool tl_ld_has_lib(const char *name); bool tl_ld_extract_lib(const char *name, const char *dest);
         if (tl_ld_has_lib(nm + 1)) tl_ld_extract_lib(nm + 1, real);
@@ -561,6 +572,7 @@ static void fill_lib_standin_at(int dirfd, const char *name)
 }
 static int b_open(const char *path, int flags, unsigned mode)
 {
+    if (husk_binder_is_path(path)) return husk_binder_open();
     char buf[1024]; static __thread char content[32768];
     jar_entry jar;
     if (jar_lookup(path, &jar)) {
@@ -611,7 +623,15 @@ static bool net_trace_fd(int fd);
 static int g_evfd_peer[1024];
 void tl_eventfd_register(int rd, int wr) { if (rd >= 0 && rd < 1024) g_evfd_peer[rd] = wr + 1; }
 static int evfd_peer(int fd) { return fd >= 0 && fd < 1024 ? g_evfd_peer[fd] - 1 : -1; }
-static int b_close(int fd) { if (evfd_peer(fd) >= 0) { close(evfd_peer(fd)); g_evfd_peer[fd] = 0; } if (vfd_is(fd)) g_vfd[fd].on = false; bool sock = net_trace_fd(fd); TL_ERRNO_BEGIN(); int r = close(fd); tl_atomic_closed(fd); TL_ERRNO_END(); if (sock) tl_log_line("net: close(fd %d)", fd); return r; }
+static int b_close(int fd) {
+    if (husk_binder_is_fd(fd)) husk_binder_close(fd);
+    if (evfd_peer(fd) >= 0) { close(evfd_peer(fd)); g_evfd_peer[fd] = 0; }
+    if (vfd_is(fd)) g_vfd[fd].on = false;
+    bool sock = net_trace_fd(fd);
+    TL_ERRNO_BEGIN(); int r = close(fd); tl_atomic_closed(fd); TL_ERRNO_END();
+    if (sock) tl_log_line("net: close(fd %d)", fd);
+    return r;
+}
 /* close() as the guest calls it (for other shims that close on its behalf: fdsan's close_with_tag) */
 int tl_guest_close(int fd) { return b_close(fd); }
 static bool net_trace_fd(int fd)
@@ -649,6 +669,15 @@ static long b___read_chk(int fd, void *p, size_t n, size_t bufsz)
 static long b_write(int fd, const void *p, size_t n)
 {
     if (evfd_peer(fd) >= 0) fd = evfd_peer(fd);
+    if ((fd == 1 || fd == 2) && p && n > 0 && n < 2000) {
+        static int said;
+        if (said < 24) {
+            char buf[2004];
+            memcpy(buf, p, n); buf[n] = 0;
+            for (size_t i = 0; i < n; i++) if ((unsigned char)buf[i] < 9) { buf[0] = 0; break; }
+            if (buf[0]) { said++; tl_log_line("guest %s: %s", fd == 2 ? "stderr" : "stdout", buf); }
+        }
+    }
     TL_ERRNO_BEGIN(); long r = write(fd, p, n); int e = errno; TL_ERRNO_END();
     if (net_trace_fd(fd)) tl_log_line("net: write(fd %d, %zu) -> %ld errno %d", fd, n, r, r < 0 ? e : 0);
     return r;
@@ -911,10 +940,53 @@ static int b_fcntl(int fd, int cmd, long arg)
     return r;
 }
 
+/* Linux's network-interface ioctls (struct ifreq: a 16-byte name, then the answer), answered from getifaddrs: libcore's
+ * NetworkInterface asks for flags and MTU (an FTP server listing its addresses failed on ENOTTY). Darwin's ifreq numbers and
+ * flag bits differ; a hardware address is the fixed 02:00:00:00:00:00 Android has given apps since 6.0. */
+static int ifreq_ioctl(int fd, unsigned long req, uint8_t *ifr)
+{
+    char name[IFNAMSIZ + 1]; memcpy(name, ifr, 16); name[16] = 0;
+    if (req == 0x8933) { unsigned i = if_nametoindex(name); if (!i) { tl_set_guest_errno(19); return -1; } memcpy(ifr + 16, &i, 4); return 0; }   /* SIOCGIFINDEX */
+    if (req == 0x8921) {                                                                                                  /* SIOCGIFMTU */
+        struct ifreq q; memset(&q, 0, sizeof(q)); snprintf(q.ifr_name, sizeof(q.ifr_name), "%s", name);
+        int r = ioctl(fd, SIOCGIFMTU, &q);
+        if (r != 0) { TL_ERRNO_END(); return -1; }
+        int mtu = q.ifr_mtu; memcpy(ifr + 16, &mtu, 4); return 0;
+    }
+    struct ifaddrs *all = NULL, *a;
+    if (getifaddrs(&all) != 0) { TL_ERRNO_END(); return -1; }
+    int r = -1, err = 19;                                                                                                 /* ENODEV */
+    for (a = all; a; a = a->ifa_next) {
+        if (strcmp(a->ifa_name, name)) continue;
+        if (req == 0x8913) {                                                                                              /* SIOCGIFFLAGS */
+            unsigned f = a->ifa_flags, g = f & 0xff;              /* UP .. NOARP: the same bits */
+            if (f & IFF_PROMISC) g |= 0x100; if (f & IFF_ALLMULTI) g |= 0x200; if (f & IFF_MULTICAST) g |= 0x1000;
+            uint16_t v = (uint16_t)g; memcpy(ifr + 16, &v, 2); r = 0; break;
+        }
+        if (req == 0x8927) { uint16_t fam = 1; memcpy(ifr + 16, &fam, 2); memset(ifr + 18, 0, 14); ifr[18] = 0x02; r = 0; break; }   /* SIOCGIFHWADDR */
+        if (!a->ifa_addr || a->ifa_addr->sa_family != AF_INET) continue;
+        const struct sockaddr *sa = req == 0x8915 ? a->ifa_addr : req == 0x891b ? a->ifa_netmask : (req == 0x8919 || req == 0x8917) ? a->ifa_dstaddr : NULL;
+        if (!sa) { err = 99; continue; }                                                                                  /* EADDRNOTAVAIL */
+        const struct sockaddr_in *in = (const struct sockaddr_in *)sa;
+        uint16_t fam = 2; memset(ifr + 16, 0, 16); memcpy(ifr + 16, &fam, 2); memcpy(ifr + 20, &in->sin_addr, 4); r = 0; break;  /* SIOCGIFADDR/NETMASK/BRDADDR/DSTADDR */
+    }
+    freeifaddrs(all);
+    if (r != 0) tl_set_guest_errno(err);
+    return r;
+}
+
 static int b_ioctl(int fd, unsigned long req, long arg)
 {
+    if (husk_binder_is_fd(fd)) {
+        TL_ERRNO_BEGIN();
+        int r = husk_binder_ioctl(fd, req, (void *)arg);
+        TL_ERRNO_END();
+        return r;
+    }
     if (req == 0x541B) { int n = 0; int r = ioctl(fd, FIONREAD, &n); if (r == 0) *(int *)arg = n; else TL_ERRNO_END(); return r; }  /* FIONREAD */
     if (req == 0x5421) { int on = *(int *)arg; int fl = fcntl(fd, F_GETFL); fcntl(fd, F_SETFL, on ? fl | O_NONBLOCK : fl & ~O_NONBLOCK); return 0; }   /* FIONBIO */
+    if (arg && (req == 0x8913 || req == 0x8915 || req == 0x8917 || req == 0x8919 || req == 0x891b || req == 0x8921 || req == 0x8927 || req == 0x8933))
+        return ifreq_ioctl(fd, req, (uint8_t *)arg);
     tl_set_guest_errno(25);                                                                                                                    /* ENOTTY */
     return -1;
 }
@@ -1040,15 +1112,46 @@ static struct { uintptr_t addr; size_t len; } g_anon[MAX_ANON];
 static int g_nanon;
 static pthread_mutex_t g_anon_lock = PTHREAD_MUTEX_INITIALIZER;
 
+static void anon_remove(uintptr_t addr, size_t len);
+
 static void anon_add(void *addr, size_t len)
 {
+    anon_remove((uintptr_t)addr, len);                       /* replace what this overlaps, keeping the parts outside it */
     pthread_mutex_lock(&g_anon_lock);
-    for (int i = 0; i < g_nanon; i++) {                      /* replace anything this overlaps */
-        uintptr_t a = g_anon[i].addr, e = a + g_anon[i].len;
-        if ((uintptr_t)addr < e && (uintptr_t)addr + len > a) { g_anon[i] = g_anon[--g_nanon]; i--; }
-    }
     if (g_nanon < MAX_ANON) { g_anon[g_nanon].addr = (uintptr_t)addr; g_anon[g_nanon].len = len; g_nanon++; }
     pthread_mutex_unlock(&g_anon_lock);
+}
+
+/* Mimalloc reserves a large anonymous range and munmaps the unused ends to align. Keep the list matching that. */
+static void anon_remove(uintptr_t addr, size_t len)
+{
+    uintptr_t end = addr + len;
+    pthread_mutex_lock(&g_anon_lock);
+    for (int i = 0; i < g_nanon; i++) {
+        uintptr_t a = g_anon[i].addr, e = a + g_anon[i].len;
+        if (end <= a || addr >= e) continue;
+        uintptr_t left = addr > a ? addr - a : 0;
+        uintptr_t right_a = end < e ? end : e, right = e > right_a ? e - right_a : 0;
+        if (left) {
+            g_anon[i].len = left;
+            if (right && g_nanon < MAX_ANON) { g_anon[g_nanon].addr = right_a; g_anon[g_nanon].len = right; g_nanon++; }
+        } else if (right) {
+            g_anon[i].addr = right_a; g_anon[i].len = right;
+        } else {
+            g_anon[i] = g_anon[--g_nanon]; i--;
+        }
+    }
+    pthread_mutex_unlock(&g_anon_lock);
+}
+
+/* All the guest has mapped for itself, in bytes of address space. */
+static size_t anon_total(void)
+{
+    size_t t = 0;
+    pthread_mutex_lock(&g_anon_lock);
+    for (int i = 0; i < g_nanon; i++) t += g_anon[i].len;
+    pthread_mutex_unlock(&g_anon_lock);
+    return t;
 }
 
 static void anon_zap(uintptr_t addr, size_t len)
@@ -1065,6 +1168,9 @@ static void anon_zap(uintptr_t addr, size_t len)
             if (vm_region_64(mach_task_self(), &ra, &rs, VM_REGION_BASIC_INFO_64, (vm_region_info_t)&info, &cnt, &obj) != KERN_SUCCESS) break;
             if (ra > p) { p = ra; continue; }
             uintptr_t re = ra + rs < e ? ra + rs : e;
+            if (tl_ld_covers((const void *)(uintptr_t)p, re - p) || tl_xmem_contains((const void *)(uintptr_t)p)) {
+                p = re; continue;
+            }
             int prot = (info.protection & VM_PROT_READ ? PROT_READ : 0) | (info.protection & VM_PROT_WRITE ? PROT_WRITE : 0);
             mmap((void *)p, re - p, prot, MAP_FIXED | MAP_PRIVATE | MAP_ANON, -1, 0);
             p = re;
@@ -1235,9 +1341,71 @@ static bool shifted_unmap(void *a, int *ret)
     pthread_mutex_unlock(&g_shifted_lock);
     return false;
 }
+/* A Mac imitating a phone's address space. TL_MM_MAX_GIB: a bigger single mapping is refused, as an 8 GiB one is on an iPhone
+ * app without the extended-virtual-addressing entitlement. TL_MM_TOTAL_GIB (fractions allowed): a mapping is refused once all
+ * the guest has mapped for itself would pass that much -- a phone's limit is on the whole process, and the game has what Husk
+ * leaves of it. TL_MM_PHANTOM: an 8 GiB reservation is refused, whatever its size limit. */
+static size_t mm_max_map(void)
+{
+    static size_t v = (size_t)-2;
+    if (v == (size_t)-2) v = getenv("TL_MM_MAX_GIB") ? (size_t)atoi(getenv("TL_MM_MAX_GIB")) << 30 : (size_t)-1;
+    return v;
+}
+static size_t mm_max_total(void)
+{
+    static size_t v = (size_t)-2;
+    if (v == (size_t)-2) v = getenv("TL_MM_TOTAL_GIB") ? (size_t)(atof(getenv("TL_MM_TOTAL_GIB")) * (double)(1u << 30)) : (size_t)-1;
+    return v;
+}
+static bool mm_force_phantom(void)
+{
+    static int v = -1;
+    if (v < 0) v = getenv("TL_MM_PHANTOM") != NULL;
+    return v;
+}
+
+/* Whether this process is short of address space: an iOS app without the extended-virtual-addressing entitlement (a sideloaded
+ * one, re-signed by its user's team) has a few GiB of it all told, and is refused an 8 GiB reservation; with it, an app has
+ * 64 GiB. A 16 GiB one tells them apart with room to spare either way. Engines whose allocators reserve far more than they use
+ * (Unity's) are set up to take less. A Mac imitating a phone (above) is short too. */
+bool tl_mm_address_space_short(void)
+{
+    static int v = -1;
+    if (v >= 0) return v;
+    const size_t probe = (size_t)16 << 30;
+    if (mm_max_map() < probe || mm_max_total() != (size_t)-1 || mm_force_phantom()) v = 1;
+    else {
+        int e = errno;
+        void *p = mmap(NULL, probe, PROT_NONE, MAP_PRIVATE | MAP_ANON, -1, 0);
+        v = p == MAP_FAILED;
+        if (p != MAP_FAILED) munmap(p, probe);
+        errno = e;
+    }
+    tl_log_line("mm: a 16 GiB reservation is %s here: %s address space", v ? "refused" : "allowed", v ? "little" : "plenty of");
+    return v;
+}
+
+/* The address space this process has mapped, outside the shared system libraries and the kernel's guard over the addresses it
+ * may never use (hundreds of GiB above its limit), and how much of it is the guest's own anonymous memory: what a game's log
+ * needs to tell a phone out of address space from one out of memory. */
+size_t tl_mm_address_space_used(size_t *guest)
+{
+    size_t total = 0;
+    for (vm_address_t a = 0;;) {
+        vm_size_t sz = 0; natural_t depth = 0;
+        vm_region_submap_info_data_64_t info; mach_msg_type_number_t cnt = VM_REGION_SUBMAP_INFO_COUNT_64;
+        if (vm_region_recurse_64(mach_task_self(), &a, &sz, &depth, (vm_region_recurse_info_t)&info, &cnt) != KERN_SUCCESS) break;
+        if (!info.is_submap && !(info.user_tag == VM_MEMORY_GUARD && info.max_protection == VM_PROT_NONE)) total += sz;
+        a += sz;
+    }
+    if (guest) *guest = anon_total();
+    return total;
+}
+
 void *tl_ld_map_code(const char *path, uint64_t off, size_t len, void *at);
 static void *b_mmap(void *addr, size_t len, int prot, int flags, int fd, long off)
 {
+    if (fd >= 0 && husk_binder_is_fd(fd)) return husk_binder_mmap(fd, len);
     /* A library file mapped executable (libffi's static trampolines): for a library imported from a dylib, its own signed code */
     if ((prot & PROT_EXEC) && !(flags & 0x20) && fd >= 0 && off >= 0) {
         char path[PATH_MAX];
@@ -1283,13 +1451,21 @@ static void *b_mmap(void *addr, size_t len, int prot, int flags, int fd, long of
     if (flags & 0x10)   df |= MAP_FIXED;
     if (flags & 0x20)   df |= MAP_ANON;
     TL_ERRNO_BEGIN();
-    static int force_phantom = -1;
-    if (force_phantom < 0) force_phantom = getenv("TL_MM_PHANTOM") != NULL;          /* a Mac pretending to be a phone */
-    static size_t max_map = (size_t)-2;                                              /* TL_MM_MAX_GIB: refuse bigger single mappings, as a phone does */
-    if (max_map == (size_t)-2) max_map = getenv("TL_MM_MAX_GIB") ? (size_t)atoi(getenv("TL_MM_MAX_GIB")) << 30 : (size_t)-1;
-    bool refuse = len > max_map && (flags & 0x20) && !(flags & 0x10);
-    if (refuse) { tl_log_line("mm: refusing %#zx bytes (TL_MM_MAX_GIB)", len); errno = ENOMEM; }
+    bool force_phantom = mm_force_phantom();
+    bool refuse = false;
+    if ((flags & 0x20) && !(flags & 0x10)) {
+        if (len > mm_max_map()) { tl_log_line("mm: refusing %#zx bytes (TL_MM_MAX_GIB)", len); refuse = true; }
+        else if (mm_max_total() != (size_t)-1 && anon_total() + len > mm_max_total()) {
+            tl_log_line("mm: refusing %#zx bytes: %#zx mapped already (TL_MM_TOTAL_GIB)", len, anon_total()); refuse = true;
+        }
+        if (refuse) errno = ENOMEM;
+    }
     bool shifted = !(flags & 0x20) && fd >= 0 && (off & (getpagesize() - 1)) != 0 && (off & 4095) == 0;
+    if ((flags & 0x10) && addr && tl_ld_covers(addr, len)) {
+        tl_note_once("mmap(MAP_FIXED) over a loaded library: refused");
+        errno = ENOMEM;
+        refuse = true;
+    }
     void *r = refuse || (force_phantom && compressed_heap_request(len) && prot == 0 && (flags & 0x20) && !(flags & 0x10)) ? MAP_FAILED
             : shifted ? shifted_file_map(addr, len, prot_filter(prot, "mmap"), df, fd, off)
             : mmap(addr, len, prot_filter(prot, "mmap"), df, (flags & 0x20) ? -1 : fd, off);
@@ -1311,9 +1487,17 @@ static void *b_mmap(void *addr, size_t len, int prot, int flags, int fd, long of
 static int b_munmap(void *a, size_t l)
 {
     if (tl_xmem_contains(a)) return 0;                       /* JIT memory handed out above: kept, as the region only grows */
+    if (tl_ld_covers(a, l)) {
+        /* Mimalloc trims a large reservation to an aligned arena. Under AOT that reservation can
+         * sit next to a dylib; unmapping the overlap would drop signed code. Leave the library. */
+        tl_note_once("munmap of a loaded library: ignored");
+        mm_trace("munmap", a, l, 0, 0);
+        return 0;
+    }
     { int sr; if (shifted_unmap(a, &sr)) { mm_trace("munmap", a, l, sr, errno); return sr; } }
     size_t real = phantom_clamp((uintptr_t)a, l);
     if (real == 0) return 0;                                 /* the half of a phantom range that was never mapped */
+    anon_remove((uintptr_t)a, real);
     TL_ERRNO_BEGIN(); int r = munmap(a, real); TL_ERRNO_END(); mm_trace("munmap", a, real, r, errno); return r;
 }
 /* Whether a range is inside memory the guest mapped for itself (not a library's own pages). */
@@ -1329,15 +1513,27 @@ static bool anon_contains(uintptr_t addr, size_t len)
 /* A guest turning its own anonymous memory executable is a JIT (LuaJIT, a regex engine) and can not be given that; saying so lets it fall back to its interpreter, where
  * pretending to succeed would have it jump into data. */
 const char *tl_ld_symbol_at(const void *addr, const char **lib_name, const void **sym_addr);
+/* Whether all of [a, a+l) can be written now (vm_region), so a scan that rewrites words in it does not fault. */
+static bool b_mprotect_writable(void *a, size_t l)
+{
+    /* vm_region_64, not mach_vm_region: the iOS SDK's <mach/mach_vm.h> is an #error since SDK 27; on arm64 vm_address_t is 64-bit, so they agree. */
+    vm_address_t at = (vm_address_t)(uintptr_t)a; vm_size_t sz = 0;
+    vm_region_basic_info_data_64_t info; mach_msg_type_number_t cnt = VM_REGION_BASIC_INFO_COUNT_64; mach_port_t obj = MACH_PORT_NULL;
+    if (vm_region_64(mach_task_self(), &at, &sz, VM_REGION_BASIC_INFO_64, (vm_region_info_t)&info, &cnt, &obj) != KERN_SUCCESS) return false;
+    return at <= (vm_address_t)(uintptr_t)a && at + sz >= (vm_address_t)(uintptr_t)a + l && (info.protection & VM_PROT_WRITE);
+}
 static int b_mprotect(void *a, size_t l, int prot)
 {
     /* Code a hooking library is about to patch: its permissions stay as they are, and its stores are carried out through
      * the writable view as they fault (husk-tl-codewrite.c). */
     if (tl_codewrite_enabled() && tl_xmem_contains(a)) { mm_trace("mprotect", a, l, prot, 0); return 0; }
+    /* An imported AOT dylib is signed r-x; the guest asking to write its RELRO or patch a constructor is told yes, and
+     * stores go to the writable copies (husk-tl-codewrite). */
+    if (tl_ld_aot_contains(a)) { mm_trace("mprotect", a, l, prot, 0); return 0; }
     if (prot & PROT_EXEC) {
         /* the host's own code (a guest that patches "the linker", which here is Apple's): never touched */
         Dl_info di;
-        if (dladdr(a, &di) && di.dli_fname && !tl_xmem_contains(a)) {
+        if (dladdr(a, &di) && di.dli_fname && !tl_xmem_contains(a) && !tl_ld_aot_contains(a)) {
             { const char *lib = NULL; const void *sa = NULL; const char *sym = tl_ld_symbol_at(__builtin_return_address(0), &lib, &sa);
               static int said; if (said++ < 4) tl_log_line("bionic: mprotect(%p, %#zx, %d) on the host's code (%s %s) asked by %s %s: refused", a, l, prot,
                   di.dli_fname ? strrchr(di.dli_fname, '/') + 1 : "?", di.dli_sname ? di.dli_sname : "?", lib ? lib : "?", sym ? sym : "?"); }
@@ -1363,6 +1559,8 @@ static int b_mprotect(void *a, size_t l, int prot)
         if (allow < 0) allow = getenv("TL_NO_GUEST_JIT") || getenv("TL_NO_XMEM") ? 0 : 1;   /* JIT-less: as a phone with no debugger */
         int r = -1;
         if (allow) {
+            /* its raw system calls, before it can run them (the memory is still the guest's to write) */
+            { void tl_ld_mark_svcs(void *, size_t); if (b_mprotect_writable(a, l)) tl_ld_mark_svcs(a, l); }
             TL_ERRNO_BEGIN();
             r = mprotect(a, l, prot & (PROT_READ | PROT_WRITE | PROT_EXEC));
             if (r != 0 && (prot & PROT_WRITE)) r = mprotect(a, l, (prot & ~PROT_WRITE) & (PROT_READ | PROT_EXEC));
@@ -1393,6 +1591,7 @@ static void *b_mremap(void *old, size_t olds, size_t news, int flags, void *newa
     anon_add(n, news);
     memcpy(n, old, olds < news ? olds : news);
     munmap(old, olds);
+    anon_remove((uintptr_t)old, olds);
     return n;
 }
 
@@ -1499,7 +1698,7 @@ static void host_signal_entry(int dsig, siginfo_t *info, void *uctx)
     g = mine;
 }
 
-static int is_fault_signal(int g) { return g == 4 || g == 5 || g == 6 || g == 7 || g == 8 || g == 11; }
+static int is_fault_signal(int g) { return g == 4 || g == 5 || g == 6 || g == 7 || g == 8 || g == 11 || g == 31; }   /* 31: SIGSYS, raw svc in generated code (husk-tl-ld.c) */
 
 static int b_sigaction(int sig, const guest_sigaction *act, guest_sigaction *old)
 {
@@ -1613,25 +1812,56 @@ static void fut_unlink(size_t h, fut_waiter *w)
     if (g_fut[h].tail == w) g_fut[h].tail = prev;
 }
 
-static long futex_call(uint32_t *addr, int op, uint32_t val, const struct timespec *to, uint32_t bitset_val)
+/* Wake up to n threads waiting on addr. */
+static long futex_wake(uint32_t *addr, long n)
 {
-    (void)bitset_val;
+    size_t h = ((uintptr_t)addr >> 2) % FUT_BUCKETS;
+    long woken = 0;
+    pthread_mutex_lock(&g_fut[h].m);
+    fut_waiter *w = g_fut[h].head, *next;
+    for (; w && woken < n; w = next) {
+        next = w->next;
+        if (w->addr != addr) continue;
+        fut_unlink(h, w);
+        w->woken = true;
+        pthread_cond_signal(&w->cv);
+        woken++;
+    }
+    pthread_mutex_unlock(&g_fut[h].m);
+    return woken;
+}
+static long futex_call(uint32_t *addr, int op, uint32_t val, const struct timespec *to, uint32_t *addr2, uint32_t val3)
+{
     int cmd = op & 127;
     if (g_futex_trace < 0) g_futex_trace = getenv("TL_FUTEX_TRACE") ? 1 : 0;
     size_t h = ((uintptr_t)addr >> 2) % FUT_BUCKETS;
+    /* FUTEX_WAKE_OP: change *addr2, wake on addr, and on addr2 too if its old value passes the test. Qt's QSemaphore releases
+       its waiters this way (GCompris waited forever on its sensors thread). */
+    if (cmd == 5) {
+        uint32_t opk = (val3 >> 28) & 7, cmp = (val3 >> 24) & 15;
+        int32_t oparg = (int32_t)(val3 << 8) >> 20, cmparg = (int32_t)(val3 << 20) >> 20;
+        if ((val3 >> 31) & 1) oparg = 1 << (oparg & 31);                         /* FUTEX_OP_OPARG_SHIFT */
+        uint32_t old = __atomic_load_n(addr2, __ATOMIC_SEQ_CST), nw;
+        do {
+            switch (opk) { case 0: nw = (uint32_t)oparg; break; case 1: nw = old + (uint32_t)oparg; break; case 2: nw = old | (uint32_t)oparg; break;
+                           case 3: nw = old & ~(uint32_t)oparg; break; case 4: nw = old ^ (uint32_t)oparg; break; default: return -38; }
+        } while (!__atomic_compare_exchange_n(addr2, &old, nw, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST));
+        int32_t o = (int32_t)old; bool pass;
+        switch (cmp) { case 0: pass = o == cmparg; break; case 1: pass = o != cmparg; break; case 2: pass = o < cmparg; break;
+                       case 3: pass = o <= cmparg; break; case 4: pass = o > cmparg; break; case 5: pass = o >= cmparg; break; default: return -38; }
+        long woken = futex_wake(addr, (long)(int32_t)val);
+        if (pass) woken += futex_wake(addr2, (long)(intptr_t)to);              /* val2 travels in the timeout argument */
+        return woken;
+    }
+    /* FUTEX_REQUEUE / CMP_REQUEUE: the waiters that would move to addr2 are woken instead -- a futex's users take a wake-up
+       they did not need, and nothing here keeps per-address queues to move them between */
+    if (cmd == 3 || cmd == 4) {
+        if (cmd == 4 && __atomic_load_n(addr, __ATOMIC_SEQ_CST) != val3) return -11;
+        long woken = futex_wake(addr, (long)(int32_t)val);
+        return woken + futex_wake(addr, (long)(intptr_t)to);
+    }
     if (cmd == 1 || cmd == 10) {                                  /* FUTEX_WAKE / WAKE_BITSET */
-        long woken = 0;
-        pthread_mutex_lock(&g_fut[h].m);
-        fut_waiter *w = g_fut[h].head, *next;
-        for (; w && woken < (long)(int32_t)val; w = next) {
-            next = w->next;
-            if (w->addr != addr) continue;
-            fut_unlink(h, w);
-            w->woken = true;
-            pthread_cond_signal(&w->cv);
-            woken++;
-        }
-        pthread_mutex_unlock(&g_fut[h].m);
+        long woken = futex_wake(addr, (long)(int32_t)val);
         if (g_futex_trace) { char nm[32] = ""; pthread_getname_np(pthread_self(), nm, sizeof(nm)); tl_log_line("futex[%s]: WAKE addr=%p n=%d woke %ld", nm, (void *)addr, (int)val, woken); }
         return woken;
     }
@@ -1684,7 +1914,7 @@ static long linux_syscall_impl(long a0, long a1, long a2, long a3, long a4, long
     case 173: return getppid();
     case 174: case 175: return getuid();
     case 176: case 177: return getgid();
-    case 98:  return futex_call((uint32_t *)a0, (int)a1, (uint32_t)a2, (const struct timespec *)a3, (uint32_t)a5);
+    case 98:  return futex_call((uint32_t *)a0, (int)a1, (uint32_t)a2, (const struct timespec *)a3, (uint32_t *)a4, (uint32_t)a5);
     case 129: case 130: case 131: {                                                     /* kill, tkill, tgkill */
         int sig = nr == 131 ? (int)a2 : (int)a1;
         if (sig == 0) return 0;
