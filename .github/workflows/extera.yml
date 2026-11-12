@@ -12,6 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       run_id: { description: "a run of ART runtime on Darwin to use instead of tests/extera.env's RUN_ID", required: false, default: '' }
+      mac: { description: "the macOS runner image for the Mac jobs (another one when GitHub has no capacity for macos-15)", required: false, default: 'macos-15' }
 
 jobs:
   compile:
@@ -66,7 +67,7 @@ jobs:
 
   # its libraries as iOS dylibs made ahead of time (tools/so2dylib.c), for a phone with no JIT: the IPA carries them in Frameworks
   aot:
-    runs-on: macos-15
+    runs-on: ${{ inputs.mac || 'macos-15' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -101,7 +102,7 @@ jobs:
   # the IPA for a phone: the test app's shell from the runtime's run, the APK compiled for iOS, its libraries made ahead of time
   ipa:
     needs: [compile, aot]
-    runs-on: macos-15
+    runs-on: ${{ inputs.mac || 'macos-15' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -151,7 +152,7 @@ jobs:
 
   run:
     needs: compile
-    runs-on: macos-15
+    runs-on: ${{ inputs.mac || 'macos-15' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
