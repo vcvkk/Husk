@@ -166,11 +166,17 @@ jobs:
           export HUSK_FRAME_STATS=1 HUSK_AUDIO_STATS=1 HUSK_LOG_TIME=1 HUSK_GL_TRACE=$PWD/build/frames
           [ -f build/angle-macos/lib/libANGLE-shared.dylib ] && export HUSK_ANGLE_DIR="$PWD/build/angle-macos/lib"
           unset JAVA_HOME
+          # bad accesses stop in lldb, where tools/lldb_crash_hook.py lets ART's own (in its compiled code) go on and gives any
+          # other a backtrace (ART's report on Darwin has none); CRASH_HOOK=0: all go to the process as before
+          if [ "${CRASH_HOOK:-1}" = 1 ]; then
+            hook=(-o "command script import $PWD/tools/lldb_crash_hook.py" -o 'target stop-hook add -P lldb_crash_hook.CrashHook')
+            ignored='EXC_BAD_INSTRUCTION|EXC_ARITHMETIC'
+          else hook=(); ignored='EXC_BAD_ACCESS|EXC_BAD_INSTRUCTION|EXC_ARITHMETIC'; fi
           perl -e 'alarm shift; exec @ARGV' $(( SECONDS + 60 )) lldb --batch \
             -o 'process handle SIGSEGV -s false -p true -n false' -o 'process handle SIGBUS -s false -p true -n false' \
             -o 'process handle SIGTRAP -s false -p true -n false' -o 'process handle SIGILL -s false -p true -n false' \
             -o 'settings set target.process.stop-on-exec false' \
-            -o 'settings set platform.plugin.darwin.ignored-exceptions EXC_BAD_ACCESS|EXC_BAD_INSTRUCTION|EXC_ARITHMETIC' \
+            -o "settings set platform.plugin.darwin.ignored-exceptions $ignored" "${hook[@]}" \
             -o run -k 'thread backtrace all' -k 'register read' \
             -- build/fw/mac-host --art "$PWD/build/app/boot" --apk "$PWD/build/app/app/base.apk" --fwres "$PWD/build/app/app/framework-res.apk" \
             --data "$PWD/build/data" --seconds $SECONDS --frames build/frames $HOST_ARGS ${SCRIPT:+--script "$PWD/$SCRIPT"} > build/app-run.log 2>&1 &
