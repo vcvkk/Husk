@@ -1,17 +1,15 @@
 # The steps tests/extera.env's run takes (mac-host --script): seconds from the start, then the step. Coordinates are in the
 # 1080x2400 frame, with an iPhone's insets (HOST_ARGS). With the HUSK_BOT_TOKEN secret the app logs in to that bot's account by
-# itself, on its first start (tests/plugins/husk_bot_login.plugin), and shows it from the next. Its chats: the first two opened.
+# itself, on its first start (tests/plugins/husk_bot_login.plugin), and shows it from the next. Its first chat: opened, scrolled
+# back twice, closed.
 8 shot intro
 12 shot main
-13 tap 540 470
+13 tap 540 590
 20 shot chat1
 21 swipe 540 900 540 1900
 24 shot chat1-older
-26 back
-29 shot list
-30 tap 540 690
-37 shot chat2
-38 swipe 540 900 540 1900
-41 shot chat2-older
-43 back
+25 swipe 540 900 540 1900
+28 shot chat1-older2
+31 back
+34 shot list
 44 shot end
