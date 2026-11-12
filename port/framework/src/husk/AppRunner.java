@@ -343,6 +343,7 @@ public final class AppRunner {
                 + " bounds " + d.getBounds()) + " imageAlpha " + ((android.widget.ImageView) v).getImageAlpha();
         }
         if (v.getBackground() != null) extra += " bg " + v.getBackground().getClass().getName();
+        if (DUMP_FIELDS != null) extra += dumpFields(v);
         android.util.Log.i("HuskViews", indent + v.getClass().getName() + " [" + v.getLeft() + "," + v.getTop() + " " + v.getWidth() + "x" + v.getHeight()
             + "] measured " + v.getMeasuredWidth() + "x" + v.getMeasuredHeight() + " vis " + v.getVisibility() + " alpha " + v.getAlpha()
             + " tr " + v.getTranslationX() + "," + v.getTranslationY() + " scroll " + v.getScrollX() + "," + v.getScrollY() + extra);
@@ -350,6 +351,53 @@ public final class AppRunner {
             android.view.ViewGroup g = (android.view.ViewGroup) v;
             for (int i = 0; i < g.getChildCount(); i++) dumpViews(g.getChildAt(i), indent + "  ");
         }
+    }
+    /* HUSK_DUMP_FIELDS=CLASS:METHOD,METHOD...;CLASS:...: with HUSK_DUMP_VIEWS, a view's fields of those classes (its own and its
+     * superclasses'), each with what those no-argument methods return: an app's own state for what it draws (Telegram's
+     * org.telegram.messenger.ImageReceiver in a message cell: whether its picture is there, at what alpha, where) */
+    private static final String DUMP_FIELDS = System.getenv("HUSK_DUMP_FIELDS");
+    private static String dumpFields(Object o) {
+        StringBuilder out = new StringBuilder();
+        for (Class<?> c = o.getClass(); c != null && c != android.view.View.class && c != Object.class; c = c.getSuperclass()) {
+            for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                if (java.lang.reflect.Modifier.isStatic(f.getModifiers()) || f.getType().isPrimitive()) continue;
+                for (String spec : DUMP_FIELDS.split(";")) {
+                    int k = spec.indexOf(':');
+                    String cls = k < 0 ? spec : spec.substring(0, k);
+                    if (!isA(f.getType(), cls)) continue;
+                    Object val;
+                    try { f.setAccessible(true); val = f.get(o); } catch (Throwable e) { continue; }
+                    if (val == null) continue;
+                    out.append("\n      ").append(f.getName()).append(" {");
+                    if (k >= 0) for (String m : spec.substring(k + 1).split(",")) {
+                        try {
+                            java.lang.reflect.Method mm = val.getClass().getMethod(m.trim());
+                            out.append(' ').append(m.trim()).append('=').append(describe(mm.invoke(val)));
+                        } catch (Throwable e) { out.append(' ').append(m.trim()).append("=?").append(e.getClass().getSimpleName()); }
+                    }
+                    out.append(" }");
+                }
+            }
+        }
+        return out.toString();
+    }
+    private static boolean isA(Class<?> t, String name) {
+        for (Class<?> c = t; c != null; c = c.getSuperclass()) if (c.getName().equals(name)) return true;
+        return false;
+    }
+    private static String describe(Object r) {
+        if (r == null) return "null";
+        if (r instanceof android.graphics.Bitmap) return DrawTrace.bitmap((android.graphics.Bitmap) r);
+        if (r instanceof android.graphics.drawable.Drawable) {
+            android.graphics.drawable.Drawable d = (android.graphics.drawable.Drawable) r;
+            String s = d.getClass().getName() + " " + d.getBounds().toShortString() + " alpha " + d.getAlpha();
+            if (d instanceof android.graphics.drawable.BitmapDrawable) s += " " + DrawTrace.bitmap(((android.graphics.drawable.BitmapDrawable) d).getBitmap());
+            return s;
+        }
+        if (r instanceof int[]) return java.util.Arrays.toString((int[]) r);
+        if (r instanceof float[]) return java.util.Arrays.toString((float[]) r);
+        String s = String.valueOf(r);
+        return s.length() > 100 ? s.substring(0, 100) + "..." : s;
     }
     /** The component an activity was started as: its class, or the alias it was reached through. */
     private static String startedAs(Activity a) {

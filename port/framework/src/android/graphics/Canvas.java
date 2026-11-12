@@ -133,10 +133,10 @@ public class Canvas {
         husk.Gfx.cvDrawRect(mNative, mClip[0], mClip[1], mClip[2], mClip[3], p.mP, p.huskShader());
         touched();
     }
-    public void drawRect(float l, float t, float r, float b, Paint p) { if (mNative != 0) { husk.Gfx.cvDrawRect(mNative, l, t, r, b, p.mP, p.huskShader()); touched(); } }
+    public void drawRect(float l, float t, float r, float b, Paint p) { if (husk.DrawTrace.ON) husk.DrawTrace.op(this, "drawRect " + l + "," + t + "," + r + "," + b, p); if (mNative != 0) { husk.Gfx.cvDrawRect(mNative, l, t, r, b, p.mP, p.huskShader()); touched(); } }
     public void drawRect(RectF r, Paint p) { drawRect(r.left, r.top, r.right, r.bottom, p); }
     public void drawRect(Rect r, Paint p) { drawRect(r.left, r.top, r.right, r.bottom, p); }
-    public void drawRoundRect(float l, float t, float r, float b, float rx, float ry, Paint p) { if (mNative != 0) { husk.Gfx.cvDrawRRect(mNative, l, t, r, b, rx, ry, p.mP, p.huskShader()); touched(); } }
+    public void drawRoundRect(float l, float t, float r, float b, float rx, float ry, Paint p) { if (husk.DrawTrace.ON) husk.DrawTrace.op(this, "drawRoundRect " + l + "," + t + "," + r + "," + b + " r " + rx, p); if (mNative != 0) { husk.Gfx.cvDrawRRect(mNative, l, t, r, b, rx, ry, p.mP, p.huskShader()); touched(); } }
     public void drawRoundRect(RectF r, float rx, float ry, Paint p) { drawRoundRect(r.left, r.top, r.right, r.bottom, rx, ry, p); }
     public void drawDoubleRoundRect(RectF outer, float orx, float ory, RectF inner, float irx, float iry, Paint p) {
         Path path = new Path();
@@ -145,14 +145,14 @@ public class Canvas {
         path.setFillType(Path.FillType.EVEN_ODD);
         drawPath(path, p);
     }
-    public void drawOval(float l, float t, float r, float b, Paint p) { if (mNative != 0) { husk.Gfx.cvDrawOval(mNative, l, t, r, b, p.mP, p.huskShader()); touched(); } }
+    public void drawOval(float l, float t, float r, float b, Paint p) { if (husk.DrawTrace.ON) husk.DrawTrace.op(this, "drawOval " + l + "," + t + "," + r + "," + b, p); if (mNative != 0) { husk.Gfx.cvDrawOval(mNative, l, t, r, b, p.mP, p.huskShader()); touched(); } }
     public void drawOval(RectF r, Paint p) { drawOval(r.left, r.top, r.right, r.bottom, p); }
     public void drawCircle(float cx, float cy, float radius, Paint p) { drawOval(cx - radius, cy - radius, cx + radius, cy + radius, p); }
     public void drawArc(float l, float t, float r, float b, float start, float sweep, boolean useCenter, Paint p) {
         if (mNative != 0) { husk.Gfx.cvDrawArc(mNative, l, t, r, b, start, sweep, useCenter, p.mP, p.huskShader()); touched(); }
     }
     public void drawArc(RectF o, float start, float sweep, boolean useCenter, Paint p) { drawArc(o.left, o.top, o.right, o.bottom, start, sweep, useCenter, p); }
-    public void drawPath(Path path, Paint p) { if (mNative != 0 && path.n > 0) { husk.Gfx.cvDrawPath(mNative, path.ops, path.n, path.huskFill(), p.mP, p.huskShader()); touched(); } }
+    public void drawPath(Path path, Paint p) { if (husk.DrawTrace.ON) husk.DrawTrace.op(this, "drawPath " + path.n + " floats " + husk.DrawTrace.bounds(path), p); if (mNative != 0 && path.n > 0) { husk.Gfx.cvDrawPath(mNative, path.ops, path.n, path.huskFill(), p.mP, p.huskShader()); touched(); } }
     public void drawLine(float x0, float y0, float x1, float y1, Paint p) { drawLines(new float[] { x0, y0, x1, y1 }, 0, 4, p); }
     public void drawLines(float[] pts, int offset, int count, Paint p) { if (mNative != 0) { husk.Gfx.cvDrawLines(mNative, pts, offset, count, p.mP, p.huskShader(), false); touched(); } }
     public void drawLines(float[] pts, Paint p) { drawLines(pts, 0, pts.length, p); }
@@ -163,6 +163,7 @@ public class Canvas {
     // ---- bitmaps
     private static int[] paintOf(Paint p) { return p == null ? null : p.mP; }
     public void drawBitmap(Bitmap b, float left, float top, Paint p) {
+        if (husk.DrawTrace.ON) husk.DrawTrace.op(this, "drawBitmap " + husk.DrawTrace.bitmap(b) + " at " + left + "," + top, p);
         if (mNative == 0 || b == null || b.isRecycled()) return;
         float w = b.getWidth(), h = b.getHeight();
         if (mDensity != 0 && b.getDensity() != 0 && mDensity != b.getDensity()) { w = b.getScaledWidth(mDensity); h = b.getScaledHeight(mDensity); }
@@ -172,6 +173,7 @@ public class Canvas {
         touched();
     }
     public void drawBitmap(Bitmap b, Rect src, RectF dst, Paint p) {
+        if (husk.DrawTrace.ON) husk.DrawTrace.op(this, "drawBitmap " + husk.DrawTrace.bitmap(b) + " src " + src + " dst " + dst, p);
         if (mNative == 0 || b == null || b.isRecycled()) return;
         float sl = 0, st = 0, sr = b.getWidth(), sb = b.getHeight();
         if (src != null) { sl = src.left; st = src.top; sr = src.right; sb = src.bottom; }
@@ -182,6 +184,7 @@ public class Canvas {
     }
     public void drawBitmap(Bitmap b, Rect src, Rect dst, Paint p) { drawBitmap(b, src, new RectF(dst), p); }
     public void drawBitmap(Bitmap b, Matrix m, Paint p) {
+        if (husk.DrawTrace.ON) husk.DrawTrace.op(this, "drawBitmap " + husk.DrawTrace.bitmap(b) + " matrix " + m, p);
         if (mNative == 0 || b == null || b.isRecycled()) return;
         husk.Gfx.cvDrawBitmapM(mNative, b.huskNative(), (m == null ? new Matrix() : m).huskAffine(), paintOf(p));
         touched();
