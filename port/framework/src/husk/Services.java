@@ -65,10 +65,61 @@ public final class Services {
     }
     public static void unbind(ServiceConnection conn) { sBound.remove(conn); }
     /** JobScheduler: start the JobService named on the job and call onStartJob on the main thread. */
+    /* A scheduled job runs on the main thread no sooner than its latency (a periodic one each interval, from its first), and one
+     * scheduled again with its id replaces it. A job rescheduled within a second of running (WorkManager's work whose
+     * constraints it found unmet runs again at once) waits twice as long each time, up to minutes: it went round 500 times a
+     * second. */
+    private static final java.util.HashMap<Integer, Runnable> sPendingJobs = new java.util.HashMap<>();
+    private static final java.util.HashMap<String, long[]> sJobRuns = new java.util.HashMap<>();   /* key -> last run (uptime), streak */
+    private static Handler sJobs;
+    public static void scheduleJob(final android.app.job.JobInfo j) {
+        if (j == null || j.getService() == null) return;
+        if (sJobs == null) sJobs = new Handler(Looper.getMainLooper());
+        final String key = jobKey(j);
+        long delay = j.isPeriodic() ? j.getIntervalMillis() : j.getMinLatencyMillis();
+        long now = android.os.SystemClock.uptimeMillis();
+        synchronized (sJobRuns) {
+            long[] r = sJobRuns.get(key);
+            if (r != null && now - r[0] < 1000) { r[1] = Math.min(r[1] + 1, 9); delay = Math.max(delay, 1000L << r[1]); }
+            else if (r != null) r[1] = 0;
+        }
+        Runnable run = new Runnable() {
+            @Override public void run() {
+                synchronized (sPendingJobs) { if (sPendingJobs.get(j.getId()) != this) return; sPendingJobs.remove(j.getId()); }
+                synchronized (sJobRuns) {
+                    long[] r = sJobRuns.get(key);
+                    if (r == null) sJobRuns.put(key, r = new long[2]);
+                    r[0] = android.os.SystemClock.uptimeMillis();
+                }
+                startJob(j);
+                if (j.isPeriodic()) scheduleJob(j);
+            }
+        };
+        synchronized (sPendingJobs) {
+            Runnable old = sPendingJobs.put(j.getId(), run);
+            if (old != null) sJobs.removeCallbacks(old);
+        }
+        sJobs.postDelayed(run, delay);
+    }
+    public static void cancelJob(int id) {
+        Runnable old;
+        synchronized (sPendingJobs) { old = sPendingJobs.remove(id); }
+        if (old != null && sJobs != null) sJobs.removeCallbacks(old);
+    }
+    /* WorkManager's job ids change each time it schedules a work; the work's own id is in the extras */
+    private static String jobKey(android.app.job.JobInfo j) {
+        android.os.PersistableBundle e = j.getExtras();
+        String w = e != null ? e.getString("EXTRA_WORK_SPEC_ID") : null;
+        return w != null ? "work:" + w : j.getService().getClassName() + "#" + j.getId();
+    }
+    /** As soon as it can, on the main thread (main line's call; the scheduler's jobs go through scheduleJob). */
     public static void runJob(android.app.job.JobInfo j) {
         if (j == null || j.getService() == null) return;
+        new Handler(Looper.getMainLooper()).post(() -> startJob(j));
+    }
+    private static void startJob(android.app.job.JobInfo j) {
         final android.content.ComponentName cn = j.getService();
-        new Handler(Looper.getMainLooper()).post(() -> {
+        {
             try {
                 Manifest.Component c = null;
                 for (Manifest.Component s : Manifest.services) if (s.name.equals(cn.getClassName())) { c = s; break; }
@@ -81,7 +132,7 @@ public final class Services {
                     ((android.app.job.JobService) s).onStartJob(p);
                 } else s.onStartCommand(new Intent().setComponent(cn), 0, 1);
             } catch (Throwable t) { android.util.Log.e("Husk", "job " + cn.getClassName() + " failed", t); }
-        });
+        }
     }
 
     /** A system service by name, or null for those Husk has nothing for. */
