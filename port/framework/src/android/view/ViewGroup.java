@@ -271,9 +271,17 @@ public abstract class ViewGroup extends View implements ViewParent, ViewManager 
     @Override public void dispatchVisibilityChanged(View changed, int v) { super.dispatchVisibilityChanged(changed, v); for (int i = 0; i < mChildrenCount; i++) mChildren[i].dispatchVisibilityChanged(changed, v); }
     @Override public void dispatchConfigurationChanged(android.content.res.Configuration c) { super.dispatchConfigurationChanged(c); for (int i = 0; i < mChildrenCount; i++) mChildren[i].dispatchConfigurationChanged(c); }
     @Override public void dispatchSystemUiVisibilityChanged(int v) { super.dispatchSystemUiVisibilityChanged(v); for (int i = 0; i < mChildrenCount; i++) mChildren[i].dispatchSystemUiVisibilityChanged(v); }
+    /* As Android 11's: each child gets the insets this group leaves, whatever its siblings make of them; an app targeting an older
+       SDK gets the old dispatch, where a child that consumes them keeps them from the children after it (sBrokenInsetsDispatch).
+       Telegram's DrawerLayoutContainer, after a sibling that consumes them, takes its status bar's height from them. */
     @Override public WindowInsets dispatchApplyWindowInsets(WindowInsets in) {
         WindowInsets r = super.dispatchApplyWindowInsets(in);
-        if (!r.isConsumed()) for (int i = 0; i < mChildrenCount; i++) { r = mChildren[i].dispatchApplyWindowInsets(r); if (r.isConsumed()) break; }
+        if (r.isConsumed()) return r;
+        if (husk.Manifest.targetSdk < 30) {
+            for (int i = 0; i < mChildrenCount; i++) { r = mChildren[i].dispatchApplyWindowInsets(r); if (r.isConsumed()) break; }
+            return r;
+        }
+        for (int i = 0; i < mChildrenCount; i++) mChildren[i].dispatchApplyWindowInsets(r);
         return r;
     }
     void onChildVisibilityChanged(View child, int old, int now) {}

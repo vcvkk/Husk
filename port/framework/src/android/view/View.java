@@ -946,8 +946,15 @@ public class View implements Drawable.Callback, KeyEvent.Callback {
     }
     public WindowInsets dispatchApplyWindowInsets(WindowInsets i) {
         mLastInsets = i;
-        return mOnApplyInsets != null ? mOnApplyInsets.onApplyWindowInsets(this, i) : onApplyWindowInsets(i);
+        WindowInsets r = mOnApplyInsets != null ? mOnApplyInsets.onApplyWindowInsets(this, i) : onApplyWindowInsets(i);
+        if (INSETS_TRACE && (mOnApplyInsets != null || r.isConsumed() != i.isConsumed()) && sInsetsTraced++ < 200)
+            android.util.Log.i("HuskInsets", getClass().getName() + (mOnApplyInsets != null ? " (listener)" : "") + " got " + i.getSystemWindowInsetTop() + "/"
+                + i.getSystemWindowInsetBottom() + (i.isConsumed() ? " consumed" : "") + ", left " + (r.isConsumed() ? "consumed" : r.getSystemWindowInsetTop() + "/" + r.getSystemWindowInsetBottom()));
+        return r;
     }
+    /* HUSK_INSETS_TRACE: the views that take the window's insets (a listener, or consuming them) and what they leave */
+    private static final boolean INSETS_TRACE = System.getenv("HUSK_INSETS_TRACE") != null;
+    private static int sInsetsTraced;
     public void setOnApplyWindowInsetsListener(OnApplyWindowInsetsListener l) { mOnApplyInsets = l; }
     /* null on Android only before the view is attached; Unity reads it from a posted runnable that can run before Husk attaches its view */
     public WindowInsets getRootWindowInsets() { return mRoot != null ? mRoot.insets() : husk.ViewRoot.screenInsets(); }
