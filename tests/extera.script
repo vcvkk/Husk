@@ -1,6 +1,7 @@
 # The steps tests/extera.env's run takes (mac-host --script): seconds from the start, then the step. Coordinates are in the
 # 1080x2400 frame. With the HUSK_BOT_TOKEN secret the app logs in to that bot's account by itself, on its first start
 # (tests/plugins/husk_bot_login.plugin), and shows it from the next.
+8 shot intro
 12 shot main
 16 tap 405 2265
 20 shot tab-contacts
