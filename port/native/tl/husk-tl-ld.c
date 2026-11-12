@@ -623,6 +623,22 @@ void *tl_ld_aot_exec(const void *addr)
     return NULL;
 }
 
+/* An address in a library this loader mapped, for a crash report: the library, the symbol before it, and its ELF address
+ * (for addr2line on the .so); NULL when no such library has it. Called from a signal handler: no locks. */
+const char *tl_ld_describe_pc(uintptr_t pc, char *buf, size_t len)
+{
+    tl_lib *L = tl_ld_lib_of((const void *)pc);
+    if (!L || !buf || !len) return NULL;
+    const uint8_t *a = (const uint8_t *)pc;
+    uint64_t va = a >= L->rx && a < L->rx + L->npages * PAGE ? (uint64_t)(a - L->rx) + L->base_vaddr
+                                                            : (uint64_t)(a - L->rw) + L->base_vaddr;
+    const void *sa = NULL;
+    const char *sym = tl_ld_symbol_at((const void *)pc, NULL, &sa);
+    if (sym) snprintf(buf, len, "%s (%s+%#lx) elf %#llx", L->name, sym, (unsigned long)(pc - (uintptr_t)sa), (unsigned long long)va);
+    else snprintf(buf, len, "%s elf %#llx", L->name, (unsigned long long)va);
+    return buf;
+}
+
 /* Main line's loader answers raw `svc #0` in the guest's own generated code (marked before it turns executable); this one does
  * not, as before: nothing is marked. */
 void tl_ld_mark_svcs(void *addr, size_t len) { (void)addr; (void)len; }

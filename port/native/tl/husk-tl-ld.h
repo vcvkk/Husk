@@ -93,6 +93,8 @@ void *tl_ld_aot_exec(const void *addr);
 /* Before the guest's own memory becomes executable: its raw `svc #0` are marked and answered as Linux system calls (not here:
  * a no-op, see husk-tl-ld.c). */
 void tl_ld_mark_svcs(void *addr, size_t len);
+/* For a crash report: "lib.so (symbol+off) elf 0x..." for an address in a library the loader mapped, in buf; NULL otherwise. */
+const char *tl_ld_describe_pc(uintptr_t pc, char *buf, size_t len);
 
 /*
  * Walk loaded libraries the way dl_iterate_phdr does. The callback gets the load

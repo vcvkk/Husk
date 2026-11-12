@@ -20,6 +20,7 @@
 #include "shim.h"
 
 void husk_app_set_package(const char *pkg);
+const char *tl_ld_describe_pc(uintptr_t pc, char *buf, size_t len);   /* port/native/tl/husk-tl-ld.c */
 
 static char *slurp(const char *path)
 {
@@ -104,6 +105,10 @@ bool husk_vm_start(const char *art, const char *data_dir, const char *const *ext
     JavaVMInitArgs args = { .version = JNI_VERSION_1_6, .nOptions = n + nextra + nmore, .options = o };
     bool ok = JNI_CreateJavaVM(vm, env, &args) == JNI_OK;
     if (!ok) tl_log_line("husk-port: JNI_CreateJavaVM failed");
+    /* ART's report of a crash names the frames in an Android library through the loader (port/art/patches/0017); a runtime
+       older than that has no such call */
+    void (*describer)(const char *(*)(uintptr_t, char *, size_t)) = dlsym(RTLD_DEFAULT, "art_husk_set_crash_describer");
+    if (describer) describer(tl_ld_describe_pc);
     free(o); free(jars); free(locations);
     return ok;
 }
