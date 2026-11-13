@@ -208,8 +208,10 @@ jobs:
       - name: Forget the downloaded media
         if: env.MEDIA_RESET == '1'
         run: |
-          c=build/data/external/Android/data/com.exteragram.messenger/cache
-          [ -d "$c" ] && find "$c" -maxdepth 1 -type f | wc -l && find "$c" -maxdepth 1 -type f -delete || true
+          e=build/data/external/Android/data/com.exteragram.messenger
+          find "$e/cache" -maxdepth 1 -type f -print -delete 2>/dev/null | wc -l
+          # the photos, videos and files a chat saved (Telegram Images and the like)
+          find "$e/files/Telegram" -type f -print -delete 2>/dev/null | sed 's|.*/files/||' | cut -d/ -f1-2 | sort | uniq -c
       # with the HUSK_BOT_TOKEN secret, the app logs in to that bot's account (tests/plugins/husk_bot_login.plugin), once:
       # the account is in the app's data from then on
       - name: Run it under lldb
