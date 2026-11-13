@@ -1,12 +1,15 @@
 8 shot intro
 12 shot main
 13 tap 540 590
+16 shot chat1-open
 20 shot chat1
 22 swipe 540 1700 540 1100
 24 shot chat1-down
 26 swipe 540 1700 540 1100
 28 shot chat1-down2
-33 shot chat1-later
-35 back
-38 shot list
-44 shot end
+36 shot chat1-down3
+44 shot chat1-later
+46 swipe 540 900 540 1700
+48 shot chat1-up
+52 back
+55 shot list

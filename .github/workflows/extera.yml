@@ -203,6 +203,13 @@ jobs:
           path: build/data
           key: extera-data-${{ github.run_id }}
           restore-keys: extera-data-
+      # MEDIA_RESET=1: the login and the chats kept, the files the app downloaded (photos, stickers, documents) deleted, so a chat's
+      # media load over the network again (as the first time a chat is opened)
+      - name: Forget the downloaded media
+        if: env.MEDIA_RESET == '1'
+        run: |
+          c=build/data/external/Android/data/com.exteragram.messenger/cache
+          [ -d "$c" ] && find "$c" -maxdepth 1 -type f | wc -l && find "$c" -maxdepth 1 -type f -delete || true
       # with the HUSK_BOT_TOKEN secret, the app logs in to that bot's account (tests/plugins/husk_bot_login.plugin), once:
       # the account is in the app's data from then on
       - name: Run it under lldb
